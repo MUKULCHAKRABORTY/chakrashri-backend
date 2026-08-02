@@ -1,0 +1,52 @@
+services:
+  - type: web
+    name: chakrashri-api
+    runtime: node
+    plan: starter # cheapest paid tier — avoids free-tier cold starts, which delay Razorpay webhook delivery
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: DATABASE_URL
+        sync: false # set manually in the Render dashboard — never commit real secrets to this file
+      - key: DB_SSL
+        value: "true"
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      - key: ADMIN_JWT_EXPIRES_IN
+        value: 8h
+      - key: BCRYPT_SALT_ROUNDS
+        value: "12"
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+      - key: RAZORPAY_WEBHOOK_SECRET
+        sync: false
+      - key: CLIENT_URL
+        sync: false # set to your deployed frontend's real origin once it exists
+      - key: RATE_LIMIT_WINDOW_MS
+        value: "900000"
+      - key: RATE_LIMIT_MAX
+        value: "200"
+
+  - type: cron
+    name: chakrashri-expiry-sweep
+    runtime: node
+    plan: starter
+    schedule: "*/10 * * * *" # every 10 minutes
+    buildCommand: npm install
+    startCommand: node scripts/release-expired-orders.js
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: DB_SSL
+        value: "true"
+      - key: ORDER_RESERVATION_EXPIRY_MINUTES
+        value: "30"
