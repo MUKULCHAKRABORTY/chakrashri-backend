@@ -21,19 +21,30 @@ graph TD
     Express -->|SELECT FOR UPDATE / Atomic Stock Locks| Postgres[(Neon PostgreSQL DB)]
     Express -->|Create Order / Signature Check| Razorpay[Razorpay Payment Gateway]
     Razorpay -->|Server-to-Server Webhook| Express
-// Response (200 OK)
+```
+
+## 🔌 Core API Endpoints
+
+### 1. Create Payment Order
+`POST /api/payments/create-order`
+```json
 {
   "success": true,
   "razorpayOrderId": "order_Nz1234567890",
   "amountPaise": 149900,
   "currency": "INR"
 }
-// Response (200 OK)
+```
+
+### 2. Payment Verification
+`POST /api/payments/verify`
+```json
 {
   "success": true,
   "message": "Payment verified and order confirmed",
   "orderId": "ord_987654"
 }
+```
 
 ## Getting started
 
