@@ -94,14 +94,6 @@ with a real cart, open the returned `razorpayOrderId` in Razorpay Checkout using
 [Razorpay test card](https://razorpay.com/docs/payments/payments/test-card-upi-details/), and
 confirm `/api/payments/verify` returns success and the order's `stock_qty` decremented correctly.
 
-### A note on the credentials you shared
-
-The database URL, JWT secret, and Razorpay test keys you provided are now in this chat's history.
-The Razorpay keys are test-mode (`rzp_test_...`), so there's no real-money exposure there. For the
-Neon database password specifically, standard practice once everything's verified working is to
-rotate it in the Neon dashboard and store the new one only in your hosting provider's environment
-variables (not back in a chat) — a small step, not urgent, just good hygiene before real customer
-data lands in that database.
 
 ## Deploying to Render
 
