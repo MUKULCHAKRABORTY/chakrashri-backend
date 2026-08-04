@@ -138,12 +138,6 @@ call `/api/payments/create-order` on the live URL, complete checkout with a
 confirm the webhook fires and `/api/payments/verify` marks the order paid. This closes the last
 gap noted in Section 13 of the audit report.
 
-**A note on the free tier:** Render's free web-service tier spins down after inactivity, adding a
-delay before the first request wakes it back up — this can cause Razorpay's webhook to time out
-waiting for a response. `render.yaml` above specifies the `starter` (paid) plan for exactly this
-reason; downgrade to `free` only for early testing, not for anything meant to reliably receive
-webhooks.
-
 ## What else you need to obtain before going live
 
 1. **PostgreSQL database** — already done (Neon, verified working).
