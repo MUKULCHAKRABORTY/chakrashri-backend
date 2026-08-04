@@ -1,5 +1,7 @@
 # Chakrashri Backend — Production API
 
+[🚀 **View Live Demo**](https://chakrashri.netlify.app)
+
 This is a real, server-side backend for the Chakrashri storefront: Node.js + Express + PostgreSQL,
 with genuine Razorpay payment processing, hashed-password authentication, and role-based admin access.
 It's built to replace the browser-only demo (which used client-side storage and a hardcoded admin
