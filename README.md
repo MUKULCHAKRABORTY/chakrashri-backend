@@ -13,6 +13,28 @@ password) with something that can safely take real orders and real money.
 - **Payments:** Razorpay (order creation, signature verification, webhooks)
 - **Auth:** JWT + bcrypt password hashing, role-based access control (customer / staff / admin)
 
+## 📐 System Architecture
+
+```mermaid
+graph TD
+    Client[Netlify Frontend / Client] -->|REST API / JWT Auth| Express[Node.js / Express API]
+    Express -->|SELECT FOR UPDATE / Atomic Stock Locks| Postgres[(Neon PostgreSQL DB)]
+    Express -->|Create Order / Signature Check| Razorpay[Razorpay Payment Gateway]
+    Razorpay -->|Server-to-Server Webhook| Express
+// Response (200 OK)
+{
+  "success": true,
+  "razorpayOrderId": "order_Nz1234567890",
+  "amountPaise": 149900,
+  "currency": "INR"
+}
+// Response (200 OK)
+{
+  "success": true,
+  "message": "Payment verified and order confirmed",
+  "orderId": "ord_987654"
+}
+
 ## Getting started
 
 ```bash
