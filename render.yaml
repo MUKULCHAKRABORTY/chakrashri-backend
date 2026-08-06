@@ -3,7 +3,7 @@ services:
     name: chakrashri-api
     runtime: node
     region: ohio # matches your Neon database (us-east-2) — avoids unnecessary cross-country latency on every DB round-trip
-    plan: starter # cheapest paid tier — avoids free-tier cold starts, which delay Razorpay webhook delivery
+    plan: free # cheapest paid tier — avoids free-tier cold starts, which delay Razorpay webhook delivery
     buildCommand: npm install
     startCommand: npm start
     healthCheckPath: /api/health
@@ -36,19 +36,3 @@ services:
         value: "900000"
       - key: RATE_LIMIT_MAX
         value: "200"
-
-  - type: cron
-    name: chakrashri-expiry-sweep
-    runtime: node
-    region: ohio
-    plan: starter
-    schedule: "*/10 * * * *" # every 10 minutes
-    buildCommand: npm install
-    startCommand: node scripts/release-expired-orders.js
-    envVars:
-      - key: DATABASE_URL
-        sync: false
-      - key: DB_SSL
-        value: "true"
-      - key: ORDER_RESERVATION_EXPIRY_MINUTES
-        value: "30"
