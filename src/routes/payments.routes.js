@@ -4,92 +4,45 @@ const razorpay = require('../config/razorpay');
 const db = require('../config/db');
 const { requireAuth } = require('../middleware/auth');
 const { restoreOrderStock } = require('../utils/stock');
+const { timingSafeEqualHex } = require('../utils/crypto');
+const { reserveStockAndCreateOrder } = require('../utils/orders');
+const { sendOrderConfirmation } = require('../utils/mailer');
 
 const router = express.Router();
 
 /**
- * STEP 1 — Create a Razorpay order server-side.
- * The front end calls this AFTER building the cart, gets back an order_id,
- * and opens Razorpay Checkout with it. Amount is always recalculated here
- * from the database — never trust a total sent by the client.
+ * STEP 1 — Create an order server-side, for EITHER payment method.
+ * The front end calls this single endpoint after building the cart,
+ * choosing 'razorpay' or 'cod' via `paymentMethod` in the request body.
+ *
+ * IMPORTANT: this used to be two separate endpoints (/create-order always
+ * hardcoded to Razorpay, and a second /create-cod-order for COD) — but the
+ * front end only ever calls this one URL and passes `paymentMethod` in the
+ * body to choose between them. That mismatch meant selecting Cash on
+ * Delivery on the live site still silently went through the Razorpay path,
+ * since this endpoint never looked at `paymentMethod` at all. Consolidated
+ * into one endpoint that actually branches on it, matching what the front
+ * end sends.
  */
 router.post('/create-order', requireAuth, async (req, res) => {
-  const { items, shippingAddressId } = req.body; // items: [{ productId, quantity }]
-  if (!Array.isArray(items) || !items.length) {
-    return res.status(400).json({ error: 'Cart is empty.' });
-  }
-  for (const item of items) {
-    if (
-      !item ||
-      typeof item.productId !== 'string' ||
-      !Number.isInteger(item.quantity) ||
-      item.quantity < 1 ||
-      item.quantity > 50
-    ) {
-      return res.status(400).json({ error: 'Cart contains an invalid item or quantity.' });
-    }
+  const { items, shippingAddressId, paymentMethod } = req.body; // items: [{ productId, quantity }]
+  const method = paymentMethod === 'cod' ? 'cod' : 'razorpay';
+
+  // A shipping address is mandatory for a physical-goods order — without
+  // one, a fully paid order has nowhere to be shipped. /api/addresses now
+  // exists specifically so the front end can create one before reaching here.
+  if (!shippingAddressId || typeof shippingAddressId !== 'string') {
+    return res.status(400).json({ error: 'A shipping address is required to place an order.' });
   }
 
   let orderId, orderNumber, totalPaise;
   try {
-    const result = await db.withTransaction(async (client) => {
-      const productIds = items.map((i) => i.productId);
-      const { rows: products } = await client.query(
-        `SELECT id, name, price_paise, stock_qty, gst_rate FROM products
-         WHERE id = ANY($1) AND is_active = true FOR UPDATE`,
-        [productIds]
-      );
-
-      let subtotalPaise = 0;
-      const orderItems = items.map((item) => {
-        const product = products.find((p) => p.id === item.productId);
-        if (!product) throw Object.assign(new Error('One of the items in your cart is no longer available.'), { status: 400 });
-        if (product.stock_qty < item.quantity) {
-          throw Object.assign(new Error(`"${product.name}" only has ${product.stock_qty} left in stock.`), { status: 409 });
-        }
-        const lineTotal = product.price_paise * item.quantity;
-        subtotalPaise += lineTotal;
-        return {
-          productId: product.id,
-          name: product.name,
-          unitPricePaise: product.price_paise,
-          quantity: item.quantity,
-          lineTotalPaise: lineTotal,
-          gstRate: product.gst_rate
-        };
-      });
-
-      for (const item of orderItems) {
-        await client.query('UPDATE products SET stock_qty = stock_qty - $1 WHERE id = $2', [
-          item.quantity,
-          item.productId
-        ]);
-      }
-
-      const shippingPaise = subtotalPaise >= 99900 ? 0 : 7900;
-      const gstPaise = Math.round(orderItems.reduce((sum, i) => sum + (i.lineTotalPaise * i.gstRate) / 100, 0));
-      const total = subtotalPaise + shippingPaise + gstPaise;
-      const number = 'CHK-' + new Date().getFullYear() + '-' + Date.now().toString().slice(-6);
-
-      const { rows: orderRows } = await client.query(
-        `INSERT INTO orders
-          (order_number, user_id, status, subtotal_paise, shipping_paise, gst_paise, total_paise,
-           shipping_address_id, payment_method)
-         VALUES ($1,$2,'pending',$3,$4,$5,$6,$7,'razorpay')
-         RETURNING id`,
-        [number, req.user.id, subtotalPaise, shippingPaise, gstPaise, total, shippingAddressId || null]
-      );
-      const id = orderRows[0].id;
-
-      for (const item of orderItems) {
-        await client.query(
-          `INSERT INTO order_items (order_id, product_id, product_name_snapshot, unit_price_paise, quantity, line_total_paise)
-           VALUES ($1,$2,$3,$4,$5,$6)`,
-          [id, item.productId, item.name, item.unitPricePaise, item.quantity, item.lineTotalPaise]
-        );
-      }
-
-      return { id, number, total };
+    const result = await reserveStockAndCreateOrder({
+      userId: req.user.id,
+      items,
+      shippingAddressId,
+      paymentMethod: method,
+      initialStatus: method === 'cod' ? 'processing' : 'pending' // COD has nothing to wait for; Razorpay awaits payment
     });
     orderId = result.id;
     orderNumber = result.number;
@@ -98,6 +51,32 @@ router.post('/create-order', requireAuth, async (req, res) => {
     return res.status(err.status || 400).json({ error: err.message || 'Could not create order.' });
   }
 
+  // ---------- Cash on Delivery: nothing more to do, order is placed ----------
+  if (method === 'cod') {
+    try {
+      const { rows: fullOrder } = await db.query(
+        `SELECT o.order_number, o.total_paise, u.email AS customer_email, u.name AS customer_name
+         FROM orders o JOIN users u ON u.id = o.user_id WHERE o.id = $1`,
+        [orderId]
+      );
+      const { rows: orderItems } = await db.query(
+        'SELECT product_name_snapshot, quantity, line_total_paise FROM order_items WHERE order_id = $1',
+        [orderId]
+      );
+      if (fullOrder.length) sendOrderConfirmation(fullOrder[0], orderItems).catch(() => {});
+    } catch {
+      // Confirmation email failure must never fail an already-placed COD order.
+    }
+    return res.json({
+      requiresRazorpay: false,
+      orderId,
+      orderNumber,
+      totalPaise,
+      paymentMethod: 'cod'
+    });
+  }
+
+  // ---------- Razorpay: create the gateway order and hand back checkout details ----------
   try {
     const razorpayOrder = await razorpay.orders.create({
       amount: totalPaise,
@@ -107,6 +86,7 @@ router.post('/create-order', requireAuth, async (req, res) => {
     });
     await db.query('UPDATE orders SET razorpay_order_id = $1 WHERE id = $2', [razorpayOrder.id, orderId]);
     res.json({
+      requiresRazorpay: true,
       orderId,
       orderNumber,
       razorpayOrderId: razorpayOrder.id,
@@ -136,7 +116,7 @@ router.post('/verify', requireAuth, async (req, res) => {
     .update(`${razorpay_order_id}|${razorpay_payment_id}`)
     .digest('hex');
 
-  if (expectedSignature !== razorpay_signature) {
+  if (!timingSafeEqualHex(expectedSignature, razorpay_signature)) {
     return res.status(400).json({ error: 'Payment verification failed. Signature mismatch.' });
   }
 
@@ -168,7 +148,20 @@ router.post('/verify', requireAuth, async (req, res) => {
       return res.status(409).json({ error: `Order is in state "${current[0]?.status}" and cannot be confirmed.` });
     }
 
-    // TODO: trigger order confirmation email/SMS (utils/mailer.js, utils/sms.js)
+    // Send confirmation email — failure here must never fail the response,
+    // since the payment itself already succeeded; sendOrderConfirmation
+    // fails safe internally and just logs if SMTP isn't configured/down.
+    const { rows: fullOrder } = await db.query(
+      `SELECT o.order_number, o.total_paise, u.email AS customer_email, u.name AS customer_name
+       FROM orders o JOIN users u ON u.id = o.user_id WHERE o.id = $1`,
+      [rows[0].id]
+    );
+    const { rows: orderItems } = await db.query(
+      'SELECT product_name_snapshot, quantity, line_total_paise FROM order_items WHERE order_id = $1',
+      [rows[0].id]
+    );
+    if (fullOrder.length) sendOrderConfirmation(fullOrder[0], orderItems).catch(() => {});
+
     res.json({ success: true, orderNumber: rows[0].order_number });
   } catch (err) {
     res.status(500).json({ error: 'Could not finalize order.' });
@@ -190,12 +183,12 @@ router.post('/webhook', async (req, res) => {
     .update(req.body) // raw Buffer
     .digest('hex');
 
-  if (signature !== expected) {
+  if (!timingSafeEqualHex(expected, signature)) {
     return res.status(400).json({ error: 'Invalid webhook signature.' });
   }
 
-  const event = JSON.parse(req.body.toString());
   try {
+    const event = JSON.parse(req.body.toString());
     if (event.event === 'payment.captured') {
       const rzpOrderId = event.payload.payment.entity.order_id;
       await db.query(

@@ -1,7 +1,5 @@
 # Chakrashri Backend — Production API
 
-[🚀 **View Live Demo**](https://chakrashri.netlify.app)
-
 This is a real, server-side backend for the Chakrashri storefront: Node.js + Express + PostgreSQL,
 with genuine Razorpay payment processing, hashed-password authentication, and role-based admin access.
 It's built to replace the browser-only demo (which used client-side storage and a hardcoded admin
@@ -12,39 +10,6 @@ password) with something that can safely take real orders and real money.
 - **Database:** PostgreSQL (any managed host works: Railway, Render, AWS RDS, Supabase, DigitalOcean)
 - **Payments:** Razorpay (order creation, signature verification, webhooks)
 - **Auth:** JWT + bcrypt password hashing, role-based access control (customer / staff / admin)
-
-## 📐 System Architecture
-
-```mermaid
-graph TD
-    Client[Netlify Frontend / Client] -->|REST API / JWT Auth| Express[Node.js / Express API]
-    Express -->|SELECT FOR UPDATE / Atomic Stock Locks| Postgres[(Neon PostgreSQL DB)]
-    Express -->|Create Order / Signature Check| Razorpay[Razorpay Payment Gateway]
-    Razorpay -->|Server-to-Server Webhook| Express
-```
-
-## 🔌 Core API Endpoints
-
-### 1. Create Payment Order
-`POST /api/payments/create-order`
-```json
-{
-  "success": true,
-  "razorpayOrderId": "order_Nz1234567890",
-  "amountPaise": 149900,
-  "currency": "INR"
-}
-```
-
-### 2. Payment Verification
-`POST /api/payments/verify`
-```json
-{
-  "success": true,
-  "message": "Payment verified and order confirmed",
-  "orderId": "ord_987654"
-}
-```
 
 ## Getting started
 
@@ -94,6 +59,14 @@ with a real cart, open the returned `razorpayOrderId` in Razorpay Checkout using
 [Razorpay test card](https://razorpay.com/docs/payments/payments/test-card-upi-details/), and
 confirm `/api/payments/verify` returns success and the order's `stock_qty` decremented correctly.
 
+### A note on the credentials you shared
+
+The database URL, JWT secret, and Razorpay test keys you provided are now in this chat's history.
+The Razorpay keys are test-mode (`rzp_test_...`), so there's no real-money exposure there. For the
+Neon database password specifically, standard practice once everything's verified working is to
+rotate it in the Neon dashboard and store the new one only in your hosting provider's environment
+variables (not back in a chat) — a small step, not urgent, just good hygiene before real customer
+data lands in that database.
 
 ## Deploying to Render
 
@@ -165,6 +138,12 @@ call `/api/payments/create-order` on the live URL, complete checkout with a
 confirm the webhook fires and `/api/payments/verify` marks the order paid. This closes the last
 gap noted in Section 13 of the audit report.
 
+**A note on the free tier:** Render's free web-service tier spins down after inactivity, adding a
+delay before the first request wakes it back up — this can cause Razorpay's webhook to time out
+waiting for a response. `render.yaml` above specifies the `starter` (paid) plan for exactly this
+reason; downgrade to `free` only for early testing, not for anything meant to reliably receive
+webhooks.
+
 ## What else you need to obtain before going live
 
 1. **PostgreSQL database** — already done (Neon, verified working).
@@ -228,12 +207,14 @@ rather not manage a crontab directly.
 These need product/business decisions from you, not just code, so they're marked `// TODO` in the
 relevant files rather than guessed at:
 
-- Transactional email/SMS content and provider (`utils/mailer.js` stub not yet built)
-- Invoice PDF generation with correct GST breakdown
-- Practitioner (pandit/astrologer) accounts and real-time availability calendar
-- Shipping rate calculation and courier API integration
-- Refund workflow via Razorpay's Refund API
-- Image upload pipeline (Cloudinary/S3) for the admin product form
+- SMS/WhatsApp notifications (email is built — see "Round 4" below — but SMS/WhatsApp needs a
+  provider account, e.g. MSG91/Twilio/Gupshup; `.env.example` has placeholder keys for this)
+- Invoice PDF generation with correct GST breakdown (the data — `hsn_code`, `gst_rate`,
+  `gst_paise` — is all captured; only the PDF rendering step is left)
+- Practitioner (pandit/astrologer) accounts and real-time availability calendar (bookings are
+  captured and staff can confirm/complete them, but there's no assignment-to-a-specific-person system yet)
+- Shipping rate calculation and courier API integration (tracking number/courier name fields
+  exist on orders; the actual rate lookup and courier API call are not wired up)
 
 ## Folder structure
 
@@ -241,11 +222,130 @@ relevant files rather than guessed at:
 src/
   config/       # db + razorpay clients
   middleware/   # auth (JWT + RBAC)
-  routes/       # auth, products, payments, bookings, admin
-  utils/        # stock.js — shared stock reservation/restoration logic
+  routes/       # auth, products, payments, bookings, admin, customer
+  utils/        # stock.js, orders.js, crypto.js, cors.js, mailer.js — see "Round 4" below
   server.js
-migrations/     # SQL schema
+migrations/     # SQL schema (001 initial, 002 constraints + refund columns, 003 password reset)
 scripts/        # create-admin.js, run-migrations.js, test-db-connection.js,
                 # test-razorpay-connection.js, release-expired-orders.js
-test/           # unit.test.js — 21 tests, no DB/network required
+test/           # unit.test.js — tests against the REAL application modules, see "Round 4" below
 ```
+
+## Round 5 — Admin Dashboard, Missing Addresses Endpoint, and a Critical Checkout Bug
+
+Two things were reported as broken on the live site: no visible/working admin dashboard, and
+checkout not completing properly. Investigating both against the actual deployed `index.html`
+(not guessed at) found the real causes:
+
+**Root cause of "admin dashboard not visible":** the admin panel built into the original
+`index.html` prototype was never connected to the real backend — it only writes to browser-local
+storage (`window.storage`), using fake locally-generated IDs like `usr-172847...` instead of real
+database UUIDs. Any product "added" through it never reached Postgres and was silently overwritten
+the next time the storefront loaded real data from `/api/products`. This is also very likely why
+the storefront had little or nothing real to sell: **a genuinely separate, professional admin
+dashboard (`admin.html`) has been built** — a full single-page app talking directly to the real,
+JWT-authenticated backend API, covering: a live-data overview with revenue/order-status charts,
+full product management (create/edit/delete/deactivate, image management, stock, GST/HSN fields),
+order management (status pipeline, tracking numbers, real Razorpay refunds), puja and astrology
+booking management (including birth-detail access for staff conducting consultations), a customer
+list with lifetime value, and a full audit log viewer. See "Deploying the admin dashboard" below.
+The old admin panel inside `index.html` should be considered retired — using it will not affect
+the real store, which is more confusing than it being simply broken, so removing or hiding its
+entry point in `index.html` is recommended (not done automatically here, since that file is large
+and out of this backend repo's scope to edit blindly).
+
+**A critical, live checkout bug:** the storefront's checkout code calls a single endpoint
+(`POST /api/payments/create-order`) and sends `paymentMethod: 'cod'` or `'razorpay'` in the body to
+choose between them. The backend, however, had two separate endpoints — `/create-order` always
+hardcoded to Razorpay regardless of what was sent, and a second `/create-cod-order` that the front
+end never actually called. **The practical effect: selecting "Cash on Delivery" on the live site
+still silently opened the Razorpay payment popup**, because the backend never looked at
+`paymentMethod` at all. Fixed by consolidating into the one endpoint the front end actually calls,
+branching correctly on `paymentMethod`.
+
+**A missing endpoint that would have meant undeliverable orders:** the checkout flow calls
+`POST /api/addresses` to save the shipping address before creating the order — but this endpoint
+did not exist anywhere in the backend. It failed silently (caught and ignored by the front end),
+meaning a fully paid order could be created with `shipping_address_id = NULL` — a paid order with
+nowhere to ship the product. A real address CRUD endpoint (`src/routes/addresses.routes.js`) now
+exists, and — since the endpoint now works — a shipping address is a hard requirement for placing
+any order, rather than a silently-optional field.
+
+### Deploying the admin dashboard
+
+`admin.html` (delivered alongside this backend) is a separate static file — deploy it to the same
+Netlify site as a second page (e.g. `https://chakrashri.netlify.app/admin.html`), the same way
+`index.html` is deployed; it needs no build step and no server changes beyond what's already in
+this repo. It reads `window.__API_BASE__` the same way `index.html` does, so if that's already set
+correctly in your Netlify deployment, no further configuration is needed. Log in with the admin
+account created via `scripts/create-admin.js`.
+
+## Round 4 — Independent Audit Response
+
+An independent technical audit of this codebase (conducted separately, not by the same process
+that built it) found several real issues — most seriously, a bug where the same product listed
+twice in one cart could pass two independent stock checks and oversell, because the earlier test
+suite tested a reimplementation of the cart logic rather than the actual production code. That
+specific criticism was taken seriously and addressed structurally, not just patched:
+
+**Critical fixes:**
+- **Duplicate cart item oversell** — cart items are now aggregated by product ID *before* any
+  stock check, inside a single locked database transaction (`src/utils/orders.js`,
+  `validateAndAggregateCart`). The stock-decrement `UPDATE` also now has a `WHERE stock_qty >= $1`
+  guard as a second, independent backstop — even if application logic were ever wrong again, the
+  database itself refuses to let stock go negative.
+- **Timing-unsafe signature comparison** — `/verify` and the Razorpay webhook previously compared
+  HMAC signatures with plain `!==`, which leaks microsecond timing differences based on where the
+  first mismatched byte occurs. Replaced with `crypto.timingSafeEqual` (`src/utils/crypto.js`).
+- **Admin login validation bug** — `express-validator`'s rules were declared on the admin login
+  route but the code never actually checked `validationResult()`, so malformed input fell through
+  to the database query instead of getting a clean 400.
+- **Login timing side-channel (user enumeration)** — a login attempt for a non-existent email
+  returned instantly, while a wrong password for a real account spent ~100ms+ in `bcrypt.compare`.
+  Both paths now always run `bcrypt.compare` (against a precomputed dummy hash when no user is
+  found), so response time no longer reveals which emails have accounts.
+- **Refunds didn't actually refund anything** — marking an order "refunded" only changed a status
+  column; the customer's money never moved. The admin order-status endpoint now calls Razorpay's
+  real Refunds API and records the resulting `refund_id` (migration 002). A paid order can no
+  longer be silently "cancelled" either — that combination used to restore stock and hide the
+  order while Razorpay still showed the payment as captured, meaning a customer could pay and the
+  order would just vanish from view with no refund. Cancellation is now blocked once money has
+  moved; "refunded" is the only path back, and it actually returns the money.
+
+**Also fixed:** `trust proxy` wasn't set (meant the login rate limiter could have applied to
+Render's proxy IP for *everyone* combined, not per-visitor); no graceful shutdown (in-flight
+checkouts holding a database lock could be cut off mid-transaction during a Render redeploy);
+`DB_SSL` was hardcoded to skip certificate verification (`rejectUnauthorized: false`) even though
+Neon's certificates are publicly trusted and don't need that; JWT verification didn't pin the
+signing algorithm; order numbers used low-entropy trailing timestamp digits that could collide
+under real concurrent traffic (now high-entropy random with a retry-once fallback);
+`create-admin.js` always exited `0` even on failure, which would look like success in a deploy
+script; `render.yaml` didn't pin a region (now `ohio`, matching Neon's `us-east-2`); database-level
+`CHECK` constraints were added as a backstop against negative prices/stock and invalid status
+values, independent of whatever application code does (migration 002); `multer` and `uuid` were
+listed as dependencies but never actually used anywhere in the code, and `multer` specifically had
+known vulnerabilities flagged by `npm install` — both removed.
+
+**New, previously missing functionality:** password reset (`/api/auth/forgot-password`,
+`/api/auth/reset-password` — tokens are stored only as a SHA-256 hash, never in plain text, expire
+in 30 minutes, and are single-use); customer-facing order and booking history
+(`/api/customer/orders`, `/api/customer/bookings/*` — this route file existed from earlier work
+but was never actually mounted in `server.js`, so it was unreachable dead code until this pass);
+staff endpoints to actually view astrology booking details and update booking status (previously,
+bookings could be created but staff had no way to retrieve the details needed to conduct a
+consultation, or mark anything confirmed/completed); Cash-on-Delivery as a full second checkout
+path sharing the same stock-reservation logic as Razorpay; order-confirmation and
+booking-confirmation emails (`src/utils/mailer.js` — fails safe and just logs if SMTP isn't
+configured, never blocks the underlying order/booking from succeeding); admin image management via
+URL rather than file upload (Render's disk doesn't persist across deploys, so a local-file-upload
+endpoint would have silently lost every image on the next deploy — this sidesteps that entirely).
+
+**Test suite rebuilt to test the real code, not a copy of it.** This directly addresses the
+audit's central criticism. The suite now imports the actual `src/utils/*.js` modules rather than
+reimplementing their logic locally, and includes a genuine end-to-end test: the real
+`reserveStockAndCreateOrder` function, run against a mocked (but behaviorally accurate) database
+client, proving the exact duplicate-cart-item scenario is rejected before any stock is touched.
+This was verified two ways, not just written and assumed correct: run as-is (31/31 pass), then the
+aggregation fix was deliberately reintroduced as broken and the suite was re-run to confirm it
+correctly fails — then the fix was restored and the suite re-run again to confirm it passes. Both
+the pure-logic test and the mocked end-to-end test caught the reintroduced bug.

@@ -165,4 +165,43 @@ router.delete('/:id', requireAuth, requireRole('admin'), async (req, res) => {
   }
 });
 
+// ---------- Admin: add a product image ----------
+// URL-based rather than file upload: Render's local disk doesn't persist
+// across deploys, so a local-file upload endpoint would silently lose every
+// image on the next deploy. Until real object storage (Cloudinary/S3, see
+// README TODOs) is wired up, admins host images elsewhere (e.g. a CDN, or
+// even a quick upload to Cloudinary's free tier manually) and paste the URL.
+router.post('/:id/images', requireAuth, requireRole('admin', 'staff'), async (req, res) => {
+  const { url, sortOrder } = req.body;
+  if (typeof url !== 'string' || !/^https?:\/\//.test(url)) {
+    return res.status(400).json({ error: 'A valid image URL is required.' });
+  }
+  try {
+    const { rows: productRows } = await db.query('SELECT id FROM products WHERE id = $1', [req.params.id]);
+    if (!productRows.length) return res.status(404).json({ error: 'Product not found.' });
+
+    const result = await db.query(
+      'INSERT INTO product_images (product_id, url, sort_order) VALUES ($1, $2, $3) RETURNING *',
+      [req.params.id, url, Number.isInteger(sortOrder) ? sortOrder : 0]
+    );
+    res.status(201).json({ image: result.rows[0] });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not add image.' });
+  }
+});
+
+// ---------- Admin: remove a product image ----------
+router.delete('/:id/images/:imageId', requireAuth, requireRole('admin', 'staff'), async (req, res) => {
+  try {
+    const result = await db.query(
+      'DELETE FROM product_images WHERE id = $1 AND product_id = $2 RETURNING id',
+      [req.params.imageId, req.params.id]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Image not found on this product.' });
+    res.status(204).send();
+  } catch (err) {
+    res.status(500).json({ error: 'Could not remove image.' });
+  }
+});
+
 module.exports = router;

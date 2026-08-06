@@ -1,156 +1,317 @@
 /**
- * Standalone tests for the pieces of payments.routes.js that don't require
- * a live Postgres connection or real Razorpay credentials: signature
- * verification (pure crypto) and the subtotal/shipping/GST math (pure
- * arithmetic). Run: node test/unit.test.js
+ * Tests the REAL application modules — not reimplementations of their logic.
+ * This distinction matters: an earlier version of this suite reimplemented
+ * signature verification and cart validation as local copies, which meant a
+ * genuine bug in the real create-order code (the same product listed twice
+ * in one cart could pass two independent stock checks and oversell) went
+ * completely undetected, because the tests were never actually exercising
+ * the code that runs in production. Every test below either imports the
+ * real module directly, or — for the one function that depends on a live
+ * database (reserveStockAndCreateOrder) — runs the REAL function against a
+ * manually mocked database client, using only Node's built-in require.cache
+ * (no test framework or extra dependency needed).
+ *
+ * Run: node test/unit.test.js
  */
-const crypto = require('crypto');
 const assert = require('assert');
+const path = require('path');
 
-let passed = 0, failed = 0;
-function test(name, fn) {
-  try { fn(); console.log('  PASS -', name); passed++; }
-  catch (e) { console.log('  FAIL -', name, '\n        ', e.message); failed++; }
-}
+const queue = [];
+function section(name) { queue.push({ type: 'section', name }); }
+function test(name, fn) { queue.push({ type: 'test', name, fn }); }
 
-console.log('\n[1] Razorpay HMAC signature verification');
+// ============================================================
+// [1] Real signature verification: src/utils/crypto.js
+// ============================================================
+section('[1] timingSafeEqualHex — the REAL comparison used by /verify and /webhook');
 {
+  const crypto = require('crypto');
+  const { timingSafeEqualHex } = require('../src/utils/crypto');
+
   const secret = 'test_secret_key';
-  function verify(orderId, paymentId, signature) {
-    const expected = crypto.createHmac('sha256', secret).update(`${orderId}|${paymentId}`).digest('hex');
-    return expected === signature;
-  }
   const orderId = 'order_ABC123';
   const paymentId = 'pay_XYZ789';
   const validSig = crypto.createHmac('sha256', secret).update(`${orderId}|${paymentId}`).digest('hex');
+  const otherSig = crypto.createHmac('sha256', secret).update(`order_DIFFERENT|${paymentId}`).digest('hex');
 
   test('accepts a genuine signature', () => {
-    assert.strictEqual(verify(orderId, paymentId, validSig), true);
+    assert.strictEqual(timingSafeEqualHex(validSig, validSig), true);
   });
   test('rejects a tampered signature', () => {
-    assert.strictEqual(verify(orderId, paymentId, 'deadbeef' + validSig.slice(8)), false);
+    assert.strictEqual(timingSafeEqualHex(validSig, 'deadbeef' + validSig.slice(8)), false);
   });
-  test('rejects a signature computed for a different order id (replay across orders)', () => {
-    const otherSig = crypto.createHmac('sha256', secret).update(`order_DIFFERENT|${paymentId}`).digest('hex');
-    assert.strictEqual(verify(orderId, paymentId, otherSig), false);
+  test('rejects a signature computed for a different order id', () => {
+    assert.strictEqual(timingSafeEqualHex(validSig, otherSig), false);
   });
-  test('rejects empty signature', () => {
-    assert.strictEqual(verify(orderId, paymentId, ''), false);
+  test('rejects empty signature without throwing', () => {
+    assert.strictEqual(timingSafeEqualHex(validSig, ''), false);
+  });
+  test('rejects non-string input without throwing', () => {
+    assert.strictEqual(timingSafeEqualHex(validSig, null), false);
+    assert.strictEqual(timingSafeEqualHex(undefined, validSig), false);
+  });
+  test('rejects non-hex garbage without throwing', () => {
+    assert.strictEqual(timingSafeEqualHex(validSig, 'not-hex-at-all-zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz'), false);
+  });
+  test('an early-byte mismatch and a late-byte mismatch both correctly return false via the same code path', () => {
+    // Not a rigorous timing-attack proof (that needs a controlled benchmark
+    // environment) — just confirms both cases are handled by timingSafeEqual
+    // itself rather than a short-circuiting comparison.
+    const earlyMismatch = 'f' + validSig.slice(1);
+    const lateMismatch = validSig.slice(0, -1) + (validSig.slice(-1) === 'f' ? 'e' : 'f');
+    assert.strictEqual(timingSafeEqualHex(validSig, earlyMismatch), false);
+    assert.strictEqual(timingSafeEqualHex(validSig, lateMismatch), false);
   });
 }
 
-console.log('\n[2] Order total calculation (subtotal + shipping + GST, integer paise)');
+// ============================================================
+// [2] Real cart validation/aggregation: src/utils/orders.js
+// ============================================================
+section('[2] validateAndAggregateCart — the REAL function create-order and create-cod-order both call');
 {
-  function calcTotal(items) {
-    // Mirrors the logic in payments.routes.js create-order
-    let subtotalPaise = 0;
-    const lines = items.map((i) => {
-      const lineTotal = i.pricePaise * i.quantity;
-      subtotalPaise += lineTotal;
-      return { ...i, lineTotal };
-    });
-    const shippingPaise = subtotalPaise >= 99900 ? 0 : 7900;
-    const gstPaise = Math.round(lines.reduce((sum, i) => sum + (i.lineTotal * i.gstRate) / 100, 0));
-    return { subtotalPaise, shippingPaise, gstPaise, totalPaise: subtotalPaise + shippingPaise + gstPaise };
-  }
+  const { validateAndAggregateCart } = require('../src/utils/orders');
+
+  test('rejects empty cart', () => {
+    assert.throws(() => validateAndAggregateCart([]), /Cart is empty/);
+  });
+  test('rejects negative quantity', () => {
+    assert.throws(() => validateAndAggregateCart([{ productId: 'p1', quantity: -1 }]), /invalid item or quantity/);
+  });
+  test('rejects zero quantity', () => {
+    assert.throws(() => validateAndAggregateCart([{ productId: 'p1', quantity: 0 }]), /invalid item or quantity/);
+  });
+  test('rejects non-integer quantity', () => {
+    assert.throws(() => validateAndAggregateCart([{ productId: 'p1', quantity: 1.5 }]), /invalid item or quantity/);
+  });
+  test('rejects missing productId', () => {
+    assert.throws(() => validateAndAggregateCart([{ quantity: 1 }]), /invalid item or quantity/);
+  });
+  test('accepts a normal valid cart, unchanged', () => {
+    const result = validateAndAggregateCart([{ productId: 'p1', quantity: 2 }]);
+    assert.deepStrictEqual(result, [{ productId: 'p1', quantity: 2 }]);
+  });
+  test('THE BUG: same product listed twice is aggregated into one entry with the summed quantity', () => {
+    const result = validateAndAggregateCart([
+      { productId: 'p1', quantity: 2 },
+      { productId: 'p1', quantity: 3 }
+    ]);
+    assert.strictEqual(result.length, 1, 'must collapse to exactly one entry per product');
+    assert.strictEqual(result[0].quantity, 5, 'quantities must be summed, not just the last one kept');
+  });
+  test('aggregation rejects the cart if the SUMMED quantity exceeds the per-item cap', () => {
+    // 30 + 25 = 55 > 50 cap. Each individual line is under the cap, so this
+    // must be caught by the post-aggregation check, not the pre-aggregation one.
+    assert.throws(
+      () => validateAndAggregateCart([{ productId: 'p1', quantity: 30 }, { productId: 'p1', quantity: 25 }]),
+      /invalid item or quantity/
+    );
+  });
+  test('different products are kept separate, not merged together', () => {
+    const result = validateAndAggregateCart([
+      { productId: 'p1', quantity: 2 },
+      { productId: 'p2', quantity: 3 }
+    ]);
+    assert.strictEqual(result.length, 2);
+  });
+}
+
+// ============================================================
+// [3] Real order-totals math: src/utils/orders.js
+// ============================================================
+section('[3] calculateOrderTotals — the REAL money math (subtotal + shipping + GST, integer paise)');
+{
+  const { calculateOrderTotals } = require('../src/utils/orders');
 
   test('single item under free-shipping threshold gets shipping charged', () => {
-    const r = calcTotal([{ pricePaise: 50000, quantity: 1, gstRate: 3 }]); // ₹500
+    const r = calculateOrderTotals([{ lineTotalPaise: 50000, gstRate: 3 }]); // ₹500
     assert.strictEqual(r.subtotalPaise, 50000);
     assert.strictEqual(r.shippingPaise, 7900);
-    assert.strictEqual(r.gstPaise, 1500); // 3% of 50000
+    assert.strictEqual(r.gstPaise, 1500);
     assert.strictEqual(r.totalPaise, 50000 + 7900 + 1500);
   });
-
   test('order at/above ₹999 gets free shipping', () => {
-    const r = calcTotal([{ pricePaise: 99900, quantity: 1, gstRate: 3 }]);
+    const r = calculateOrderTotals([{ lineTotalPaise: 99900, gstRate: 3 }]);
     assert.strictEqual(r.shippingPaise, 0);
   });
-
   test('multiple items with different GST rates sum correctly', () => {
-    const r = calcTotal([
-      { pricePaise: 100000, quantity: 2, gstRate: 3 },  // 200000 paise, 3% = 6000
-      { pricePaise: 50000, quantity: 1, gstRate: 5 }    // 50000 paise, 5% = 2500
+    const r = calculateOrderTotals([
+      { lineTotalPaise: 200000, gstRate: 3 },
+      { lineTotalPaise: 50000, gstRate: 5 }
     ]);
     assert.strictEqual(r.subtotalPaise, 250000);
     assert.strictEqual(r.gstPaise, 8500);
-    assert.strictEqual(r.shippingPaise, 0); // over 99900 threshold
+    assert.strictEqual(r.shippingPaise, 0);
   });
-
   test('GST rounds to nearest paise rather than accumulating float drift', () => {
-    const r = calcTotal([{ pricePaise: 3333, quantity: 3, gstRate: 3 }]); // 9999 * 3% = 299.97
+    const r = calculateOrderTotals([{ lineTotalPaise: 9999, gstRate: 3 }]); // 9999 * 3% = 299.97
     assert.strictEqual(r.gstPaise, 300);
   });
 }
 
-console.log('\n[3] Cart input validation (mirrors create-order guard clauses)');
+// ============================================================
+// [4] Real end-to-end reservation logic against a MOCKED database client
+// ============================================================
+section("[4] reserveStockAndCreateOrder — the REAL checkout function, run against a mocked DB client");
 {
-  function validateItems(items) {
-    if (!Array.isArray(items) || !items.length) return { ok: false, error: 'Cart is empty.' };
-    for (const item of items) {
-      if (
-        !item ||
-        typeof item.productId !== 'string' ||
-        !Number.isInteger(item.quantity) ||
-        item.quantity < 1 ||
-        item.quantity > 50
-      ) {
-        return { ok: false, error: 'Cart contains an invalid item or quantity.' };
+  // Manual module mock: inject a fake '../config/db' into require.cache
+  // BEFORE requiring utils/orders.js, so requiring it never needs the real
+  // 'pg' package or a live connection — this exercises the actual
+  // production function end-to-end (aggregation -> stock check -> the
+  // exact UPDATE statements it issues), not a stand-in for it.
+  const ordersModulePath = require.resolve('../src/utils/orders.js');
+  const dbConfigPath = require.resolve(path.join(path.dirname(ordersModulePath), '..', 'config', 'db.js'));
+
+  function makeFakeDb(productsById) {
+    const updateCalls = [];
+    const fakeClient = {
+      async query(sql, params) {
+        if (sql.includes('FOR UPDATE') && sql.includes('SELECT id, name, price_paise')) {
+          const ids = params[0];
+          return { rows: ids.filter((id) => productsById[id]).map((id) => ({ id, ...productsById[id] })) };
+        }
+        if (sql.startsWith('UPDATE products SET stock_qty')) {
+          const [qty, id] = params;
+          updateCalls.push({ id, qty });
+          if (productsById[id].stock_qty >= qty) {
+            productsById[id].stock_qty -= qty;
+            return { rowCount: 1 };
+          }
+          return { rowCount: 0 }; // matches the real WHERE stock_qty >= $1 guard
+        }
+        if (sql.startsWith('INSERT INTO orders')) {
+          return { rows: [{ id: 'order_fake_1', order_number: 'CHK-TEST-0001' }] };
+        }
+        if (sql.startsWith('INSERT INTO order_items')) {
+          return { rows: [] };
+        }
+        throw new Error('Unexpected query in mock: ' + sql);
       }
+    };
+    return { withTransaction: (fn) => fn(fakeClient), updateCalls };
+  }
+
+  async function withMockedDb(fakeDb, fn) {
+    const originalCacheEntry = require.cache[dbConfigPath];
+    require.cache[dbConfigPath] = { id: dbConfigPath, filename: dbConfigPath, loaded: true, exports: fakeDb };
+    delete require.cache[ordersModulePath]; // force orders.js to re-require and pick up the mock
+    try {
+      const orders = require('../src/utils/orders');
+      return await fn(orders);
+    } finally {
+      delete require.cache[ordersModulePath];
+      if (originalCacheEntry) require.cache[dbConfigPath] = originalCacheEntry;
+      else delete require.cache[dbConfigPath];
     }
-    return { ok: true };
   }
 
-  test('rejects empty cart', () => {
-    assert.strictEqual(validateItems([]).ok, false);
+  test('THE BUG, end-to-end: duplicate product in cart issues exactly ONE stock check for the summed quantity, and correctly rejects an oversell instead of allowing it', async () => {
+    const products = { p1: { name: 'Rudraksha Mala', price_paise: 50000, stock_qty: 3, gst_rate: 3 } };
+    const fakeDb = makeFakeDb(products);
+    let threw = false;
+    try {
+      await withMockedDb(fakeDb, (orders) =>
+        orders.reserveStockAndCreateOrder({
+          userId: 'u1',
+          items: [{ productId: 'p1', quantity: 2 }, { productId: 'p1', quantity: 2 }], // 2+2=4 requested, only 3 in stock
+          shippingAddressId: null,
+          paymentMethod: 'cod',
+          initialStatus: 'processing'
+        })
+      );
+    } catch (err) {
+      threw = true;
+      assert.match(err.message, /only has 3 left in stock/);
+    }
+    assert.strictEqual(threw, true, 'must reject an oversell attempt instead of silently succeeding');
+    assert.strictEqual(fakeDb.updateCalls.length, 0, 'no stock should be touched when the aggregated request exceeds availability');
   });
-  test('rejects negative quantity (the bug found in code review)', () => {
-    assert.strictEqual(validateItems([{ productId: 'p1', quantity: -1 }]).ok, false);
-  });
-  test('rejects zero quantity', () => {
-    assert.strictEqual(validateItems([{ productId: 'p1', quantity: 0 }]).ok, false);
-  });
-  test('rejects non-integer quantity (e.g. 1.5)', () => {
-    assert.strictEqual(validateItems([{ productId: 'p1', quantity: 1.5 }]).ok, false);
-  });
-  test('rejects absurdly large quantity (potential abuse/overflow attempt)', () => {
-    assert.strictEqual(validateItems([{ productId: 'p1', quantity: 999999 }]).ok, false);
-  });
-  test('accepts a normal valid cart', () => {
-    assert.strictEqual(validateItems([{ productId: 'p1', quantity: 2 }]).ok, true);
-  });
-  test('rejects missing productId', () => {
-    assert.strictEqual(validateItems([{ quantity: 1 }]).ok, false);
+
+  test('a duplicate cart entry that DOES fit in stock succeeds with exactly one decrement for the combined quantity', async () => {
+    const products = { p1: { name: 'Rudraksha Mala', price_paise: 50000, stock_qty: 10, gst_rate: 3 } };
+    const fakeDb = makeFakeDb(products);
+    const result = await withMockedDb(fakeDb, (orders) =>
+      orders.reserveStockAndCreateOrder({
+        userId: 'u1',
+        items: [{ productId: 'p1', quantity: 3 }, { productId: 'p1', quantity: 2 }], // 3+2=5, 10 in stock
+        shippingAddressId: null,
+        paymentMethod: 'cod',
+        initialStatus: 'processing'
+      })
+    );
+    assert.strictEqual(fakeDb.updateCalls.length, 1, 'must issue exactly one decrement, not two');
+    assert.strictEqual(fakeDb.updateCalls[0].qty, 5, 'the single decrement must be for the SUMMED quantity');
+    assert.strictEqual(products.p1.stock_qty, 5, '10 - 5 = 5 remaining');
+    assert.strictEqual(result.total, 50000 * 5 + 0 + Math.round(50000 * 5 * 0.03));
   });
 }
 
-console.log('\n[4] Stock-restoration idempotency guard (mirrors utils/stock.js logic)');
+// ============================================================
+// [5] Real CORS origin normalization: src/utils/cors.js
+// ============================================================
+section('[5] normalizeOrigin — the REAL function server.js uses for CLIENT_URL (the exact bug hit during deployment)');
 {
-  const STOCK_RESTORED_STATUSES = new Set(['cancelled', 'refunded', 'payment_failed']);
-  function shouldRestore(currentStatus) {
-    return !STOCK_RESTORED_STATUSES.has(currentStatus);
-  }
+  const { normalizeOrigin } = require('../src/utils/cors');
 
-  test('restores stock when order is still pending', () => {
-    assert.strictEqual(shouldRestore('pending'), true);
+  test('strips a single trailing slash — the exact deployment bug hit', () => {
+    assert.strictEqual(normalizeOrigin('https://chakrashri.netlify.app/'), 'https://chakrashri.netlify.app');
   });
-  test('restores stock when order is paid (admin cancels a paid order)', () => {
-    assert.strictEqual(shouldRestore('paid'), true);
+  test('leaves a URL with no trailing slash unchanged', () => {
+    assert.strictEqual(normalizeOrigin('https://chakrashri.netlify.app'), 'https://chakrashri.netlify.app');
   });
-  test('does NOT restore stock twice if already cancelled', () => {
-    assert.strictEqual(shouldRestore('cancelled'), false);
+  test('strips multiple trailing slashes', () => {
+    assert.strictEqual(normalizeOrigin('https://chakrashri.netlify.app///'), 'https://chakrashri.netlify.app');
   });
-  test('does NOT restore stock twice if already refunded', () => {
-    assert.strictEqual(shouldRestore('refunded'), false);
-  });
-  test('does NOT restore stock twice if already payment_failed', () => {
-    assert.strictEqual(shouldRestore('payment_failed'), false);
-  });
-  test('restores stock for an order mid-fulfillment (processing/shipped) that gets cancelled', () => {
-    assert.strictEqual(shouldRestore('processing'), true);
-    assert.strictEqual(shouldRestore('shipped'), true);
+  test('handles empty/undefined without throwing', () => {
+    assert.strictEqual(normalizeOrigin(undefined), '');
+    assert.strictEqual(normalizeOrigin(''), '');
   });
 }
 
-console.log(`\n${passed} passed, ${failed} failed\n`);
-process.exit(failed ? 1 : 0);
+// ============================================================
+// [6] Stock-restoration idempotency: src/utils/stock.js
+// ============================================================
+section("[6] STOCK_RESTORED_STATUSES — the REAL set used by restoreOrderStock's idempotency guard");
+{
+  const { STOCK_RESTORED_STATUSES } = require('../src/utils/stock');
+
+  test('pending orders should still be restorable', () => {
+    assert.strictEqual(STOCK_RESTORED_STATUSES.has('pending'), false);
+  });
+  test('paid orders should still be restorable (admin cancels a paid order)', () => {
+    assert.strictEqual(STOCK_RESTORED_STATUSES.has('paid'), false);
+  });
+  test('already-cancelled orders must not be restored again', () => {
+    assert.strictEqual(STOCK_RESTORED_STATUSES.has('cancelled'), true);
+  });
+  test('already-refunded orders must not be restored again', () => {
+    assert.strictEqual(STOCK_RESTORED_STATUSES.has('refunded'), true);
+  });
+  test('already payment_failed orders must not be restored again', () => {
+    assert.strictEqual(STOCK_RESTORED_STATUSES.has('payment_failed'), true);
+  });
+}
+
+// ============================================================
+// Runner — executes the queued sections/tests IN ORDER, properly awaiting
+// async test functions so a rejected assertion inside one actually fails
+// the suite instead of becoming a silent unhandled rejection.
+// ============================================================
+(async () => {
+  let passed = 0, failed = 0;
+  for (const item of queue) {
+    if (item.type === 'section') {
+      console.log('\n' + item.name);
+      continue;
+    }
+    try {
+      await item.fn();
+      console.log('  PASS -', item.name);
+      passed++;
+    } catch (e) {
+      console.log('  FAIL -', item.name, '\n        ', e.message);
+      failed++;
+    }
+  }
+  console.log(`\n${passed} passed, ${failed} failed\n`);
+  process.exit(failed ? 1 : 0);
+})();

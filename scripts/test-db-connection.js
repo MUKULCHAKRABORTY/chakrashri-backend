@@ -10,7 +10,8 @@ const db = require('../src/config/db');
 
 const EXPECTED_TABLES = [
   'users', 'addresses', 'products', 'product_images', 'orders', 'order_items',
-  'puja_bookings', 'astrology_bookings', 'blog_posts', 'wishlist_items', 'admin_audit_log'
+  'puja_bookings', 'astrology_bookings', 'blog_posts', 'wishlist_items', 'admin_audit_log',
+  'password_reset_tokens' // added by migration 003
 ];
 
 // A subset of columns the application code actually queries/inserts by name.
@@ -21,11 +22,12 @@ const EXPECTED_TABLES = [
 const EXPECTED_COLUMNS = {
   users: ['id', 'email', 'password_hash', 'role', 'is_active'],
   products: ['id', 'sku', 'slug', 'price_paise', 'stock_qty', 'gst_rate', 'is_active'],
-  orders: ['id', 'order_number', 'status', 'total_paise', 'razorpay_order_id', 'razorpay_signature'],
+  orders: ['id', 'order_number', 'status', 'total_paise', 'razorpay_order_id', 'razorpay_signature', 'refund_id', 'refunded_amount_paise'], // last two added by migration 002
   order_items: ['id', 'order_id', 'product_id', 'quantity', 'line_total_paise'],
   puja_bookings: ['id', 'user_id', 'puja_type', 'preferred_date', 'status'],
   astrology_bookings: ['id', 'user_id', 'consultation_mode', 'birth_details', 'status'],
-  admin_audit_log: ['id', 'admin_user_id', 'action', 'entity_type', 'entity_id']
+  admin_audit_log: ['id', 'admin_user_id', 'action', 'entity_type', 'entity_id'],
+  password_reset_tokens: ['id', 'user_id', 'token_hash', 'expires_at', 'used_at']
 };
 
 let failures = 0;

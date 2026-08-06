@@ -2,7 +2,15 @@ const { Pool } = require('pg');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
+  // rejectUnauthorized: true validates the server's TLS certificate against
+  // Node's trusted CA store — Neon (and most managed Postgres providers) use
+  // publicly-trusted CA-signed certificates, so this works out of the box
+  // with no custom CA bundle needed. Setting this to false would disable
+  // certificate validation entirely: the connection would still be
+  // encrypted, but no longer authenticated, leaving it open to a
+  // man-in-the-middle presenting any certificate at all. There's no
+  // legitimate reason to weaken this for a managed provider like Neon.
+  ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: true } : false,
   max: 20,
   idleTimeoutMillis: 30000
 });

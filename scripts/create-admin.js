@@ -22,6 +22,7 @@ async function main() {
   }
 
   const hash = await bcrypt.hash(password, parseInt(process.env.BCRYPT_SALT_ROUNDS || '12', 10));
+  let exitCode = 0;
   try {
     const result = await db.query(
       `INSERT INTO users (name, email, password_hash, role, email_verified, is_active)
@@ -32,8 +33,9 @@ async function main() {
     console.log('Admin user created:', result.rows[0]);
   } catch (err) {
     console.error('Failed to create admin:', err.message);
+    exitCode = 1;
   } finally {
-    process.exit(0);
+    process.exit(exitCode);
   }
 }
 
