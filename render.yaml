@@ -2,7 +2,6 @@ services:
   - type: web
     name: chakrashri-api
     runtime: node
-    region: ohio # matches your Neon database (us-east-2) — avoids unnecessary cross-country latency on every DB round-trip
     plan: free # cheapest paid tier — avoids free-tier cold starts, which delay Razorpay webhook delivery
     buildCommand: npm install
     startCommand: npm start
