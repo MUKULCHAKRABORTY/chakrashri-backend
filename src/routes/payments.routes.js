@@ -189,21 +189,43 @@ router.post('/webhook', async (req, res) => {
 
   try {
     const event = JSON.parse(req.body.toString());
+    const notes = event.payload?.payment?.entity?.notes || {};
+    const isBookingPayment = notes.bookingId && notes.bookingType;
+    const bookingTable = notes.bookingType === 'puja' ? 'puja_bookings' : notes.bookingType === 'astrology' ? 'astrology_bookings' : null;
+
     if (event.event === 'payment.captured') {
       const rzpOrderId = event.payload.payment.entity.order_id;
-      await db.query(
-        `UPDATE orders SET status = 'paid', razorpay_payment_id = $2, updated_at = now()
-         WHERE razorpay_order_id = $1 AND status = 'pending'`,
-        [rzpOrderId, event.payload.payment.entity.id]
-      );
+      if (isBookingPayment && bookingTable) {
+        await db.query(
+          `UPDATE ${bookingTable} SET payment_status = 'paid', razorpay_payment_id = $2, updated_at = now()
+           WHERE razorpay_order_id = $1 AND payment_status = 'unpaid'`,
+          [rzpOrderId, event.payload.payment.entity.id]
+        );
+      } else {
+        await db.query(
+          `UPDATE orders SET status = 'paid', razorpay_payment_id = $2, updated_at = now()
+           WHERE razorpay_order_id = $1 AND status = 'pending'`,
+          [rzpOrderId, event.payload.payment.entity.id]
+        );
+      }
     }
     if (event.event === 'payment.failed') {
       const rzpOrderId = event.payload.payment.entity.order_id;
-      const { rows } = await db.query('SELECT id FROM orders WHERE razorpay_order_id = $1', [rzpOrderId]);
-      if (rows.length) {
-        // Restores stock reserved at order-creation time AND sets status to
-        // 'payment_failed' in one atomic, idempotent step.
-        await restoreOrderStock(rows[0].id, 'payment_failed', 'razorpay_payment_failed_webhook');
+      if (isBookingPayment && bookingTable) {
+        // Bookings don't reserve stock, so there's nothing to restore — just
+        // mark the payment failed so it doesn't sit as "unpaid" indefinitely.
+        await db.query(
+          `UPDATE ${bookingTable} SET payment_status = 'failed', updated_at = now()
+           WHERE razorpay_order_id = $1 AND payment_status = 'unpaid'`,
+          [rzpOrderId]
+        );
+      } else {
+        const { rows } = await db.query('SELECT id FROM orders WHERE razorpay_order_id = $1', [rzpOrderId]);
+        if (rows.length) {
+          // Restores stock reserved at order-creation time AND sets status to
+          // 'payment_failed' in one atomic, idempotent step.
+          await restoreOrderStock(rows[0].id, 'payment_failed', 'razorpay_payment_failed_webhook');
+        }
       }
     }
     res.status(200).json({ received: true });

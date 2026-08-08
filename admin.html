@@ -309,6 +309,10 @@ code.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.78rem; 
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>
         Bookings <span class="badge" id="navBookingsBadge" style="display:none;">0</span>
       </button>
+      <button class="nav-btn" data-view="services" onclick="switchView('services')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+        Booking Services
+      </button>
       <button class="nav-btn" data-view="customers" onclick="switchView('customers')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/></svg>
         Customers
@@ -451,6 +455,23 @@ code.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.78rem; 
         </div>
       </section>
 
+      <!-- ============ BOOKING SERVICES ============ -->
+      <section class="view" id="view-services">
+        <div class="tab-strip">
+          <div class="tab-btn active" data-stab="puja" onclick="switchServiceTab('puja')">Puja Services</div>
+          <div class="tab-btn" data-stab="astrology" onclick="switchServiceTab('astrology')">Astrology Services</div>
+        </div>
+        <div class="toolbar">
+          <button class="btn btn-primary btn-sm" style="margin-left:auto;" onclick="openServiceForm()">+ Add Service</button>
+        </div>
+        <div class="card" style="padding:0;">
+          <div class="table-wrap"><table class="data">
+            <thead><tr><th>Name</th><th>Price</th><th>Duration</th><th>Status</th><th></th></tr></thead>
+            <tbody id="servicesTbody"><tr><td colspan="5" class="loading-row"><span class="spinner"></span></td></tr></tbody>
+          </table></div>
+        </div>
+      </section>
+
       <!-- ============ CUSTOMERS ============ -->
       <section class="view" id="view-customers">
         <div class="toolbar">
@@ -520,6 +541,35 @@ code.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.78rem; 
     <div class="modal-foot">
       <button class="btn btn-ghost" onclick="closeModal('productModal')">Cancel</button>
       <button class="btn btn-primary" id="pfSaveBtn" onclick="saveProduct()">Save Product</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== SERVICE FORM MODAL ===================== -->
+<div class="overlay" id="serviceModal">
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="serviceModalTitle">Add Service</h3>
+      <div class="close-x" onclick="closeModal('serviceModal')">✕</div>
+    </div>
+    <div class="modal-body">
+      <div class="field"><label>Type *</label>
+        <select id="sfType">
+          <option value="puja">Puja</option>
+          <option value="astrology">Astrology</option>
+        </select>
+      </div>
+      <div class="field"><label>Name *</label><input id="sfName"></div>
+      <div class="field"><label>Description</label><textarea id="sfDescription" style="min-height:60px;"></textarea></div>
+      <div class="form-grid">
+        <div class="field"><label>Price (₹) *</label><input id="sfPrice" type="number" min="1" step="0.01"></div>
+        <div class="field"><label>Duration Label</label><input id="sfDuration" placeholder="~2 hrs, 30 minutes…"></div>
+      </div>
+      <div class="field checkbox"><input type="checkbox" id="sfActive" checked><label style="margin:0;text-transform:none;letter-spacing:0;font-weight:500;">Active (visible to customers)</label></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal('serviceModal')">Cancel</button>
+      <button class="btn btn-primary" id="sfSaveBtn" onclick="saveService()">Save Service</button>
     </div>
   </div>
 </div>
@@ -693,6 +743,7 @@ const VIEW_META = {
   products:  { title: 'Products',  sub: 'Manage your catalog' },
   orders:    { title: 'Orders',    sub: 'Track and fulfill customer orders' },
   bookings:  { title: 'Bookings',  sub: 'Puja and astrology consultation requests' },
+  services:  { title: 'Booking Services', sub: 'Manage puja and astrology pricing — this is the only source of truth customers are charged from' },
   customers: { title: 'Customers', sub: 'Everyone who has an account' },
   auditlog:  { title: 'Audit Log', sub: 'Every admin action, for accountability' }
 };
@@ -714,6 +765,7 @@ function refreshCurrentView(){
   else if (currentView === 'products') loadProducts(1);
   else if (currentView === 'orders') loadOrders(1);
   else if (currentView === 'bookings') loadBookings();
+  else if (currentView === 'services') loadBookingServicesAdmin();
   else if (currentView === 'customers') loadCustomers(1);
   else if (currentView === 'auditlog') loadAuditLog();
 }
@@ -994,11 +1046,21 @@ async function saveProduct(){
     if (editingProductId) {
       await api('/api/products/' + editingProductId, { method: 'PUT', body: JSON.stringify(payload) });
       toast('Product updated.', 'ok');
+      closeModal('productModal');
     } else {
-      await api('/api/products', { method: 'POST', body: JSON.stringify(payload) });
-      toast('Product created.', 'ok');
+      const created = await api('/api/products', { method: 'POST', body: JSON.stringify(payload) });
+      toast('Product created — now add photos below.', 'ok');
+      // Switch straight into edit mode for the product we just created,
+      // instead of closing the modal — previously there was no way to add
+      // photos at creation time at all; the admin had to save, close, then
+      // reopen via Edit just to reach the image section.
+      editingProductId = created.product.id;
+      editingProductImages = [];
+      qs('#productModalTitle').textContent = 'Edit Product';
+      qs('#pfImagesSection').style.display = '';
+      renderProductImageChips();
+      qs('#pfNewImageUrl').focus();
     }
-    closeModal('productModal');
     loadProducts(productsState.page);
   } catch (err) {
     const msg = err.error || (err.errors && err.errors[0] && err.errors[0].msg) || 'Could not save product.';
@@ -1311,6 +1373,122 @@ async function loadCustomers(page){
       <td>${paise(c.lifetime_value_paise)}</td>
     </tr>`).join('');
   } catch (err) { tbody.innerHTML = '<tr><td colspan="6"><div class="empty">Could not load customers.</div></td></tr>'; }
+}
+
+/* =========================================================================
+   BOOKING SERVICES (puja/astrology pricing catalog)
+   ========================================================================= */
+let currentServiceTab = 'puja';
+let servicesCache = [];
+
+function switchServiceTab(tab){
+  currentServiceTab = tab;
+  qsa('.tab-btn[data-stab]').forEach((b) => b.classList.toggle('active', b.dataset.stab === tab));
+  renderServicesTable();
+}
+
+async function loadBookingServicesAdmin(){
+  const tbody = qs('#servicesTbody');
+  tbody.innerHTML = '<tr><td colspan="5" class="loading-row"><span class="spinner"></span></td></tr>';
+  try {
+    const body = await api('/api/booking-services/admin/all');
+    servicesCache = body.services || [];
+    renderServicesTable();
+  } catch (err) {
+    tbody.innerHTML = '<tr><td colspan="5"><div class="empty">Could not load services.</div></td></tr>';
+  }
+}
+
+function renderServicesTable(){
+  const tbody = qs('#servicesTbody');
+  const filtered = servicesCache.filter((s) => s.service_type === currentServiceTab);
+  if (!filtered.length) {
+    tbody.innerHTML = '<tr><td colspan="5"><div class="empty">No ' + currentServiceTab + ' services yet. Add one to make it bookable on the storefront.</div></td></tr>';
+    return;
+  }
+  tbody.innerHTML = filtered.map((s) => `<tr>
+    <td><b>${esc(s.name)}</b>${s.description ? '<br><span class="muted">'+esc(s.description.slice(0,80))+(s.description.length>80?'…':'')+'</span>' : ''}</td>
+    <td>${paise(s.price_paise)}</td>
+    <td class="muted">${esc(s.duration_label||'—')}</td>
+    <td><span class="pill ${s.is_active ? 'pill-success' : 'pill-neutral'}">${s.is_active ? 'Active' : 'Hidden'}</span></td>
+    <td>
+      <div style="display:flex;gap:6px;">
+        <button class="btn btn-ghost btn-sm" onclick="openServiceForm('${s.id}')">Edit</button>
+        <button class="btn btn-ghost btn-sm" style="color:var(--danger);" onclick="deleteServiceConfirm('${s.id}','${esc(s.name).replace(/'/g,"\\'")}')">Delete</button>
+      </div>
+    </td>
+  </tr>`).join('');
+}
+
+let editingServiceId = null;
+function openServiceForm(id){
+  editingServiceId = id || null;
+  qs('#serviceModalTitle').textContent = id ? 'Edit Service' : 'Add Service';
+  if (id) {
+    const s = servicesCache.find((x) => x.id === id);
+    if (!s) { toast('Service not found — try refreshing.', 'err'); return; }
+    qs('#sfType').value = s.service_type;
+    qs('#sfType').disabled = true; // type can't change after creation — it's tied to how the storefront queries services
+    qs('#sfName').value = s.name;
+    qs('#sfDescription').value = s.description || '';
+    qs('#sfPrice').value = (s.price_paise / 100).toFixed(2);
+    qs('#sfDuration').value = s.duration_label || '';
+    qs('#sfActive').checked = s.is_active;
+  } else {
+    qs('#sfType').value = currentServiceTab;
+    qs('#sfType').disabled = false;
+    qs('#sfName').value = '';
+    qs('#sfDescription').value = '';
+    qs('#sfPrice').value = '';
+    qs('#sfDuration').value = '';
+    qs('#sfActive').checked = true;
+  }
+  openModalEl('serviceModal');
+}
+
+async function saveService(){
+  const name = qs('#sfName').value.trim();
+  const price = parseFloat(qs('#sfPrice').value);
+  if (name.length < 2) { toast('Please enter a service name.', 'err'); return; }
+  if (!(price > 0)) { toast('Please enter a valid price.', 'err'); return; }
+
+  const payload = {
+    service_type: qs('#sfType').value,
+    name,
+    description: qs('#sfDescription').value.trim() || null,
+    price_paise: Math.round(price * 100),
+    duration_label: qs('#sfDuration').value.trim() || null,
+    is_active: qs('#sfActive').checked
+  };
+
+  const btn = qs('#sfSaveBtn');
+  btn.disabled = true;
+  try {
+    if (editingServiceId) {
+      const { service_type, ...updatable } = payload; // type is immutable on update, see openServiceForm
+      await api('/api/booking-services/' + editingServiceId, { method: 'PUT', body: JSON.stringify(updatable) });
+      toast('Service updated.', 'ok');
+    } else {
+      await api('/api/booking-services', { method: 'POST', body: JSON.stringify(payload) });
+      toast('Service created.', 'ok');
+    }
+    closeModal('serviceModal');
+    loadBookingServicesAdmin();
+  } catch (err) {
+    toast(err.error || 'Could not save service.', 'err');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function deleteServiceConfirm(id, name){
+  confirmAction('Delete Service', `Hide "${name}" from the storefront? Existing bookings for it are unaffected.`, async () => {
+    try {
+      await api('/api/booking-services/' + id, { method: 'DELETE' });
+      toast('Service hidden.', 'ok');
+      loadBookingServicesAdmin();
+    } catch (err) { toast(err.error || 'Could not delete service.', 'err'); }
+  });
 }
 
 /* =========================================================================

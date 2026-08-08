@@ -231,6 +231,63 @@ scripts/        # create-admin.js, run-migrations.js, test-db-connection.js,
 test/           # unit.test.js — tests against the REAL application modules, see "Round 4" below
 ```
 
+## Round 6 — Bookings Never Actually Charged, Order History Silently Broken, Product Detail Data Gaps
+
+Three more real, live bugs — found by reading the actual deployed code, same discipline as every
+round before this:
+
+**Puja and astrology bookings collected zero money and were invisible everywhere.**
+`confirmPujaBooking()` / `confirmAstroBooking()` in the frontend were 100% fake: they validated
+the form, generated a random fake "Booking ID" locally, and showed a success message — no API
+call happened at all, no payment was ever collected, and nothing was ever saved to the database.
+This is why bookings never appeared in the admin dashboard or the customer's own view: they never
+existed anywhere except a modal that briefly appeared and vanished. Fixed with a complete real
+implementation:
+- `booking_services` table (migration 004) — puja/astrology pricing is now a real, server-side
+  source of truth instead of hardcoded frontend JavaScript, seeded with the same services/prices
+  that were previously only in the frontend so the catalog isn't empty after migrating.
+- `src/utils/bookingPayments.js` — creates a booking and a real Razorpay order together, with the
+  price looked up server-side (the client is never trusted for the amount), mirroring the same
+  "never trust the client for money" principle as product checkout.
+- `POST /api/bookings/verify-payment` — signature-verified, ownership-checked payment confirmation,
+  and the Razorpay webhook now also handles booking payments (distinguished from product-order
+  payments via `notes.bookingType`), so bookings get the same server-to-server payment confirmation
+  resilience that orders already had.
+- The frontend's booking confirmation functions were rewritten to actually call these endpoints and
+  open a real Razorpay Checkout modal, exactly mirroring the proven product-checkout pattern.
+- A customer's booking history is now visible — no such view existed before at all — appended to
+  the Orders page, since a customer's "my activity" is naturally one place to check both.
+- **A new admin dashboard section ("Booking Services")** lets you actually manage puja/astrology
+  pricing and descriptions, since this was previously only changeable by editing frontend code.
+
+**Order history showed "No orders found" even after a successful real payment.** Root cause: the
+frontend was calling `apiFetch('/api/orders')`, a URL that has never existed on this backend — the
+real endpoint is `/api/customer/orders`. The request 404'd, was silently caught, and the order list
+was set to empty. There was also a second, smaller bug underneath it: the rendering code expected
+camelCase fields (`orderNumber`, `totalPaise`) but this backend correctly returns snake_case
+(`order_number`, `total_paise`) — so even after fixing the URL, totals would have shown as ₹0. Both
+fixed with the correct endpoint and correct field names.
+
+**Product descriptions and photos were saved correctly but never shown to customers.** The admin
+dashboard correctly writes `short_desc`, `long_desc`, `material`, and images to the real database
+— that part always worked. The bug was entirely on the storefront's read side: the product detail
+page only ever used data from the lightweight product *list* endpoint (`GET /api/products`), which
+deliberately returns a smaller field set for a fast shop-grid payload, and doesn't include long
+descriptions or images at all. The detail page never called the separate full-detail endpoint
+(`GET /api/products/:slug}`) that actually has this data. Fixed with progressive enhancement: the
+page still renders instantly from the fast list data, then fetches the full record in the
+background and fills in the real description and real uploaded photos (falling back to the
+existing decorative category icon if a product has no photos yet, or if an image URL fails to load).
+
+### A note on the blog: moving to Sanity.io instead of a custom CMS
+
+An earlier round added a `blog_posts` table and a `featured_image_url` column to this backend in
+anticipation of building a custom blog admin panel. Per a later decision, the blog is instead
+being rebuilt on **Sanity.io** (headless CMS, Portable Text, statically generated) — a completely
+different, separate architecture from this Express/Postgres backend, covered in its own setup
+guide rather than in this repo. The `blog_posts` table remains in the schema, unused, and is safe
+to leave alone or drop later; it does no harm sitting idle.
+
 ## Round 5 — Admin Dashboard, Missing Addresses Endpoint, and a Critical Checkout Bug
 
 Two things were reported as broken on the live site: no visible/working admin dashboard, and

@@ -1,8 +1,11 @@
 const express = require('express');
+const crypto = require('crypto');
 const { body, validationResult } = require('express-validator');
 const db = require('../config/db');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { sendBookingConfirmation } = require('../utils/mailer');
+const { createBookingWithPayment } = require('../utils/bookingPayments');
+const { timingSafeEqualHex } = require('../utils/crypto');
 
 const router = express.Router();
 
@@ -17,12 +20,17 @@ function isTodayOrFuture(value) {
   return true;
 }
 
-// ---------- Create a puja booking ----------
+// ---------- Create a puja booking + real Razorpay order ----------
+// Previously this endpoint just inserted an "unpaid" row with no payment
+// path at all — the frontend never even called it, since its own
+// confirmPujaBooking() was a local-only fake success message. This now
+// mirrors the real product-checkout pattern: server-side price lookup,
+// a real Razorpay order, and a signature-verified payment step below.
 router.post(
   '/puja',
   requireAuth,
   [
-    body('pujaType').notEmpty(),
+    body('serviceId').notEmpty(),
     body('preferredDate').isISO8601().custom(isTodayOrFuture),
     body('preferredTimeSlot').notEmpty(),
     body('contactName').notEmpty(),
@@ -32,37 +40,27 @@ router.post(
     const errors = validationResult(req);
     if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
-    const { pujaType, preferredDate, preferredTimeSlot, contactName, contactPhone, notes } = req.body;
+    const { serviceId, preferredDate, preferredTimeSlot, preferredMode, contactName, contactPhone, notes } = req.body;
     try {
-      const result = await db.query(
-        `INSERT INTO puja_bookings
-          (user_id, puja_type, preferred_date, preferred_time_slot, contact_name, contact_phone, notes)
-         VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-        [req.user.id, pujaType, preferredDate, preferredTimeSlot, contactName, contactPhone, notes || null]
-      );
-      // TODO: notify ops team as well (email/WhatsApp) — this only confirms to the customer
-      const { rows: userRows } = await db.query('SELECT email FROM users WHERE id = $1', [req.user.id]);
-      if (userRows.length) {
-        sendBookingConfirmation({
-          email: userRows[0].email,
-          name: contactName,
-          type: 'Puja',
-          preferredDate,
-          preferredTimeSlot
-        }).catch(() => {});
-      }
-      res.status(201).json({ booking: result.rows[0] });
+      const result = await createBookingWithPayment({
+        bookingType: 'puja',
+        userId: req.user.id,
+        serviceId,
+        fields: { contact_name: contactName, contact_phone: contactPhone, preferred_date: preferredDate, preferred_time_slot: preferredTimeSlot, preferred_mode: preferredMode, notes }
+      });
+      res.status(201).json(result);
     } catch (err) {
-      res.status(500).json({ error: 'Could not create booking.' });
+      res.status(err.status || 500).json({ error: err.message || 'Could not create booking.' });
     }
   }
 );
 
-// ---------- Create an astrology consultation booking ----------
+// ---------- Create an astrology consultation booking + real Razorpay order ----------
 router.post(
   '/astrology',
   requireAuth,
   [
+    body('serviceId').notEmpty(),
     body('consultationMode').isIn(['call', 'video', 'chat']),
     body('preferredDate').isISO8601().custom(isTodayOrFuture),
     body('preferredTimeSlot').notEmpty(),
@@ -73,33 +71,80 @@ router.post(
     const errors = validationResult(req);
     if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
-    const {
-      consultationMode, preferredDate, preferredTimeSlot,
-      contactName, contactPhone, birthDetails
-    } = req.body;
+    const { serviceId, consultationMode, preferredDate, preferredTimeSlot, contactName, contactPhone, birthDetails } = req.body;
     try {
       // NOTE: birthDetails (DOB/time/place) is sensitive personal data under
-      // India's DPDP Act 2023 — store encrypted at rest if possible, and only
-      // ever return it to the owning user or an authorized astrologer.
-      const result = await db.query(
-        `INSERT INTO astrology_bookings
-          (user_id, consultation_mode, preferred_date, preferred_time_slot, contact_name, contact_phone, birth_details)
-         VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, status, preferred_date, preferred_time_slot`,
-        [req.user.id, consultationMode, preferredDate, preferredTimeSlot, contactName, contactPhone, birthDetails || null]
+      // India's DPDP Act 2023 — only ever returned to the owning user or staff.
+      const result = await createBookingWithPayment({
+        bookingType: 'astrology',
+        userId: req.user.id,
+        serviceId,
+        fields: { contact_name: contactName, contact_phone: contactPhone, preferred_date: preferredDate, preferred_time_slot: preferredTimeSlot, consultation_mode: consultationMode, birth_details: birthDetails }
+      });
+      res.status(201).json(result);
+    } catch (err) {
+      res.status(err.status || 500).json({ error: err.message || 'Could not create booking.' });
+    }
+  }
+);
+
+// ---------- Verify booking payment (shared by both puja and astrology) ----------
+router.post(
+  '/verify-payment',
+  requireAuth,
+  [
+    body('bookingType').isIn(['puja', 'astrology']),
+    body('bookingId').notEmpty(),
+    body('razorpay_order_id').notEmpty(),
+    body('razorpay_payment_id').notEmpty(),
+    body('razorpay_signature').notEmpty()
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+
+    const { bookingType, bookingId, razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
+    const table = bookingType === 'puja' ? 'puja_bookings' : 'astrology_bookings';
+
+    const expectedSignature = crypto
+      .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
+      .update(`${razorpay_order_id}|${razorpay_payment_id}`)
+      .digest('hex');
+    if (!timingSafeEqualHex(expectedSignature, razorpay_signature)) {
+      return res.status(400).json({ error: 'Payment verification failed. Signature mismatch.' });
+    }
+
+    try {
+      const { rows: existing } = await db.query(`SELECT user_id FROM ${table} WHERE razorpay_order_id = $1`, [razorpay_order_id]);
+      if (!existing.length) return res.status(404).json({ error: 'Booking not found.' });
+      if (existing[0].user_id !== req.user.id) return res.status(403).json({ error: 'This booking does not belong to your account.' });
+
+      const { rows } = await db.query(
+        `UPDATE ${table}
+         SET payment_status = 'paid', razorpay_payment_id = $1, razorpay_signature = $2
+         WHERE razorpay_order_id = $3 AND payment_status = 'unpaid'
+         RETURNING id, contact_name, contact_phone, preferred_date, preferred_time_slot`,
+        [razorpay_payment_id, razorpay_signature, razorpay_order_id]
       );
+      if (!rows.length) {
+        const { rows: current } = await db.query(`SELECT payment_status FROM ${table} WHERE razorpay_order_id = $1`, [razorpay_order_id]);
+        if (current[0]?.payment_status === 'paid') return res.json({ success: true, bookingId: existing.length ? bookingId : null });
+        return res.status(409).json({ error: 'This booking is not in a payable state.' });
+      }
+
       const { rows: userRows } = await db.query('SELECT email FROM users WHERE id = $1', [req.user.id]);
       if (userRows.length) {
         sendBookingConfirmation({
           email: userRows[0].email,
-          name: contactName,
-          type: 'Astrology consultation',
-          preferredDate,
-          preferredTimeSlot
+          name: rows[0].contact_name,
+          type: bookingType === 'puja' ? 'Puja' : 'Astrology consultation',
+          preferredDate: rows[0].preferred_date,
+          preferredTimeSlot: rows[0].preferred_time_slot
         }).catch(() => {});
       }
-      res.status(201).json({ booking: result.rows[0] });
+      res.json({ success: true, bookingId: rows[0].id });
     } catch (err) {
-      res.status(500).json({ error: 'Could not create booking.' });
+      res.status(500).json({ error: 'Could not verify payment.' });
     }
   }
 );
@@ -107,7 +152,11 @@ router.post(
 // ---------- Admin: list bookings ----------
 router.get('/puja', requireAuth, requireRole('admin', 'staff'), async (req, res) => {
   try {
-    const result = await db.query('SELECT * FROM puja_bookings ORDER BY created_at DESC LIMIT 200');
+    const result = await db.query(
+      `SELECT pb.*, bs.name AS service_name FROM puja_bookings pb
+       LEFT JOIN booking_services bs ON bs.id = pb.service_id
+       ORDER BY pb.created_at DESC LIMIT 200`
+    );
     res.json({ bookings: result.rows });
   } catch (err) {
     res.status(500).json({ error: 'Could not load puja bookings.' });
@@ -117,9 +166,11 @@ router.get('/puja', requireAuth, requireRole('admin', 'staff'), async (req, res)
 router.get('/astrology', requireAuth, requireRole('admin', 'staff'), async (req, res) => {
   try {
     const result = await db.query(
-      `SELECT id, user_id, consultation_mode, preferred_date, preferred_time_slot, status, contact_name,
-              contact_phone, created_at
-       FROM astrology_bookings ORDER BY created_at DESC LIMIT 200`
+      `SELECT ab.id, ab.user_id, ab.consultation_mode, ab.preferred_date, ab.preferred_time_slot, ab.status,
+              ab.payment_status, ab.amount_paise, ab.contact_name, ab.contact_phone, ab.created_at, bs.name AS service_name
+       FROM astrology_bookings ab
+       LEFT JOIN booking_services bs ON bs.id = ab.service_id
+       ORDER BY ab.created_at DESC LIMIT 200`
     );
     res.json({ bookings: result.rows });
   } catch (err) {

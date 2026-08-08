@@ -48,7 +48,7 @@ router.get('/orders/:id', async (req, res) => {
 router.get('/bookings/puja', async (req, res) => {
   try {
     const { rows } = await db.query(
-      `SELECT id, puja_type, preferred_date, preferred_time_slot, status, notes, created_at
+      `SELECT id, puja_type, preferred_date, preferred_time_slot, status, payment_status, amount_paise, notes, created_at
        FROM puja_bookings WHERE user_id = $1 ORDER BY created_at DESC LIMIT 100`,
       [req.user.id]
     );
@@ -65,7 +65,7 @@ router.get('/bookings/puja', async (req, res) => {
 router.get('/bookings/astrology', async (req, res) => {
   try {
     const { rows } = await db.query(
-      `SELECT id, consultation_mode, preferred_date, preferred_time_slot, status, created_at
+      `SELECT id, consultation_mode, preferred_date, preferred_time_slot, status, payment_status, amount_paise, created_at
        FROM astrology_bookings WHERE user_id = $1 ORDER BY created_at DESC LIMIT 100`,
       [req.user.id]
     );
