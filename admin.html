@@ -321,6 +321,10 @@ code.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.78rem; 
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 4h16v16H4z"/><path d="M8 9h8M8 13h8M8 17h5"/></svg>
         Audit Log
       </button>
+      <button class="nav-btn" onclick="window.open(SANITY_STUDIO_URL, '_blank')" title="Opens the Sanity Studio in a new tab">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
+        Journal <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-left:auto;opacity:.6;"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><path d="M15 3h6v6M10 14L21 3"/></svg>
+      </button>
     </div>
 
     <div class="sidebar-foot">
@@ -621,6 +625,11 @@ code.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.78rem; 
    ========================================================================= */
 
 const API_BASE = window.__API_BASE__ || 'https://chakrashri-api.onrender.com';
+
+// Update this once your Sanity Studio is deployed (see chakrashri-blog/README.md,
+// step 1 — `npm run deploy` from the studio/ folder prints this URL).
+// The "Journal" sidebar button opens it in a new tab.
+const SANITY_STUDIO_URL = 'https://your-project.sanity.studio';
 const TOKEN_KEY = 'chakrashri_admin_token';
 const USER_KEY  = 'chakrashri_admin_user';
 
@@ -1475,7 +1484,7 @@ async function saveService(){
     closeModal('serviceModal');
     loadBookingServicesAdmin();
   } catch (err) {
-    toast(err.error || 'Could not save service.', 'err');
+    toast((err.error || 'Could not save service.') + (err.code ? ' (code: ' + err.code + ')' : ''), 'err');
   } finally {
     btn.disabled = false;
   }

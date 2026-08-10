@@ -12,10 +12,15 @@ router.get('/orders', async (req, res) => {
   const offset = (page - 1) * limit;
   try {
     const { rows } = await db.query(
-      `SELECT id, order_number, status, total_paise, payment_method, tracking_number,
-              courier_name, created_at
-       FROM orders WHERE user_id = $1
-       ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+      `SELECT o.id, o.order_number, o.status, o.total_paise, o.payment_method, o.tracking_number,
+              o.courier_name, o.created_at,
+              COALESCE(STRING_AGG(oi.product_name_snapshot, ', ' ORDER BY oi.id), '') AS product_names,
+              COALESCE(SUM(oi.quantity), 0) AS total_quantity
+       FROM orders o
+       LEFT JOIN order_items oi ON oi.order_id = o.id
+       WHERE o.user_id = $1
+       GROUP BY o.id
+       ORDER BY o.created_at DESC LIMIT $2 OFFSET $3`,
       [req.user.id, limit, offset]
     );
     res.json({ orders: rows });

@@ -190,6 +190,7 @@ p{ color: var(--text-soft); }
 .badge-sale{ background: var(--oxblood); color:#fff; }
 .badge-new{ background: var(--indigo); color:#fff; }
 .badge-best{ background: var(--marigold); color:#fff; }
+.badge-custom{ background: var(--gold-dk, #9C7E1C); color:#fff; }
 .badge-soft{ background:rgba(122,17,40,.08); color:var(--oxblood); }
 
 .stars{ display:inline-flex; align-items:center; gap:2px; color: var(--gold); flex-shrink:0; }
@@ -698,6 +699,14 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
 .review-item .who .v{ font-size:.68rem; background:rgba(62,122,79,.12); color:var(--success); padding:2px 8px; border-radius:var(--radius-full); font-weight:600; }
 .review-item .date{ font-size:.76rem; color:var(--text-mute); }
 .review-item p{ font-size:.88rem; }
+.review-cta{ padding:16px 0; border-bottom:1px solid var(--line); margin-bottom:8px; }
+.review-cta p{ font-size:.88rem; color:var(--text-mute); }
+.review-cta a{ color:var(--oxblood); font-weight:600; }
+.review-form{ padding:18px; background:var(--parchment); border-radius:var(--radius-md); margin-bottom:16px; }
+.star-input{ font-size:1.6rem; letter-spacing:4px; cursor:pointer; }
+.star-input span{ color:var(--line); transition:color .12s; }
+.star-input span.active{ color:var(--marigold); }
+.star-input span:hover{ color:var(--marigold); }
 
 .related-scroll{ margin-top:var(--sp-9); }
 
@@ -2573,6 +2582,59 @@ const CAT_ICON_PATHS = {
   samagri:   '<path d="M17 24c0-5 3-8 7-8s7 3 7 8-2 12-7 12-7-7-7-12z"/><circle cx="24" cy="13" r="3.4"/><path d="M17 17c-3-1-5-3-5-3M31 17c3-1 5-3 5-3"/>'
 };
 const CAT_LABELS = { lingam:'Sphatik Lingams', yantra:'Sri Yantras', idols:'Idols & Murtis', malas:'Malas', bracelets:'Bracelets', books:'Spiritual Books', samagri:'Puja Samagri Kits' };
+
+// Falls back to a nicely formatted version of the raw category string when
+// it isn't one of the fixed starter categories above — previously this was
+// a direct CAT_LABELS[key] lookup everywhere, which returned `undefined`
+// (rendered as the literal text "undefined") for any category an admin
+// typed that wasn't already in this hardcoded list. Categories are meant to
+// be admin-defined, not restricted to a fixed set, so every display site
+// now goes through this function instead.
+// Returns { cssClass, text } for a badge value. 'bestseller' and 'new' get
+// their existing distinct colors; any other admin-entered text (e.g.
+// "Certified", "Limited Edition") is now shown VERBATIM with a generic
+// style — previously any value other than exactly 'bestseller'/'new' was
+// silently replaced with the hardcoded text "Sale", discarding whatever the
+// admin actually typed.
+function catLabel(key){
+  if(!key) return 'Uncategorized';
+  if(CAT_LABELS[key]) return CAT_LABELS[key];
+  return String(key).replace(/[-_]+/g,' ').replace(/\s+/g,' ').trim().replace(/\b\w/g, function(c){ return c.toUpperCase(); });
+}
+
+// Returns { cssClass, text } for a badge value. 'bestseller' and 'new' get
+// their existing distinct colors; any other admin-entered text (e.g.
+// "Certified", "Limited Edition") is now shown VERBATIM with a generic
+// style — previously any value other than exactly 'bestseller'/'new' was
+// silently replaced with the hardcoded text "Sale", discarding whatever the
+// admin actually typed.
+function badgeInfo(badge){
+  if(badge === 'bestseller') return { cssClass:'badge-best', text:'Bestseller' };
+  if(badge === 'new') return { cssClass:'badge-new', text:'New' };
+  if(badge === 'sale') return { cssClass:'badge-sale', text:'Sale' };
+  return { cssClass:'badge-custom', text: badge };
+}
+
+// Returns the inner HTML for a product's thumbnail: a real photo if one
+// exists (p.imageUrl, from the lightweight list-endpoint field), otherwise
+// falls back to the existing decorative category icon. This is the single
+// shared implementation used everywhere a product thumbnail appears (shop
+// grid, home page, quick view, cart, checkout review) — previously each of
+// those rendered ONLY the decorative placeholder, unconditionally, which is
+// why real uploaded product photos never appeared anywhere except the full
+// product detail page.
+function productThumbInnerHTML(p){
+  if(p.imageUrl){
+    return '<img src="' + escapeHtml(p.imageUrl) + '" alt="' + escapeHtml(p.name) + '" loading="lazy" ' +
+      'style="width:100%;height:100%;object-fit:cover;" data-cat="' + escapeHtml(p.cat) + '" onerror="productThumbFallback(this)">';
+  }
+  return '<div class="ph">' + productMediaSVG(p.cat) + '</div>';
+}
+function productThumbFallback(imgEl){
+  const cat = imgEl.getAttribute('data-cat') || 'lingam';
+  const wrap = imgEl.parentElement;
+  if(wrap) wrap.innerHTML = '<div class="ph">' + productMediaSVG(cat) + '</div>';
+}
 const CAT_HUES = { lingam:198, yantra:40, idols:28, malas:18, bracelets:8, books:34, samagri:45 };
 
 // --- API helpers: set API_BASE or rely on same-origin (adjust in production) ---
@@ -2672,15 +2734,21 @@ async function renderOrdersPage(){
     html += '<div class="empty-state"><h3>No orders found</h3><p>Your order history will appear here after your first checkout.</p><button class="btn btn-primary" onclick="navigateTo(\'shop\')">Browse Products</button></div>';
   } else {
     const rows = userOrders.map(function(order){
+      const names = (order.product_names || '').split(', ').filter(Boolean);
+      const productDisplay = names.length > 2
+        ? escapeHtml(names.slice(0,2).join(', ')) + ' <span style="color:#8a7768;">+' + (names.length-2) + ' more</span>'
+        : (names.length ? escapeHtml(names.join(', ')) : '<span style="color:#8a7768;">—</span>');
       return '<tr>' +
         '<td><strong>' + escapeHtml(order.order_number || order.id) + '</strong></td>' +
+        '<td>' + productDisplay + '</td>' +
+        '<td>' + escapeHtml(String(order.total_quantity || 0)) + '</td>' +
         '<td>' + escapeHtml((order.status || 'pending').replace('_',' ')) + '</td>' +
         '<td>' + escapeHtml((order.payment_method || 'N/A').toUpperCase()) + '</td>' +
         '<td>' + formatINR((order.total_paise || 0) / 100) + '</td>' +
         '<td>' + new Date(order.created_at).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' }) + '</td>' +
       '</tr>';
     }).join('');
-    html += '<h3 style="margin:0 0 12px;">Product Orders</h3><div class="orders-table-wrap"><table class="admin-table"><thead><tr><th>Order</th><th>Status</th><th>Payment</th><th>Total</th><th>Placed</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+    html += '<h3 style="margin:0 0 12px;">Product Orders</h3><div class="orders-table-wrap"><table class="admin-table"><thead><tr><th>Order</th><th>Product</th><th>Qty</th><th>Status</th><th>Payment</th><th>Total</th><th>Placed</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
   }
 
   const allBookings = (pujaBookings || []).map(function(b){ return Object.assign({ _kind:'Puja', _label: b.puja_type }, b); })
@@ -3037,7 +3105,8 @@ async function loadCatalog(){
           shortDesc: p.short_desc || p.name,
           longDesc: p.long_desc || p.short_desc || p.name,
           material: p.material || '',
-          images: [] // populated lazily on the detail page — see renderProductDetail()
+          imageUrl: p.image_url || null, // lightweight primary photo for shop grid/home/quick-view — see renderProductDetail() for the full gallery fetch
+          images: [] // full gallery populated lazily on the detail page — see renderProductDetail()
         }));
         return;
       }
@@ -3081,13 +3150,20 @@ const VALID_PAGES = ['home','shop','product','cart','checkout','puja','astrology
 
 function navigateTo(pageId, opts){
   opts = opts || {};
+  let param = null;
+  if(pageId && pageId.indexOf('/') > -1){
+    const parts = pageId.split('/');
+    pageId = parts[0];
+    param = parts.slice(1).join('/');
+  }
   if(VALID_PAGES.indexOf(pageId) === -1) pageId = 'home';
   qsa('.page').forEach(p => p.classList.remove('active'));
   const target = qs('#page-' + pageId);
   if(target) target.classList.add('active');
   if(!opts.silent) window.scrollTo({ top:0, behavior:'auto' });
-  if(location.hash.replace('#','') !== pageId){
-    history.pushState(null, '', '#' + pageId);
+  const newHash = param ? (pageId + '/' + param) : pageId;
+  if(location.hash.replace('#','') !== newHash){
+    history.pushState(null, '', '#' + newHash);
   }
   closeAllDrawers();
   if(pageId === 'shop') renderShopGrid();
@@ -3098,7 +3174,33 @@ function navigateTo(pageId, opts){
   if(pageId === 'astrology') renderAstroPage();
   if(pageId === 'blog') renderBlogGrid();
   if(pageId === 'orders') renderOrdersPage();
+  if(pageId === 'product'){
+    // The product's slug is encoded in the hash (#product/<slug>) specifically
+    // so a hard page reload can reconstruct which product to render — without
+    // this, reloading while viewing a product left the page blank, since
+    // currentProductId is an in-memory variable that resets on every reload
+    // and the hash previously carried no way to recover it.
+    const p = param ? getProductBySlug(param) : (currentProductId ? getProduct(currentProductId) : null);
+    if(p){
+      currentProductId = p.id;
+      renderProductDetail(p.id);
+    } else if(param){
+      // A slug that doesn't match any product (deleted product, bad/old
+      // link) — redirect to the shop with an explanation instead of
+      // silently showing a blank page.
+      toast('That product could not be found — it may have been removed.', 'err');
+      navigateTo('shop');
+    }
+  }
   refreshReveal();
+}
+
+function getProductBySlug(slug){ return PRODUCTS.find(p => p.slug === slug); }
+
+function openProduct(id){
+  const p = getProduct(id);
+  currentProductId = id;
+  navigateTo(p && p.slug ? ('product/' + p.slug) : 'product');
 }
 
 function openBlogPost(id){
@@ -3114,12 +3216,6 @@ function openShopWithCategory(cat){
   navigateTo('shop');
 }
 
-function openProduct(id){
-  currentProductId = id;
-  navigateTo('product');
-  renderProductDetail(id);
-}
-
 window.addEventListener('popstate', function(){
   const h = location.hash.replace('#','') || 'home';
   navigateTo(h, { silent:false });
@@ -3127,13 +3223,13 @@ window.addEventListener('popstate', function(){
 /* ---------- Product card + grid rendering ---------- */
 function productCardHTML(p, idx){
   const wished = wishlist.indexOf(p.id) > -1;
-  const badgeHTML = p.badge ? ('<span class="badge badge-' + (p.badge === 'bestseller' ? 'best' : p.badge) + '">' + (p.badge === 'bestseller' ? 'Bestseller' : p.badge === 'new' ? 'New' : 'Sale') + '</span>') : '';
+  const badgeHTML = p.badge ? ('<span class="badge ' + badgeInfo(p.badge).cssClass + '">' + escapeHtml(badgeInfo(p.badge).text) + '</span>') : '';
   const wasHTML = p.mrp > p.price ? ('<span class="was">' + formatINR(p.mrp) + '</span>') : '';
   return '' +
   '<div class="p-card" data-id="' + p.id + '">' +
     (!p.stock ? '<div class="p-stock-out"><span>Out of Stock</span></div>' : '') +
     '<div class="p-media" style="' + mediaStyle(p.cat, idx) + '" onclick="openProduct(\'' + p.id + '\')">' +
-      '<div class="ph">' + productMediaSVG(p.cat) + '</div>' +
+      productThumbInnerHTML(p) +
       '<div class="p-badges">' + badgeHTML + '</div>' +
       '<div class="p-quick">' +
         '<button class="' + (wished?'active':'') + '" onclick="event.stopPropagation(); toggleWishlist(\'' + p.id + '\')" aria-label="Add to wishlist" title="Wishlist"><svg viewBox="0 0 24 24" fill="' + (wished?'currentColor':'none') + '" stroke="currentColor" stroke-width="1.8"><path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.6l-1-1a5.5 5.5 0 10-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 000-7.8z"/></svg></button>' +
@@ -3142,7 +3238,7 @@ function productCardHTML(p, idx){
       '<div class="p-atc"><button ' + (!p.stock?'disabled':'') + ' onclick="event.stopPropagation(); ' + (p.stock ? ("addToCart('" + p.id + "',1)") : "notifyStock('" + p.id + "')") + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 01-8 0"/></svg>' + (p.stock ? 'Add to Cart' : 'Notify Me') + '</button></div>' +
     '</div>' +
     '<div class="p-body">' +
-      '<div class="p-cat">' + CAT_LABELS[p.cat] + '</div>' +
+      '<div class="p-cat">' + catLabel(p.cat) + '</div>' +
       '<div class="p-name" onclick="openProduct(\'' + p.id + '\')">' + p.name + '</div>' +
       '<div class="p-rating">' + starsHTML(p.rating) + '<span class="cnt">(' + p.reviews + ')</span></div>' +
       '<div class="p-desc">' + p.shortDesc + '</div>' +
@@ -3240,7 +3336,7 @@ function updateWishUI(){
 function miniCartRowHTML(x){
   const p = x.product, l = x.line;
   return '<div class="mc-row">' +
-    '<div class="mc-thumb" style="' + mediaStyle(p.cat,0) + 'display:flex;align-items:center;justify-content:center;">' + productMediaSVG(p.cat) + '</div>' +
+    '<div class="mc-thumb" style="' + mediaStyle(p.cat,0) + 'display:flex;align-items:center;justify-content:center;">' + productThumbInnerHTML(p) + '</div>' +
     '<div class="mc-info">' +
       '<span class="n">' + p.name + '</span>' +
       '<span class="meta">' + (l.variant ? l.variant + ' &middot; ' : '') + formatINR(p.price) + '</span>' +
@@ -3320,9 +3416,9 @@ function openQuickView(id){
   const wished = wishlist.indexOf(id) > -1;
   const wasHTML = p.mrp > p.price ? ('<span class="was">' + formatINR(p.mrp) + '</span><span class="save">Save ' + Math.round((1 - p.price/p.mrp)*100) + '%</span>') : '';
   const html =
-    '<div class="qv-media" style="' + mediaStyle(p.cat,0) + '">' + productMediaSVG(p.cat, true) + '</div>' +
+    '<div class="qv-media" style="' + mediaStyle(p.cat,0) + '">' + productThumbInnerHTML(p) + '</div>' +
     '<div class="qv-info">' +
-      '<div class="p-cat">' + CAT_LABELS[p.cat] + '</div>' +
+      '<div class="p-cat">' + catLabel(p.cat) + '</div>' +
       '<h3 style="margin-bottom:10px;">' + p.name + '</h3>' +
       '<div class="p-rating" style="margin-bottom:14px;">' + starsHTML(p.rating) + '<span class="cnt">(' + p.reviews + ' reviews)</span></div>' +
       '<div class="pd-price" style="margin-bottom:14px;"><span class="now" style="font-size:1.5rem;">' + formatINR(p.price) + '</span>' + wasHTML + '</div>' +
@@ -3399,8 +3495,14 @@ function renderShopFilterSidebar(){
   const catCounts = {};
   PRODUCTS.forEach(function(p){ catCounts[p.cat] = (catCounts[p.cat]||0)+1; });
   let catHTML = '<label class="filter-check ' + (shopFilters.cat==='all'?'active':'') + '"><input type="radio" name="catf" ' + (shopFilters.cat==='all'?'checked':'') + ' onchange="setCategoryFilter(\'all\')"><span class="n">All Products</span><span class="c">' + PRODUCTS.length + '</span></label>';
-  Object.keys(CAT_LABELS).forEach(function(key){
-    catHTML += '<label class="filter-check ' + (shopFilters.cat===key?'active':'') + '"><input type="radio" name="catf" ' + (shopFilters.cat===key?'checked':'') + ' onchange="setCategoryFilter(\'' + key + '\')"><span class="n">' + CAT_LABELS[key] + '</span><span class="c">' + (catCounts[key]||0) + '</span></label>';
+  // Union of the known starter categories (shown even at zero count, for
+  // merchandising) and any category actually present in the real catalog —
+  // previously this only ever iterated the fixed CAT_LABELS keys, so a new
+  // category typed into the admin product form could never be filtered by by customers.
+  const allCatKeys = Object.keys(Object.assign({}, CAT_LABELS, catCounts));
+  allCatKeys.sort(function(a,b){ return catLabel(a).localeCompare(catLabel(b)); });
+  allCatKeys.forEach(function(key){
+    catHTML += '<label class="filter-check ' + (shopFilters.cat===key?'active':'') + '"><input type="radio" name="catf" ' + (shopFilters.cat===key?'checked':'') + ' onchange="setCategoryFilter(\'' + key + '\')"><span class="n">' + catLabel(key) + '</span><span class="c">' + (catCounts[key]||0) + '</span></label>';
   });
   qs('#filterCategoryList').innerHTML = catHTML;
 
@@ -3444,7 +3546,7 @@ function getFilteredSortedProducts(){
     if(shopFilters.inStockOnly && !p.stock) return false;
     if(shopFilters.search){
       const s = shopFilters.search.toLowerCase();
-      if(p.name.toLowerCase().indexOf(s) === -1 && p.shortDesc.toLowerCase().indexOf(s) === -1 && CAT_LABELS[p.cat].toLowerCase().indexOf(s) === -1) return false;
+      if(p.name.toLowerCase().indexOf(s) === -1 && p.shortDesc.toLowerCase().indexOf(s) === -1 && catLabel(p.cat).toLowerCase().indexOf(s) === -1) return false;
     }
     return true;
   });
@@ -3459,7 +3561,7 @@ function getFilteredSortedProducts(){
 
 function renderActiveFilterChips(){
   const chips = [];
-  if(shopFilters.cat !== 'all') chips.push({ label: CAT_LABELS[shopFilters.cat], clear:"setCategoryFilter('all')" });
+  if(shopFilters.cat !== 'all') chips.push({ label: catLabel(shopFilters.cat), clear:"setCategoryFilter('all')" });
   if(shopFilters.maxPrice < 15000) chips.push({ label:'Up to ' + formatINR(shopFilters.maxPrice), clear:'setPriceFilter(15000)' });
   if(shopFilters.minRating > 0) chips.push({ label: shopFilters.minRating + '★ & up', clear:'setRatingFilter(0)' });
   if(shopFilters.inStockOnly) chips.push({ label:'In Stock Only', clear:'toggleInStock(false)' });
@@ -3490,10 +3592,10 @@ function goToShopPage(n){
 
 function renderShopGrid(){
   renderShopFilterSidebar();
-  const catLabel = shopFilters.cat === 'all' ? 'All Products' : CAT_LABELS[shopFilters.cat];
-  qs('#shopTitle').textContent = shopFilters.search ? ('Search: "' + shopFilters.search + '"') : catLabel;
-  qs('#shopCrumb').textContent = shopFilters.search ? 'Search Results' : catLabel;
-  qs('#shopSubtitle').textContent = shopFilters.cat==='all' ? 'Browse our full collection of sacred objects.' : ('Explore our ' + catLabel.toLowerCase() + ' collection.');
+  const pageTitle = shopFilters.cat === 'all' ? 'All Products' : catLabel(shopFilters.cat);
+  qs('#shopTitle').textContent = shopFilters.search ? ('Search: "' + shopFilters.search + '"') : pageTitle;
+  qs('#shopCrumb').textContent = shopFilters.search ? 'Search Results' : pageTitle;
+  qs('#shopSubtitle').textContent = shopFilters.cat==='all' ? 'Browse our full collection of sacred objects.' : ('Explore our ' + pageTitle.toLowerCase() + ' collection.');
 
   const filtered = getFilteredSortedProducts();
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
@@ -3565,7 +3667,7 @@ async function renderProductDetail(id){
   qs('#pdThumbs').innerHTML = thumbsHTML;
 
   const catCrumb = qs('#pdCatCrumb');
-  catCrumb.textContent = CAT_LABELS[p.cat];
+  catCrumb.textContent = catLabel(p.cat);
   catCrumb.onclick = function(){ openShopWithCategory(p.cat); return false; };
   qs('#pdNameCrumb').textContent = p.name;
 
@@ -3579,7 +3681,7 @@ async function renderProductDetail(id){
   }
 
   qs('#pdInfo').innerHTML =
-    '<div class="p-cat">' + CAT_LABELS[p.cat] + '</div>' +
+    '<div class="p-cat">' + catLabel(p.cat) + '</div>' +
     '<h1>' + p.name + '</h1>' +
     '<div class="pd-rating-row">' + starsHTML(p.rating) + '<span class="cnt">' + p.rating + ' (' + p.reviews + ' reviews)</span><span class="sku">SKU: ' + p.sku + '</span></div>' +
     '<div class="pd-price">' + '<span class="now">' + formatINR(p.price) + '</span>' + wasHTML + '</div>' +
@@ -3602,7 +3704,7 @@ async function renderProductDetail(id){
 
   qs('#pdtab-desc').innerHTML = '<p>' + escapeHtml(p.longDesc) + '</p>';
   qs('#pdtab-spec').innerHTML = specTableHTML(p);
-  qs('#pdtab-reviews').innerHTML = reviewsHTML(p);
+  qs('#pdtab-reviews').innerHTML = '<div style="text-align:center;padding:30px;color:#8a7768;"><span class="spinner" style="width:26px;height:26px;"></span></div>';
   qsa('.pd-tab-nav button').forEach(function(b,i){ b.classList.toggle('active', i===0); });
   qsa('.pd-tab-pane').forEach(function(pane,i){ pane.classList.toggle('active', i===0); });
 
@@ -3614,25 +3716,106 @@ async function renderProductDetail(id){
   // deliberately returns a lighter field set for a fast shop grid, so this is
   // the fetch that was previously entirely missing. Progressive enhancement:
   // the page above is already fully usable before this resolves.
-  if(!p.slug) return;
-  try{
-    const detail = await apiFetch('/api/products/' + p.slug);
-    if(currentProductId !== id) return; // user navigated away before this resolved
+  // Real reviews load in parallel here too — the previous version of this
+  // tab generated fake seeded reviews and mislabeled every one of them
+  // "Verified Purchase", which was actively misleading.
+  const detailPromise = p.slug ? apiFetch('/api/products/' + p.slug).catch(function(e){ console.warn('Could not load full product detail', e); return null; }) : Promise.resolve(null);
+  const reviewsPromise = apiFetch('/api/products/' + p.id + '/reviews').catch(function(e){ console.warn('Could not load reviews', e); return { reviews: [] }; });
+  const eligibilityPromise = getAuthToken()
+    ? apiFetch('/api/products/' + p.id + '/review-eligibility').catch(function(){ return null; })
+    : Promise.resolve(null);
+
+  const [detail, reviewsBody, eligibility] = await Promise.all([detailPromise, reviewsPromise, eligibilityPromise]);
+  if(currentProductId !== id) return; // user navigated away before these resolved
+
+  renderReviewsTab(p, reviewsBody.reviews || [], eligibility);
+
+  if(detail){
     const full = detail.product;
     const images = Array.isArray(detail.images) ? detail.images : [];
-
     if(full.short_desc){ const el = qs('#pdShortDesc'); if(el) el.textContent = full.short_desc; }
     if(full.long_desc){ const el = qs('#pdtab-desc'); if(el) el.innerHTML = '<p>' + escapeHtml(full.long_desc).replace(/\n+/g,'</p><p>') + '</p>'; }
     p.material = full.material || p.material;
     qs('#pdtab-spec').innerHTML = specTableHTML(p);
-
     if(images.length){
       p.images = images;
       renderProductDetailImages(p, images);
     }
-  }catch(e){
-    console.warn('Could not load full product detail', e);
-    // Not fatal — the page already rendered correctly with list-level data above.
+  }
+}
+
+function renderReviewsTab(p, reviews, eligibility){
+  const dist = [5,4,3,2,1].map(function(star){
+    const count = reviews.filter(function(r){ return r.rating === star; }).length;
+    const pct = reviews.length ? Math.round((count / reviews.length) * 100) : 0;
+    return { star:star, pct:pct };
+  });
+
+  let html = '<div class="review-summary">' +
+    '<div class="review-avg"><div class="num">' + (p.rating || 0) + '</div>' + starsHTML(p.rating) + '<div style="font-size:.78rem;color:var(--text-mute);margin-top:6px;">' + reviews.length + ' review' + (reviews.length===1?'':'s') + '</div></div>' +
+    '<div class="review-bars">' + dist.map(function(d){ return '<div class="review-bar-row"><span>' + d.star + '★</span><div class="track"><div class="fill" style="width:' + d.pct + '%;"></div></div><span>' + d.pct + '%</span></div>'; }).join('') + '</div>' +
+  '</div>';
+
+  html += '<div id="reviewFormWrap"></div>';
+
+  if(reviews.length){
+    html += reviews.map(function(r){
+      return '<div class="review-item"><div class="top"><div class="who">' + escapeHtml(r.reviewer_name_snapshot || 'Verified Customer') + '<span class="v">Verified Purchase</span></div><div class="date">' + starsHTML(r.rating) + '</div></div>' +
+        (r.comment ? '<p>' + escapeHtml(r.comment) + '</p>' : '') +
+        '<div style="font-size:.72rem;color:#8a7768;margin-top:6px;">' + new Date(r.created_at).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'}) + '</div>' +
+      '</div>';
+    }).join('');
+  } else {
+    html += '<p style="color:#8a7768;padding:20px 0;">No reviews yet — be the first to share your experience with this product.</p>';
+  }
+
+  qs('#pdtab-reviews').innerHTML = html;
+
+  const formWrap = qs('#reviewFormWrap');
+  if(!getAuthToken()){
+    formWrap.innerHTML = '<div class="review-cta"><p>Purchased this item? <a href="#" onclick="openAccountModal();return false;">Sign in</a> to leave a review.</p></div>';
+  } else if(eligibility && eligibility.alreadyReviewed){
+    formWrap.innerHTML = '<div class="review-cta"><p>You\'ve already reviewed this product — thank you!</p></div>';
+  } else if(eligibility && eligibility.canReview){
+    formWrap.innerHTML =
+      '<div class="review-form">' +
+        '<h4 style="margin-bottom:10px;">Write a Review</h4>' +
+        '<div class="star-input" id="reviewStarInput">' +
+          [1,2,3,4,5].map(function(n){ return '<span data-star="' + n + '" onclick="setReviewStars(' + n + ')">★</span>'; }).join('') +
+        '</div>' +
+        '<textarea id="reviewComment" placeholder="Share your experience with this product (optional)" style="width:100%;min-height:80px;margin:10px 0;padding:10px;border:1px solid var(--line);border-radius:8px;"></textarea>' +
+        '<button class="btn btn-primary btn-sm" onclick="submitProductReview(\'' + p.id + '\', this)">Submit Review</button>' +
+      '</div>';
+    reviewStarValue = 5;
+  } else {
+    // Logged in, but either hasn't bought this product or their order
+    // hasn't been marked delivered yet — matches the server-side gate
+    // exactly, so this message is never misleading about why the form isn't shown.
+    formWrap.innerHTML = '<div class="review-cta"><p>Reviews are open to customers whose order for this item has been delivered.</p></div>';
+  }
+}
+
+let reviewStarValue = 5;
+function setReviewStars(n){
+  reviewStarValue = n;
+  qsa('#reviewStarInput span').forEach(function(el){
+    el.classList.toggle('active', parseInt(el.dataset.star,10) <= n);
+  });
+}
+
+async function submitProductReview(productId, btn){
+  if(btn){ btn.disabled = true; btn.textContent = 'Submitting…'; }
+  try{
+    await apiFetch('/api/products/' + productId + '/reviews', {
+      method:'POST',
+      body: JSON.stringify({ rating: reviewStarValue, comment: qs('#reviewComment') ? qs('#reviewComment').value.trim() : '' })
+    });
+    toast('Thank you — your review has been posted.', 'ok');
+    const p = getProduct(currentProductId);
+    if(p) renderProductDetail(p.id); // reload to show the new review in the real list
+  }catch(err){
+    toast((err && err.error) ? err.error : 'Could not submit review. Please try again.', 'err');
+    if(btn){ btn.disabled = false; btn.textContent = 'Submit Review'; }
   }
 }
 
@@ -3688,7 +3871,7 @@ function pdAddToCart(id){
 }
 
 function specTableHTML(p){
-  const rows = [['Material', p.material], ['Category', CAT_LABELS[p.cat]], ['SKU', p.sku], ['Country Of Origin', 'India']];
+  const rows = [['Material', p.material], ['Category', catLabel(p.cat)], ['SKU', p.sku], ['Country Of Origin', 'India']];
   if(p.options) rows.push([p.optionLabel + ' Options', p.options.join(', ')]);
   return '<table class="spec-table">' + rows.map(function(r){ return '<tr><td>' + r[0] + '</td><td>' + r[1] + '</td></tr>'; }).join('') + '</table>';
 }
@@ -3751,8 +3934,8 @@ function renderCartPage(){
     const p = x.product, l = x.line;
     return '<div class="cart-row">' +
       '<div class="cart-prod" data-label="Product">' +
-        '<div class="cart-thumb" style="' + mediaStyle(p.cat,0) + 'display:flex;align-items:center;justify-content:center;">' + productMediaSVG(p.cat) + '</div>' +
-        '<div><div class="n">' + p.name + '</div><div class="meta">' + (l.variant ? l.variant : CAT_LABELS[p.cat]) + '</div>' +
+        '<div class="cart-thumb" style="' + mediaStyle(p.cat,0) + 'display:flex;align-items:center;justify-content:center;">' + productThumbInnerHTML(p) + '</div>' +
+        '<div><div class="n">' + p.name + '</div><div class="meta">' + (l.variant ? l.variant : catLabel(p.cat)) + '</div>' +
           '<span class="cart-remove-x" onclick="removeFromCart(\'' + p.id + '\',\'' + l.variant + '\')"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg> Remove</span>' +
         '</div>' +
       '</div>' +
@@ -3825,7 +4008,7 @@ function renderCheckoutPage(){
   if(emptyEl) emptyEl.style.display = 'none';
   qs('#checkoutOrderItems').innerHTML = items.map(function(x){
     const p = x.product, l = x.line;
-    return '<div class="order-review-item"><div class="thumb" style="' + mediaStyle(p.cat,0) + 'display:flex;align-items:center;justify-content:center;">' + productMediaSVG(p.cat) + '</div><div class="n"><b>' + p.name + '</b>' + (l.variant?l.variant+' &middot; ':'') + 'Qty ' + l.qty + '</div><div class="amt">' + formatINR(p.price*l.qty) + '</div></div>';
+    return '<div class="order-review-item"><div class="thumb" style="' + mediaStyle(p.cat,0) + 'display:flex;align-items:center;justify-content:center;">' + productThumbInnerHTML(p) + '</div><div class="n"><b>' + p.name + '</b>' + (l.variant?l.variant+' &middot; ':'') + 'Qty ' + l.qty + '</div><div class="amt">' + formatINR(p.price*l.qty) + '</div></div>';
   }).join('');
   updateCheckoutTotals();
 }

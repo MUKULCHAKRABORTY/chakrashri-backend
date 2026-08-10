@@ -231,6 +231,79 @@ scripts/        # create-admin.js, run-migrations.js, test-db-connection.js,
 test/           # unit.test.js — tests against the REAL application modules, see "Round 4" below
 ```
 
+## Round 7 — Categories/Badges, Images Everywhere, Reviews, Routing, Order Columns, Blog CMS
+
+Seven issues reported from real testing, each traced to an actual root cause rather than patched
+by symptom:
+
+**1. Category showed "undefined"; category/badge couldn't be freely admin-defined.**
+`CAT_LABELS` was a hardcoded 7-key lookup object — any category an admin typed into the product
+form that wasn't already one of those 7 exact keys returned `undefined` from every lookup, which
+rendered as the literal text "undefined" on product cards, breadcrumbs, and the shop sidebar. Nine
+separate call sites had this same unguarded lookup. Fixed with a `catLabel()` helper that falls
+back to a nicely title-cased version of any category the admin actually types, and the shop
+sidebar now dynamically includes every real category present in the catalog (previously it only
+ever iterated the fixed 7 keys, so a new category could never even be filtered by). The badge
+system had the same class of bug in a different shape: any value other than exactly `'bestseller'`
+or `'new'` was silently replaced with the hardcoded text "Sale", discarding whatever the admin
+actually typed (e.g. "Certified" would display as "Sale"). Fixed with a matching `badgeInfo()`
+helper that displays custom badge text verbatim.
+
+**2. Product image visible on the detail page, but gone after a reload.** Root cause: the URL hash
+only ever encoded the page name (`#product`), never *which* product — `currentProductId` is an
+in-memory JavaScript variable that resets to nothing on every page reload, and there was no
+`'product'` branch in the router at all to reconstruct it. Fixed by encoding the product's slug in
+the hash (`#product/<slug>`), adding a proper router branch that looks the product up by slug, and
+a graceful "product not found, redirecting to shop" fallback for stale/deleted links — rather than
+the blank page reload previously produced.
+
+**3. Images not shown in shop, home, or quick view — blank with only the default icon.** By design,
+the public product *list* endpoint doesn't include images (a deliberate lightweight payload for a
+fast shop grid) — but nothing anywhere else ever fetched the full per-product detail that does have
+them, so every card thumbnail across the entire site only ever showed the decorative placeholder,
+by construction, not by accident. Fixed with a genuine architectural addition: the list endpoint
+now includes one lightweight primary image URL per product (`image_url`, via a cheap scalar
+subquery — not the full gallery, just enough for a card thumbnail), and a single shared
+`productThumbInnerHTML()` helper now renders it consistently everywhere a product thumbnail
+appears: shop grid, home page, quick view, mini-cart, full cart, and checkout order review — six
+locations that previously each independently rendered only the placeholder.
+
+**4. No product review feature.** Built from scratch, gated to verified purchases: a
+`product_reviews` table (migration 005), one review per customer per product, and — critically —
+the eligibility check (has this customer received a *delivered* order containing this exact
+product?) is enforced server-side on the actual submission endpoint, not just used to decide
+whether to show the form. The product's aggregate rating and review count are recomputed from real
+review data on every new review, rather than incrementally patched (which can drift out of sync
+over time, e.g. if a review is ever removed). This also **replaced entirely fake content**: the
+previous "Reviews" tab generated seeded pseudo-random fake reviews with fake names, and mislabeled
+every one of them "Verified Purchase" — which was actively misleading to real customers.
+
+**5. "Could not create service" when adding a puja/astrology service.** The confirmed, fixed bug:
+the service-creation INSERT and its audit-log INSERT were two separate, non-transactional queries —
+if the audit-log write failed for any reason, the admin saw a failure even though the service row
+may have already been committed. Wrapped both in one transaction. Error responses now also include
+a safe Postgres error code (e.g. `23505`, `23514`) rather than only a generic message, and the full
+error is logged server-side (visible in Render's Logs tab) — so if this specific failure mode
+recurs for a different underlying reason, the actual cause is immediately visible instead of
+requiring another round of guessing.
+
+**6. Customer's order history needed Product Name and Quantity columns.** The orders list endpoint
+previously returned only order-level summary data with no product information at all. Added an
+aggregation (`STRING_AGG` for product names, `SUM` for total quantity) to the same query, with
+sensible truncation on the frontend ("Product A, Product B +2 more") for orders with many distinct
+items rather than an unbounded list.
+
+**7. Blog rebuilt on Sanity.io (headless CMS) + Astro (Static Site Generation)**, replacing the
+plan for a custom-built blog CMS entirely. Delivered as a separate project
+(`chakrashri-blog.zip`) rather than inside this backend, since Portable Text + SSG fundamentally
+needs a build step this single-file frontend doesn't have: a real block-based rich text editor
+(Sanity Studio), a brand-matched public blog (`astro-site/src/pages/blog/`) using the same
+Cinzel/Poppins fonts and color palette as the storefront, and zero JavaScript shipped by default
+(Astro's static output) — so normal blog traffic never touches the Sanity API quota. A **Journal**
+link was added to this admin dashboard's sidebar, opening the deployed Sanity Studio in a new tab
+— update the `SANITY_STUDIO_URL` constant near the top of `admin.html` once the Studio is deployed
+(see `chakrashri-blog/README.md`).
+
 ## Round 6 — Bookings Never Actually Charged, Order History Silently Broken, Product Detail Data Gaps
 
 Three more real, live bugs — found by reading the actual deployed code, same discipline as every

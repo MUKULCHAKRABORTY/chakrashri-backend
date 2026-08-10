@@ -27,11 +27,12 @@ router.get('/', async (req, res) => {
   }
 
   params.push(limit, offset);
-  const sql = `SELECT id, sku, name, slug, category, price_paise, mrp_paise, badge, rating,
-                      review_count, stock_qty
-               FROM products
+  const sql = `SELECT p.id, p.sku, p.name, p.slug, p.category, p.price_paise, p.mrp_paise, p.badge, p.rating,
+                      p.review_count, p.stock_qty,
+                      (SELECT pi.url FROM product_images pi WHERE pi.product_id = p.id ORDER BY pi.sort_order LIMIT 1) AS image_url
+               FROM products p
                WHERE ${conditions.join(' AND ')}
-               ORDER BY created_at DESC
+               ORDER BY p.created_at DESC
                LIMIT $${params.length - 1} OFFSET $${params.length}`;
   try {
     const result = await db.query(sql, params);
@@ -203,5 +204,121 @@ router.delete('/:id/images/:imageId', requireAuth, requireRole('admin', 'staff')
     res.status(500).json({ error: 'Could not remove image.' });
   }
 });
+
+// ============================================================
+// Product Reviews — gated to verified (delivered) purchases only
+// ============================================================
+
+// ---------- Public: list reviews for a product ----------
+router.get('/:id/reviews', async (req, res) => {
+  const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+  const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 10));
+  const offset = (page - 1) * limit;
+  try {
+    const { rows } = await db.query(
+      `SELECT id, rating, comment, reviewer_name_snapshot, created_at
+       FROM product_reviews WHERE product_id = $1
+       ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+      [req.params.id, limit, offset]
+    );
+    res.json({ reviews: rows });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not load reviews.' });
+  }
+});
+
+// ---------- Auth: can the current user review this product? ----------
+// Drives the frontend UI (show/hide the review form) — but the POST
+// endpoint below re-checks this itself server-side regardless, since a
+// client-side-only gate is never trustworthy on its own.
+router.get('/:id/review-eligibility', requireAuth, async (req, res) => {
+  try {
+    const { rows: purchased } = await db.query(
+      `SELECT 1 FROM order_items oi
+       JOIN orders o ON o.id = oi.order_id
+       WHERE oi.product_id = $1 AND o.user_id = $2 AND o.status = 'delivered' LIMIT 1`,
+      [req.params.id, req.user.id]
+    );
+    const { rows: existing } = await db.query(
+      'SELECT id FROM product_reviews WHERE product_id = $1 AND user_id = $2',
+      [req.params.id, req.user.id]
+    );
+    res.json({
+      verifiedPurchase: purchased.length > 0,
+      alreadyReviewed: existing.length > 0,
+      canReview: purchased.length > 0 && existing.length === 0
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not check review eligibility.' });
+  }
+});
+
+// ---------- Auth: submit a review (verified-purchase gated) ----------
+router.post(
+  '/:id/reviews',
+  requireAuth,
+  [
+    body('rating').isInt({ min: 1, max: 5 }).toInt(),
+    body('comment').optional({ nullable: true }).isString().isLength({ max: 2000 })
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+
+    const { rating, comment } = req.body;
+    try {
+      const result = await db.withTransaction(async (client) => {
+        // Re-verified here, server-side, regardless of what the eligibility
+        // endpoint said earlier — that endpoint only drives UI; this is the
+        // actual gate. A delivered order_item for this exact product is the
+        // "verified purchase" bar, matching real e-commerce platforms.
+        const { rows: purchased } = await client.query(
+          `SELECT o.id FROM order_items oi
+           JOIN orders o ON o.id = oi.order_id
+           WHERE oi.product_id = $1 AND o.user_id = $2 AND o.status = 'delivered' LIMIT 1`,
+          [req.params.id, req.user.id]
+        );
+        if (!purchased.length) {
+          throw Object.assign(new Error('You can only review products from a delivered order.'), { status: 403 });
+        }
+
+        const { rows: userRows } = await client.query('SELECT name FROM users WHERE id = $1', [req.user.id]);
+        const reviewerName = userRows[0] ? userRows[0].name : 'Verified Customer';
+
+        let reviewRow;
+        try {
+          const { rows } = await client.query(
+            `INSERT INTO product_reviews (product_id, user_id, order_id, rating, comment, reviewer_name_snapshot)
+             VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+            [req.params.id, req.user.id, purchased[0].id, rating, comment || null, reviewerName]
+          );
+          reviewRow = rows[0];
+        } catch (err) {
+          if (err.code === '23505') {
+            throw Object.assign(new Error('You have already reviewed this product.'), { status: 409 });
+          }
+          throw err;
+        }
+
+        // Recompute the product's aggregate rating/count from real data —
+        // avoids the two numbers ever drifting out of sync with the
+        // underlying reviews, which a simple increment-on-write could do
+        // over time (e.g. if a review is ever deleted by an admin later).
+        const { rows: agg } = await client.query(
+          'SELECT AVG(rating)::numeric(2,1) AS avg_rating, COUNT(*) AS cnt FROM product_reviews WHERE product_id = $1',
+          [req.params.id]
+        );
+        await client.query('UPDATE products SET rating = $1, review_count = $2 WHERE id = $3', [
+          agg[0].avg_rating, agg[0].cnt, req.params.id
+        ]);
+
+        return reviewRow;
+      });
+      res.status(201).json({ review: result });
+    } catch (err) {
+      res.status(err.status || 500).json({ error: err.message || 'Could not submit review.' });
+    }
+  }
+);
 
 module.exports = router;
