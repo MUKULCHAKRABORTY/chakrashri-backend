@@ -40,8 +40,15 @@ router.get('/orders/:id', async (req, res) => {
       return res.status(403).json({ error: 'This order does not belong to your account.' });
     }
     const { rows: items } = await db.query(
-      'SELECT product_id, product_name_snapshot, unit_price_paise, quantity, line_total_paise FROM order_items WHERE order_id = $1',
-      [req.params.id]
+      `SELECT oi.product_id, oi.product_name_snapshot, oi.unit_price_paise, oi.quantity, oi.line_total_paise,
+              p.slug AS product_slug,
+              EXISTS(
+                SELECT 1 FROM product_reviews pr WHERE pr.product_id = oi.product_id AND pr.user_id = $2
+              ) AS already_reviewed
+       FROM order_items oi
+       LEFT JOIN products p ON p.id = oi.product_id
+       WHERE oi.order_id = $1`,
+      [req.params.id, req.user.id]
     );
     res.json({ order: orderRows[0], items });
   } catch (err) {

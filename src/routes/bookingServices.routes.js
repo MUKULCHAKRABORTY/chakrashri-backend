@@ -64,22 +64,44 @@ router.post(
 
     const { service_type, name, description, price_paise, duration_label, sort_order, is_active } = req.body;
     try {
-      // Both inserts now share one transaction: if the audit-log write fails
-      // for any reason, the whole thing rolls back and the admin sees an
-      // honest failure — previously these were two separate queries, so an
-      // audit-log failure could report "could not create service" to the
-      // admin while the service had actually already been committed,
-      // silently creating a duplicate on retry.
       const service = await db.withTransaction(async (client) => {
-        const { rows } = await client.query(
-          `INSERT INTO booking_services (service_type, name, description, price_paise, duration_label, sort_order, is_active)
-           VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-          [service_type, name, description || null, price_paise, duration_label || null, sort_order || 0, is_active !== false]
-        );
-        await client.query(
-          `INSERT INTO admin_audit_log (admin_user_id, action, entity_type, entity_id) VALUES ($1,'create_booking_service','booking_service',$2)`,
-          [req.user.id, rows[0].id]
-        );
+        // Definitive diagnostic: asks Postgres directly, on THIS exact
+        // connection, whether it can resolve the table right now. GET
+        // requests (a different code path, using db.query() rather than a
+        // transaction client) have proven the table exists — this checks
+        // whether the SAME thing is true from inside a transaction on this
+        // pool, which removes all remaining ambiguity about where the
+        // "undefined table" error is actually coming from.
+        const { rows: existCheck } = await client.query(`SELECT to_regclass('public.booking_services') AS reg`);
+        if (!existCheck[0].reg) {
+          throw Object.assign(
+            new Error('booking_services is not visible on this connection (to_regclass returned null) even though GET requests can read it — this points to a connection/pooling issue, not a missing table.'),
+            { code: 'DIAGNOSTIC_TABLE_NOT_VISIBLE' }
+          );
+        }
+
+        let rows;
+        try {
+          ({ rows } = await client.query(
+            `INSERT INTO booking_services (service_type, name, description, price_paise, duration_label, sort_order, is_active)
+             VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+            [service_type, name, description || null, price_paise, duration_label || null, sort_order || 0, is_active !== false]
+          ));
+        } catch (err) {
+          err.failedStatement = 'insert_booking_service';
+          throw err;
+        }
+
+        try {
+          await client.query(
+            `INSERT INTO admin_audit_log (admin_user_id, action, entity_type, entity_id) VALUES ($1,'create_booking_service','booking_service',$2)`,
+            [req.user.id, rows[0].id]
+          );
+        } catch (err) {
+          err.failedStatement = 'insert_audit_log';
+          throw err;
+        }
+
         return rows[0];
       });
       res.status(201).json({ service });
@@ -89,8 +111,12 @@ router.post(
       // generic plus a safe Postgres error code (e.g. '23505', '23514',
       // '42P01'), which is standard practice: identifies the failure class
       // without leaking query text, schema internals, or stack traces.
-      console.error('[booking-services] POST / failed:', err.message, err.code || '', err.detail || '');
-      res.status(500).json({ error: 'Could not create service.', code: err.code || null });
+      console.error('[booking-services] POST / failed:', err.failedStatement || 'unknown-step', '|', err.message, '|', err.code || '', '|', err.detail || '');
+      res.status(500).json({
+        error: 'Could not create service.',
+        code: err.code || null,
+        step: err.failedStatement || null
+      });
     }
   }
 );

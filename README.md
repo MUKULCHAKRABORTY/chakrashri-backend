@@ -231,6 +231,60 @@ scripts/        # create-admin.js, run-migrations.js, test-db-connection.js,
 test/           # unit.test.js — tests against the REAL application modules, see "Round 4" below
 ```
 
+## Round 8 — Service Creation Diagnostic, Status Emails, Order-Level Reviews, Flexbox Bugs
+
+**"Could not create service" — now with a concrete Postgres error code (42P01, "undefined table")
+instead of a generic message.** This is genuine progress: it proves the failure is a real
+database-level issue, not a validation or network problem. But it's honestly still not 100% solved
+— `GET` requests prove the `booking_services` table exists, the transaction helper was re-verified
+correct, and the route code has no typo, which rules out the obvious causes. Two things went in
+this round rather than a guessed fix:
+1. **A defensive, zero-risk change**: every transaction now explicitly runs `SET search_path TO
+   public` before its real queries. This costs nothing and can't break anything if it wasn't the
+   cause, but directly addresses the one plausible explanation to which pattern this narrows down —
+   a transaction-scoped connection resolving an unqualified table name differently than a plain
+   query would.
+2. **A maximally decisive diagnostic**: the transaction now runs `SELECT to_regclass('public.booking_services')`
+   as its first statement and fails loudly with an unambiguous message if the table isn't visible
+   from that exact connection, and each subsequent INSERT is individually try/caught and tagged
+   with *which* statement failed. The next attempt — whether it now succeeds because of the
+   search_path fix, or still fails — will not require another round of guessing to diagnose. If it
+   still fails, check Render's Logs tab for the `[booking-services] POST / failed:` line and paste
+   it back exactly.
+
+**Automatic customer emails on every status change.** Previously only the initial order/booking
+confirmation sent an email — a `// TODO: notify customer of status change` comment had been sitting
+in the code since an earlier round. Now wired for real: order status transitions
+(processing/shipped/delivered/cancelled/refunded) and booking status transitions
+(confirmed/completed/cancelled) each send an appropriate email
+(`src/utils/mailer.js` — `sendOrderStatusUpdate`, `sendBookingStatusUpdate`). When an order is
+marked **delivered**, the email also includes a direct link to review each purchased product —
+this is deliberately the same moment reviews become possible at all (see Round 7's verified-
+purchase gate), so it's a real invitation, not a premature one. Email sending is fire-and-forget
+relative to the status update itself — a slow or failed email can never block or fail the actual
+status change.
+
+**Order-level review flow.** The customer's order history table now has a **Review** column as its
+last column (as requested) — clicking it opens every distinct product from that order in one
+place, each independently rateable, rather than requiring the customer to hunt down each product's
+own page separately. Reviews are still gated server-side to delivered orders (the button reads
+"View" until then, "Review" once delivered), and each order's item list now also indicates which
+products the customer has already reviewed, so the same product can't be double-submitted from
+this view.
+
+**A recurring mobile CSS bug, found and fixed everywhere it appeared.** The reported "search bar
+width in sidebar" issue was a classic flexbox pitfall: a flex child with `flex:1` does not actually
+shrink below its own content's natural width unless `min-width:0` is also set — without it, the
+input pushes against (or past) its sibling button instead of properly filling the available space
+on a narrow screen. Rather than patch only the one reported instance, the same exact pattern was
+searched for and fixed in **five** places it was silently present: the main header search bar (the
+single highest-traffic element on the site), the mobile drawer search, the chat widget input, and
+the cart/checkout coupon code input. Separately, the customer's orders table had **no horizontal-
+scroll handling on its wrapper at all** (`.orders-table-wrap` had zero CSS rules defined) — on a
+narrow phone this table could overflow the viewport itself rather than scrolling neatly within its
+own container. Fixed with `overflow-x:auto` and a properly-measured edge-to-edge scroll treatment
+on small screens (measured against the real `--sp-5` container padding token, not guessed).
+
 ## Round 7 — Categories/Badges, Images Everywhere, Reviews, Routing, Order Columns, Blog CMS
 
 Seven issues reported from real testing, each traced to an actual root cause rather than patched

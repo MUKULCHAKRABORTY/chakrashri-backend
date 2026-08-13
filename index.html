@@ -268,10 +268,10 @@ p{ color: var(--text-soft); }
 .logo .word{ font-family:var(--f-display); font-size:1.5rem; font-weight:600; color:var(--ivory); letter-spacing:.02em; line-height:1; }
 .logo .word small{ display:block; font-family:var(--f-body); font-size:.56rem; font-weight:500; letter-spacing:.32em; color:var(--gold-lt); margin-top:5px; text-transform:uppercase; }
 
-.header-search{ flex:1; max-width:560px; position:relative; }
+.header-search{ flex:1; min-width:0; max-width:560px; position:relative; }
 .header-search form{ display:flex; align-items:center; background:rgba(250,243,228,.08); border:1.5px solid rgba(201,162,39,.35); border-radius:var(--radius-full); padding:4px 4px 4px 22px; transition:border-color var(--dur), background var(--dur); }
 .header-search form:focus-within{ border-color:var(--gold-lt); background:rgba(250,243,228,.13); }
-.header-search input{ flex:1; background:none; border:none; color:var(--ivory); padding:11px 8px; font-size:.9rem; }
+.header-search input{ flex:1; min-width:0; background:none; border:none; color:var(--ivory); padding:11px 8px; font-size:.9rem; }
 .header-search input::placeholder{ color:rgba(250,243,228,.45); }
 .header-search button{ width:42px; height:42px; border-radius:50%; background:var(--gold); color:var(--ink); display:flex; align-items:center; justify-content:center; flex-shrink:0; transition:background var(--dur); }
 .header-search button:hover{ background:var(--gold-lt); }
@@ -707,6 +707,9 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
 .star-input span{ color:var(--line); transition:color .12s; }
 .star-input span.active{ color:var(--marigold); }
 .star-input span:hover{ color:var(--marigold); }
+.order-review-product .orp-name{ font-weight:600; font-size:.95rem; color:var(--ink); margin-bottom:8px; }
+.order-review-product .orp-status{ font-size:.85rem; color:#8a7768; }
+.order-review-product .orp-status.orp-done{ color:var(--success,#3E7A4F); font-weight:600; }
 
 .related-scroll{ margin-top:var(--sp-9); }
 
@@ -872,7 +875,7 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
 .chat-foot{ padding:14px 16px; border-top:1px solid var(--line); flex-shrink:0; background:#fff; }
 .chat-input-row{ display:flex; align-items:center; gap:10px; background:var(--ivory); border:1.5px solid var(--line); border-radius:var(--radius-full); padding:5px 5px 5px 18px; transition:border-color var(--dur); }
 .chat-input-row:focus-within{ border-color:var(--gold); }
-.chat-input-row input{ flex:1; background:none; border:none; padding:9px 0; font-size:.86rem; }
+.chat-input-row input{ flex:1; min-width:0; background:none; border:none; padding:9px 0; font-size:.86rem; }
 .chat-input-row button{ width:38px; height:38px; border-radius:50%; background:var(--oxblood); color:#fff; display:flex; align-items:center; justify-content:center; flex-shrink:0; transition:background var(--dur); }
 .chat-input-row button:hover{ background:var(--oxblood-dk); }
 .chat-input-row button:disabled{ opacity:.5; }
@@ -929,7 +932,7 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
 .cart-summary{ background:#fff; border:1px solid var(--line); border-radius:var(--radius-md); padding:var(--sp-6); position:sticky; top:calc(var(--header-h) + 90px); }
 .cart-summary h3{ margin-bottom:20px; }
 .coupon-row{ display:flex; gap:8px; margin-bottom:22px; }
-.coupon-row input{ flex:1; padding:12px 14px; border:1.5px solid var(--line); border-radius:var(--radius-sm); }
+.coupon-row input{ flex:1; min-width:0; padding:12px 14px; border:1.5px solid var(--line); border-radius:var(--radius-sm); }
 .summary-line{ display:flex; justify-content:space-between; font-size:.88rem; color:var(--text-soft); margin-bottom:14px; }
 .summary-line.total{ font-size:1.1rem; font-weight:700; color:var(--ink); border-top:1px solid var(--line); padding-top:16px; margin-top:6px; font-family:var(--f-display); }
 .summary-line.total span:last-child{ color:var(--oxblood); }
@@ -1141,6 +1144,8 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
 .admin-toolbar h3{ margin:0; }
 .admin-table-wrap{ overflow-x:auto; }
 .admin-table{ width:100%; border-collapse:collapse; min-width:640px; }
+.orders-table-wrap{ overflow-x:auto; -webkit-overflow-scrolling:touch; border-radius:var(--radius-md); }
+@media (max-width:700px){ .orders-table-wrap{ margin:0 calc(-1 * var(--sp-5)); padding:0 var(--sp-5); width:calc(100% + var(--sp-5) * 2); } }
 .admin-table th{ text-align:left; font-size:.72rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-mute); padding:10px 12px; border-bottom:2px solid var(--line); white-space:nowrap; }
 .admin-table td{ padding:12px; border-bottom:1px solid var(--line); font-size:.86rem; vertical-align:middle; }
 .admin-table tr:hover td{ background:var(--ivory); }
@@ -1322,7 +1327,7 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
   <div class="drawer-body">
     <div style="padding:4px 22px 18px;">
       <form onsubmit="return handleMobileSearchSubmit(event);" style="display:flex;align-items:center;background:var(--parchment);border-radius:var(--radius-full);padding:4px 4px 4px 16px;">
-        <input type="text" id="mobileSearchInput" placeholder="Search products…" style="flex:1;background:none;border:none;padding:10px 6px;font-size:.88rem;" aria-label="Search products">
+        <input type="text" id="mobileSearchInput" placeholder="Search products…" style="flex:1;min-width:0;background:none;border:none;padding:10px 6px;font-size:.88rem;" aria-label="Search products">
         <button type="submit" style="width:38px;height:38px;border-radius:50%;background:var(--oxblood);color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;" aria-label="Search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg></button>
       </form>
     </div>
@@ -2501,6 +2506,17 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
 </div>
 
 <!-- ============================================================
+     ORDER REVIEW MODAL — review every product from a single order
+============================================================ -->
+<div class="modal-wrap" id="orderReviewModal">
+  <div class="modal-backdrop" onclick="closeModal('orderReviewModal')"></div>
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeModal('orderReviewModal')" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+    <div style="padding:28px;max-height:80vh;overflow-y:auto;" id="orderReviewBody"></div>
+  </div>
+</div>
+
+<!-- ============================================================
      ACCOUNT MODAL
 ============================================================ -->
 <div class="modal-wrap" id="acctModal">
@@ -2746,9 +2762,10 @@ async function renderOrdersPage(){
         '<td>' + escapeHtml((order.payment_method || 'N/A').toUpperCase()) + '</td>' +
         '<td>' + formatINR((order.total_paise || 0) / 100) + '</td>' +
         '<td>' + new Date(order.created_at).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' }) + '</td>' +
+        '<td><button class="btn btn-ghost btn-sm" onclick="openOrderReviewModal(\'' + order.id + '\')">' + (order.status === 'delivered' ? 'Review' : 'View') + '</button></td>' +
       '</tr>';
     }).join('');
-    html += '<h3 style="margin:0 0 12px;">Product Orders</h3><div class="orders-table-wrap"><table class="admin-table"><thead><tr><th>Order</th><th>Product</th><th>Qty</th><th>Status</th><th>Payment</th><th>Total</th><th>Placed</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+    html += '<h3 style="margin:0 0 12px;">Product Orders</h3><div class="orders-table-wrap"><table class="admin-table"><thead><tr><th>Order</th><th>Product</th><th>Qty</th><th>Status</th><th>Payment</th><th>Total</th><th>Placed</th><th>Review</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
   }
 
   const allBookings = (pujaBookings || []).map(function(b){ return Object.assign({ _kind:'Puja', _label: b.puja_type }, b); })
@@ -2784,6 +2801,75 @@ async function loadUserBookings(type){
   }catch(e){
     console.warn('Could not load ' + type + ' bookings', e);
     return [];
+  }
+}
+
+/* ---------- Order review modal: review every product from one order ---------- */
+let orderReviewStars = {}; // productId -> selected rating (1-5), reset each time the modal opens
+
+async function openOrderReviewModal(orderId){
+  const body = qs('#orderReviewBody');
+  body.innerHTML = '<div style="text-align:center;padding:30px;"><span class="spinner" style="width:28px;height:28px;"></span></div>';
+  openModal('orderReviewModal');
+  orderReviewStars = {};
+  try{
+    const data = await apiFetch('/api/customer/orders/' + orderId);
+    const order = data.order, items = data.items || [];
+    const deliverable = order.status === 'delivered';
+    let html = '<h3 style="margin-bottom:4px;">' + escapeHtml(order.order_number) + '</h3>' +
+      '<p style="color:#8a7768;font-size:.85rem;margin-bottom:20px;">' +
+      (deliverable ? 'Rate each product you purchased in this order.' : 'Reviews open once this order is marked delivered — current status: ' + escapeHtml((order.status||'').replace('_',' ')) + '.') +
+      '</p>';
+
+    items.forEach(function(item){
+      html += '<div class="order-review-product" data-product-id="' + item.product_id + '">' +
+        '<div class="orp-name">' + escapeHtml(item.product_name_snapshot) + ' <span style="color:#8a7768;font-weight:400;">×' + item.quantity + '</span></div>';
+      if(!deliverable){
+        html += '<div class="orp-status">Available after delivery</div>';
+      } else if(item.already_reviewed){
+        html += '<div class="orp-status orp-done">✓ You reviewed this product</div>';
+      } else {
+        html += '<div class="star-input" data-product="' + item.product_id + '">' +
+          [1,2,3,4,5].map(function(n){ return '<span data-star="' + n + '" onclick="setOrderReviewStars(\'' + item.product_id + '\',' + n + ')">★</span>'; }).join('') +
+        '</div>' +
+        '<textarea class="orp-comment" id="orpComment_' + item.product_id + '" placeholder="Optional comment" style="width:100%;min-height:60px;margin:8px 0;padding:8px;border:1px solid var(--line);border-radius:8px;"></textarea>' +
+        '<button class="btn btn-primary btn-sm" onclick="submitOrderItemReview(\'' + item.product_id + '\', this)">Submit Review</button>';
+      }
+      html += '</div><div class="divider" style="margin:16px 0;"></div>';
+    });
+    body.innerHTML = html;
+  }catch(err){
+    body.innerHTML = '<p style="color:#B23A2E;">' + escapeHtml((err && err.error) || 'Could not load order.') + '</p>';
+  }
+}
+
+function setOrderReviewStars(productId, n){
+  orderReviewStars[productId] = n;
+  const wrap = qs('.star-input[data-product="' + productId + '"]');
+  if(wrap){
+    Array.from(wrap.children).forEach(function(el){ el.classList.toggle('active', parseInt(el.dataset.star,10) <= n); });
+  }
+}
+
+async function submitOrderItemReview(productId, btn){
+  const rating = orderReviewStars[productId];
+  if(!rating){ toast('Please select a star rating first.', 'err'); return; }
+  const commentEl = qs('#orpComment_' + productId);
+  btn.disabled = true; btn.textContent = 'Submitting…';
+  try{
+    await apiFetch('/api/products/' + productId + '/reviews', {
+      method:'POST',
+      body: JSON.stringify({ rating: rating, comment: commentEl ? commentEl.value.trim() : '' })
+    });
+    toast('Review submitted — thank you!', 'ok');
+    const container = qs('.order-review-product[data-product-id="' + productId + '"]');
+    if(container){
+      const nameHTML = qs('.orp-name', container).outerHTML;
+      container.innerHTML = nameHTML + '<div class="orp-status orp-done">✓ You reviewed this product</div>';
+    }
+  }catch(err){
+    toast((err && err.error) ? err.error : 'Could not submit review. Please try again.', 'err');
+    btn.disabled = false; btn.textContent = 'Submit Review';
   }
 }
 

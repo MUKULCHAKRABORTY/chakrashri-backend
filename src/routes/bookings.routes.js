@@ -3,7 +3,7 @@ const crypto = require('crypto');
 const { body, validationResult } = require('express-validator');
 const db = require('../config/db');
 const { requireAuth, requireRole } = require('../middleware/auth');
-const { sendBookingConfirmation } = require('../utils/mailer');
+const { sendBookingConfirmation, sendBookingStatusUpdate } = require('../utils/mailer');
 const { createBookingWithPayment } = require('../utils/bookingPayments');
 const { timingSafeEqualHex } = require('../utils/crypto');
 
@@ -204,11 +204,27 @@ router.patch('/puja/:id/status', requireAuth, requireRole('admin', 'staff'), asy
   if (!BOOKING_STATUSES.includes(status)) return res.status(400).json({ error: 'Invalid status.' });
   try {
     const result = await db.query(
-      'UPDATE puja_bookings SET status = $1 WHERE id = $2 RETURNING id, status',
+      `UPDATE puja_bookings SET status = $1 WHERE id = $2
+       RETURNING id, status, user_id, puja_type, preferred_date, preferred_time_slot`,
       [status, req.params.id]
     );
     if (!result.rows.length) return res.status(404).json({ error: 'Booking not found.' });
-    // TODO: notify customer of status change (email/SMS/WhatsApp)
+
+    (async () => {
+      try {
+        const b = result.rows[0];
+        const { rows: userRows } = await db.query('SELECT name, email FROM users WHERE id = $1', [b.user_id]);
+        if (userRows.length) {
+          await sendBookingStatusUpdate({
+            email: userRows[0].email, name: userRows[0].name, type: 'puja', status: b.status,
+            preferredDate: b.preferred_date, preferredTimeSlot: b.preferred_time_slot
+          });
+        }
+      } catch (err) {
+        console.error('[bookings.routes] Failed to send puja status update email:', err.message);
+      }
+    })();
+
     res.json({ booking: result.rows[0] });
   } catch (err) {
     res.status(500).json({ error: 'Could not update booking status.' });
@@ -221,11 +237,27 @@ router.patch('/astrology/:id/status', requireAuth, requireRole('admin', 'staff')
   if (!BOOKING_STATUSES.includes(status)) return res.status(400).json({ error: 'Invalid status.' });
   try {
     const result = await db.query(
-      'UPDATE astrology_bookings SET status = $1 WHERE id = $2 RETURNING id, status',
+      `UPDATE astrology_bookings SET status = $1 WHERE id = $2
+       RETURNING id, status, user_id, consultation_mode, preferred_date, preferred_time_slot`,
       [status, req.params.id]
     );
     if (!result.rows.length) return res.status(404).json({ error: 'Booking not found.' });
-    // TODO: notify customer of status change (email/SMS/WhatsApp)
+
+    (async () => {
+      try {
+        const b = result.rows[0];
+        const { rows: userRows } = await db.query('SELECT name, email FROM users WHERE id = $1', [b.user_id]);
+        if (userRows.length) {
+          await sendBookingStatusUpdate({
+            email: userRows[0].email, name: userRows[0].name, type: 'astrology consultation', status: b.status,
+            preferredDate: b.preferred_date, preferredTimeSlot: b.preferred_time_slot
+          });
+        }
+      } catch (err) {
+        console.error('[bookings.routes] Failed to send astrology status update email:', err.message);
+      }
+    })();
+
     res.json({ booking: result.rows[0] });
   } catch (err) {
     res.status(500).json({ error: 'Could not update booking status.' });

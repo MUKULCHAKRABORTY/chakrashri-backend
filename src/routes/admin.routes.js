@@ -3,6 +3,7 @@ const db = require('../config/db');
 const razorpay = require('../config/razorpay');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { restoreOrderStock, STOCK_RESTORED_STATUSES } = require('../utils/stock');
+const { sendOrderStatusUpdate } = require('../utils/mailer');
 
 const router = express.Router();
 router.use(requireAuth, requireRole('admin', 'staff'));
@@ -158,7 +159,30 @@ router.patch('/orders/:id/status', async (req, res) => {
        VALUES ($1, 'update_order_status', 'order', $2, $3)`,
       [req.user.id, req.params.id, JSON.stringify({ status })]
     );
-    // TODO: notify customer of status change (email/SMS/WhatsApp)
+
+    // Fire-and-forget: a slow/failed email must never block the status
+    // update itself from succeeding and being returned to the admin.
+    (async () => {
+      try {
+        const { rows: customerRows } = await db.query(
+          `SELECT o.order_number, o.status, o.tracking_number, o.courier_name, o.total_paise,
+                  u.email AS customer_email, u.name AS customer_name
+           FROM orders o JOIN users u ON u.id = o.user_id WHERE o.id = $1`,
+          [req.params.id]
+        );
+        if (!customerRows.length) return;
+        const { rows: itemRows } = await db.query(
+          `SELECT oi.product_name_snapshot, p.slug
+           FROM order_items oi LEFT JOIN products p ON p.id = oi.product_id
+           WHERE oi.order_id = $1`,
+          [req.params.id]
+        );
+        await sendOrderStatusUpdate(customerRows[0], itemRows);
+      } catch (err) {
+        console.error('[admin.routes] Failed to send order status update email:', err.message);
+      }
+    })();
+
     res.json({ order: result.rows[0] });
   } catch (err) {
     res.status(500).json({ error: 'Could not update order status.' });
