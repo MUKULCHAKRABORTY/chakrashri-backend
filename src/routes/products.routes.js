@@ -47,11 +47,40 @@ router.get('/:slug', async (req, res) => {
   try {
     const result = await db.query('SELECT * FROM products WHERE slug = $1 AND is_active = true', [req.params.slug]);
     if (!result.rows.length) return res.status(404).json({ error: 'Product not found.' });
+    const productId = result.rows[0].id;
+
     const images = await db.query(
       'SELECT url FROM product_images WHERE product_id = $1 ORDER BY sort_order',
-      [result.rows[0].id]
+      [productId]
     );
-    res.json({ product: result.rows[0], images: images.rows.map((r) => r.url) });
+    const properties = await db.query(
+      'SELECT property_name, property_value, color_hex FROM product_properties WHERE product_id = $1 ORDER BY sort_order',
+      [productId]
+    );
+    const options = await db.query(
+      'SELECT id, option_name, option_type FROM product_options WHERE product_id = $1 ORDER BY sort_order',
+      [productId]
+    );
+    for (const opt of options.rows) {
+      const values = await db.query(
+        'SELECT id, value, color_hex FROM product_option_values WHERE option_id = $1 ORDER BY sort_order',
+        [opt.id]
+      );
+      opt.values = values.rows;
+    }
+    const variants = await db.query(
+      `SELECT id, sku, option_values, price_paise, stock_qty, image_url
+       FROM product_variants WHERE product_id = $1 AND is_active = true ORDER BY created_at`,
+      [productId]
+    );
+
+    res.json({
+      product: result.rows[0],
+      images: images.rows.map((r) => r.url),
+      properties: properties.rows,
+      options: options.rows,
+      variants: variants.rows
+    });
   } catch (err) {
     res.status(500).json({ error: 'Could not load product.' });
   }
@@ -320,5 +349,286 @@ router.post(
     }
   }
 );
+
+// ============================================================
+// Product Properties — informational display attributes only
+// (e.g. "Material: Brass", "Origin: India"). NOT purchasable variants —
+// see the Options/Variants section below for those.
+// ============================================================
+
+router.post(
+  '/:id/properties',
+  requireAuth,
+  requireRole('admin', 'staff'),
+  [
+    body('property_name').trim().isLength({ min: 1, max: 60 }),
+    body('property_value').trim().isLength({ min: 1, max: 120 }),
+    body('color_hex').optional({ nullable: true }).matches(/^#[0-9A-Fa-f]{6}$/)
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+    try {
+      const { rows } = await db.query(
+        `INSERT INTO product_properties (product_id, property_name, property_value, color_hex, sort_order)
+         VALUES ($1,$2,$3,$4,(SELECT COALESCE(MAX(sort_order),0)+1 FROM product_properties WHERE product_id = $1))
+         RETURNING *`,
+        [req.params.id, req.body.property_name, req.body.property_value, req.body.color_hex || null]
+      );
+      res.status(201).json({ property: rows[0] });
+    } catch (err) {
+      console.error('[products] POST /:id/properties failed:', err.message, err.code || '');
+      res.status(500).json({ error: 'Could not add property.', code: err.code || null });
+    }
+  }
+);
+
+router.delete('/:id/properties/:propertyId', requireAuth, requireRole('admin', 'staff'), async (req, res) => {
+  try {
+    const result = await db.query(
+      'DELETE FROM product_properties WHERE id = $1 AND product_id = $2 RETURNING id',
+      [req.params.propertyId, req.params.id]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Property not found on this product.' });
+    res.status(204).send();
+  } catch (err) {
+    res.status(500).json({ error: 'Could not remove property.' });
+  }
+});
+
+// ============================================================
+// Product Options & Variants — purchasable variations (Color, Size, etc).
+// Each variant is an independently priced/stocked/imaged SKU. See the
+// design note at the top of migrations/008_product_variants.sql.
+// ============================================================
+
+// ---------- Admin: create an option, optionally with its values in the same call ----------
+router.post(
+  '/:id/options',
+  requireAuth,
+  requireRole('admin', 'staff'),
+  [
+    body('option_name').trim().isLength({ min: 1, max: 60 }),
+    body('option_type').isIn(['text', 'color']),
+    body('values').optional().isArray()
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+    const { option_name, option_type, values } = req.body;
+
+    try {
+      const option = await db.withTransaction(async (client) => {
+        const { rows: optRows } = await client.query(
+          `INSERT INTO product_options (product_id, option_name, option_type, sort_order)
+           VALUES ($1,$2,$3,(SELECT COALESCE(MAX(sort_order),0)+1 FROM product_options WHERE product_id = $1))
+           RETURNING *`,
+          [req.params.id, option_name, option_type]
+        );
+        const opt = optRows[0];
+        opt.values = [];
+
+        if (Array.isArray(values)) {
+          for (const v of values) {
+            if (!v || typeof v.value !== 'string' || !v.value.trim()) continue;
+            if (option_type === 'color' && v.colorHex && !/^#[0-9A-Fa-f]{6}$/.test(v.colorHex)) {
+              throw Object.assign(new Error(`Invalid color for value "${v.value}".`), { status: 400 });
+            }
+            const { rows: valRows } = await client.query(
+              `INSERT INTO product_option_values (option_id, value, color_hex, sort_order)
+               VALUES ($1,$2,$3,(SELECT COALESCE(MAX(sort_order),0)+1 FROM product_option_values WHERE option_id = $1))
+               RETURNING *`,
+              [opt.id, v.value.trim(), option_type === 'color' ? (v.colorHex || null) : null]
+            );
+            opt.values.push(valRows[0]);
+          }
+        }
+        return opt;
+      });
+      res.status(201).json({ option });
+    } catch (err) {
+      if (err.code === '23505') return res.status(409).json({ error: 'This product already has an option with that name.' });
+      console.error('[products] POST /:id/options failed:', err.message, err.code || '');
+      res.status(err.status || 500).json({ error: err.message || 'Could not create option.', code: err.code || null });
+    }
+  }
+);
+
+// ---------- Admin: add a single value to an existing option ----------
+router.post(
+  '/:id/options/:optionId/values',
+  requireAuth,
+  requireRole('admin', 'staff'),
+  [body('value').trim().isLength({ min: 1, max: 80 }), body('colorHex').optional({ nullable: true }).matches(/^#[0-9A-Fa-f]{6}$/)],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+    try {
+      const { rows } = await db.query(
+        `INSERT INTO product_option_values (option_id, value, color_hex, sort_order)
+         VALUES ($1,$2,$3,(SELECT COALESCE(MAX(sort_order),0)+1 FROM product_option_values WHERE option_id = $1))
+         RETURNING *`,
+        [req.params.optionId, req.body.value, req.body.colorHex || null]
+      );
+      res.status(201).json({ value: rows[0] });
+    } catch (err) {
+      if (err.code === '23505') return res.status(409).json({ error: 'This option already has that value.' });
+      res.status(500).json({ error: 'Could not add value.', code: err.code || null });
+    }
+  }
+);
+
+router.patch(
+  '/:id/options/:optionId/values/:valueId',
+  requireAuth,
+  requireRole('admin', 'staff'),
+  [body('colorHex').optional({ nullable: true }).matches(/^#[0-9A-Fa-f]{6}$/), body('value').optional().isString().isLength({ min: 1, max: 80 })],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+    const updates = [];
+    const params = [];
+    if (req.body.value !== undefined) { params.push(req.body.value); updates.push(`value = $${params.length}`); }
+    if (req.body.colorHex !== undefined) { params.push(req.body.colorHex); updates.push(`color_hex = $${params.length}`); }
+    if (!updates.length) return res.status(400).json({ error: 'No valid fields to update.' });
+
+    params.push(req.params.valueId, req.params.optionId);
+    try {
+      const { rows } = await db.query(
+        `UPDATE product_option_values SET ${updates.join(', ')}
+         WHERE id = $${params.length - 1} AND option_id = $${params.length} RETURNING *`,
+        params
+      );
+      if (!rows.length) return res.status(404).json({ error: 'Option value not found.' });
+      res.json({ value: rows[0] });
+    } catch (err) {
+      if (err.code === '23505') return res.status(409).json({ error: 'This option already has that value.' });
+      res.status(500).json({ error: 'Could not update value.', code: err.code || null });
+    }
+  }
+);
+
+router.delete('/:id/options/:optionId', requireAuth, requireRole('admin', 'staff'), async (req, res) => {
+  try {
+    // Deleting an option cascades to its values (FK ON DELETE CASCADE), but
+    // deliberately does NOT touch any variant that already references it —
+    // variants store their own frozen option_values JSONB snapshot, exactly
+    // like order_items do, so existing variants and past orders stay
+    // historically accurate even after the option definition is removed.
+    await db.query('DELETE FROM product_options WHERE id = $1 AND product_id = $2', [req.params.optionId, req.params.id]);
+    res.status(204).send();
+  } catch (err) {
+    res.status(500).json({ error: 'Could not remove option.' });
+  }
+});
+
+router.delete('/:id/options/:optionId/values/:valueId', requireAuth, requireRole('admin', 'staff'), async (req, res) => {
+  try {
+    await db.query('DELETE FROM product_option_values WHERE id = $1 AND option_id = $2', [req.params.valueId, req.params.optionId]);
+    res.status(204).send();
+  } catch (err) {
+    res.status(500).json({ error: 'Could not remove value.' });
+  }
+});
+
+// ---------- Admin: full options+values+variants view (for the edit form) ----------
+router.get('/:id/options-and-variants', requireAuth, requireRole('admin', 'staff'), async (req, res) => {
+  try {
+    const { rows: options } = await db.query(
+      'SELECT * FROM product_options WHERE product_id = $1 ORDER BY sort_order', [req.params.id]
+    );
+    for (const opt of options) {
+      const { rows: values } = await db.query(
+        'SELECT * FROM product_option_values WHERE option_id = $1 ORDER BY sort_order', [opt.id]
+      );
+      opt.values = values;
+    }
+    const { rows: variants } = await db.query(
+      'SELECT * FROM product_variants WHERE product_id = $1 ORDER BY created_at', [req.params.id]
+    );
+    res.json({ options, variants });
+  } catch (err) {
+    console.error('[products] GET /:id/options-and-variants failed:', err.message, err.code || '');
+    res.status(500).json({ error: 'Could not load options and variants.' });
+  }
+});
+
+// ---------- Admin: create a variant ----------
+router.post(
+  '/:id/variants',
+  requireAuth,
+  requireRole('admin', 'staff'),
+  [
+    body('option_values').isArray({ min: 1 }),
+    body('stock_qty').isInt({ min: 0 }),
+    body('price_paise').optional({ nullable: true }).isInt({ min: 1 }),
+    body('sku').optional({ nullable: true }).isString(),
+    body('image_url').optional({ nullable: true }).isURL()
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+    const { option_values, stock_qty, price_paise, sku, image_url } = req.body;
+    // Defensive shape-check on each entry — this JSONB blob is read back
+    // verbatim on every product page load and every future order, so it's
+    // worth rejecting anything malformed here rather than storing it.
+    for (const ov of option_values) {
+      if (!ov || typeof ov.option !== 'string' || typeof ov.value !== 'string') {
+        return res.status(400).json({ error: 'Each option value needs an "option" and a "value".' });
+      }
+    }
+    try {
+      const { rows } = await db.query(
+        `INSERT INTO product_variants (product_id, sku, option_values, price_paise, stock_qty, image_url)
+         VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+        [req.params.id, sku || null, option_values, price_paise || null, stock_qty, image_url || null]
+      );
+      res.status(201).json({ variant: rows[0] });
+    } catch (err) {
+      if (err.code === '23505') return res.status(409).json({ error: 'A variant with this SKU already exists.' });
+      console.error('[products] POST /:id/variants failed:', err.message, err.code || '');
+      res.status(500).json({ error: 'Could not create variant.', code: err.code || null });
+    }
+  }
+);
+
+// ---------- Admin: update a variant ----------
+router.put('/:id/variants/:variantId', requireAuth, requireRole('admin', 'staff'), async (req, res) => {
+  const allowed = ['sku', 'price_paise', 'stock_qty', 'image_url', 'is_active'];
+  const updates = [];
+  const params = [];
+  allowed.forEach((f) => {
+    if (req.body[f] !== undefined) { params.push(req.body[f]); updates.push(`${f} = $${params.length}`); }
+  });
+  if (req.body.option_values !== undefined) {
+    params.push(req.body.option_values);
+    updates.push(`option_values = $${params.length}`);
+  }
+  if (!updates.length) return res.status(400).json({ error: 'No valid fields to update.' });
+
+  params.push(req.params.variantId, req.params.id);
+  try {
+    const { rows } = await db.query(
+      `UPDATE product_variants SET ${updates.join(', ')}, updated_at = now()
+       WHERE id = $${params.length - 1} AND product_id = $${params.length} RETURNING *`,
+      params
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Variant not found.' });
+    res.json({ variant: rows[0] });
+  } catch (err) {
+    console.error('[products] PUT /:id/variants/:variantId failed:', err.message, err.code || '');
+    res.status(500).json({ error: 'Could not update variant.', code: err.code || null });
+  }
+});
+
+// ---------- Admin: remove a variant (soft delete — order history references it) ----------
+router.delete('/:id/variants/:variantId', requireAuth, requireRole('admin', 'staff'), async (req, res) => {
+  try {
+    await db.query('UPDATE product_variants SET is_active = false WHERE id = $1 AND product_id = $2', [req.params.variantId, req.params.id]);
+    res.status(204).send();
+  } catch (err) {
+    res.status(500).json({ error: 'Could not remove variant.' });
+  }
+});
 
 module.exports = router;

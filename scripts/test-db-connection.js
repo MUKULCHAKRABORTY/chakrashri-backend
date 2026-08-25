@@ -9,9 +9,15 @@ require('dotenv').config();
 const db = require('../src/config/db');
 
 const EXPECTED_TABLES = [
+  // migration 001
   'users', 'addresses', 'products', 'product_images', 'orders', 'order_items',
   'puja_bookings', 'astrology_bookings', 'blog_posts', 'wishlist_items', 'admin_audit_log',
-  'password_reset_tokens' // added by migration 003
+  'password_reset_tokens',   // 003
+  'booking_services',        // 004
+  'product_reviews',         // 005
+  'coupons', 'coupon_redemptions',                              // 006
+  'product_properties',                                          // 007
+  'product_options', 'product_option_values', 'product_variants' // 008
 ];
 
 // A subset of columns the application code actually queries/inserts by name.
@@ -22,12 +28,31 @@ const EXPECTED_TABLES = [
 const EXPECTED_COLUMNS = {
   users: ['id', 'email', 'password_hash', 'role', 'is_active'],
   products: ['id', 'sku', 'slug', 'price_paise', 'stock_qty', 'gst_rate', 'is_active'],
-  orders: ['id', 'order_number', 'status', 'total_paise', 'razorpay_order_id', 'razorpay_signature', 'refund_id', 'refunded_amount_paise'], // last two added by migration 002
-  order_items: ['id', 'order_id', 'product_id', 'quantity', 'line_total_paise'],
-  puja_bookings: ['id', 'user_id', 'puja_type', 'preferred_date', 'status'],
-  astrology_bookings: ['id', 'user_id', 'consultation_mode', 'birth_details', 'status'],
+  orders: [
+    'id', 'order_number', 'status', 'total_paise', 'razorpay_order_id', 'razorpay_signature',
+    'refund_id', 'refunded_amount_paise', // 002
+    'coupon_code', 'discount_paise'        // 006 — checkout writes these on every order
+  ],
+  order_items: [
+    'id', 'order_id', 'product_id', 'quantity', 'line_total_paise',
+    'variant_id', 'variant_snapshot'       // 008 — written for every variant purchase
+  ],
+  puja_bookings: ['id', 'user_id', 'puja_type', 'preferred_date', 'status', 'payment_status', 'amount_paise', 'razorpay_order_id'],
+  astrology_bookings: ['id', 'user_id', 'consultation_mode', 'birth_details', 'status', 'payment_status', 'amount_paise', 'razorpay_order_id'],
   admin_audit_log: ['id', 'admin_user_id', 'action', 'entity_type', 'entity_id'],
-  password_reset_tokens: ['id', 'user_id', 'token_hash', 'expires_at', 'used_at']
+  password_reset_tokens: ['id', 'user_id', 'token_hash', 'expires_at', 'used_at'],
+  booking_services: ['id', 'service_type', 'name', 'price_paise', 'is_active'],
+  product_reviews: ['id', 'product_id', 'user_id', 'rating', 'comment'],
+  coupons: [
+    'id', 'code', 'discount_type', 'discount_percent', 'discount_value_paise',
+    'max_discount_paise', 'min_order_paise', 'usage_limit_total',
+    'usage_limit_per_customer', 'used_count', 'valid_from', 'valid_until', 'is_active'
+  ],
+  coupon_redemptions: ['id', 'coupon_id', 'user_id', 'order_id', 'discount_applied_paise'],
+  product_properties: ['id', 'product_id', 'property_name', 'property_value', 'color_hex'],
+  product_options: ['id', 'product_id', 'option_name', 'option_type'],
+  product_option_values: ['id', 'option_id', 'value', 'color_hex'],
+  product_variants: ['id', 'product_id', 'option_values', 'price_paise', 'stock_qty', 'image_url', 'is_active']
 };
 
 let failures = 0;

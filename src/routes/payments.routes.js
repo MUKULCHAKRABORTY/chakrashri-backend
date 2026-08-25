@@ -25,7 +25,7 @@ const router = express.Router();
  * end sends.
  */
 router.post('/create-order', requireAuth, async (req, res) => {
-  const { items, shippingAddressId, paymentMethod } = req.body; // items: [{ productId, quantity }]
+  const { items, shippingAddressId, paymentMethod, couponCode } = req.body; // items: [{ productId, variantId?, quantity }]
   const method = paymentMethod === 'cod' ? 'cod' : 'razorpay';
 
   // A shipping address is mandatory for a physical-goods order — without
@@ -35,18 +35,21 @@ router.post('/create-order', requireAuth, async (req, res) => {
     return res.status(400).json({ error: 'A shipping address is required to place an order.' });
   }
 
-  let orderId, orderNumber, totalPaise;
+  let orderId, orderNumber, totalPaise, discountPaise, appliedCouponCode;
   try {
     const result = await reserveStockAndCreateOrder({
       userId: req.user.id,
       items,
       shippingAddressId,
       paymentMethod: method,
-      initialStatus: method === 'cod' ? 'processing' : 'pending' // COD has nothing to wait for; Razorpay awaits payment
+      initialStatus: method === 'cod' ? 'processing' : 'pending', // COD has nothing to wait for; Razorpay awaits payment
+      couponCode: couponCode || null
     });
     orderId = result.id;
     orderNumber = result.number;
     totalPaise = result.total;
+    discountPaise = result.discountPaise;
+    appliedCouponCode = result.couponCode;
   } catch (err) {
     return res.status(err.status || 400).json({ error: err.message || 'Could not create order.' });
   }
@@ -72,6 +75,8 @@ router.post('/create-order', requireAuth, async (req, res) => {
       orderId,
       orderNumber,
       totalPaise,
+      discountPaise,
+      couponCode: appliedCouponCode,
       paymentMethod: 'cod'
     });
   }
@@ -91,6 +96,8 @@ router.post('/create-order', requireAuth, async (req, res) => {
       orderNumber,
       razorpayOrderId: razorpayOrder.id,
       amountPaise: totalPaise,
+      discountPaise,
+      couponCode: appliedCouponCode,
       keyId: process.env.RAZORPAY_KEY_ID
     });
   } catch (err) {

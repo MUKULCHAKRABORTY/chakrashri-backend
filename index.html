@@ -525,8 +525,9 @@ p{ color: var(--text-soft); }
 .p-atc button svg{ width:15px; height:15px; }
 .p-body{ padding:18px 18px 20px; flex:1; display:flex; flex-direction:column; }
 .p-cat{ font-size:.68rem; color:var(--text-mute); text-transform:uppercase; letter-spacing:.08em; margin-bottom:6px; }
-.p-name{ font-size:.92rem; font-weight:600; color:var(--ink); margin-bottom:8px; line-height:1.4; cursor:pointer; transition:color var(--dur); }
+.p-name{ font-size:.92rem; font-weight:700; color:var(--ink); margin-bottom:8px; line-height:1.4; cursor:pointer; transition:color var(--dur); }
 .p-name:hover{ color:var(--oxblood); }
+.p-material{ font-size:.76rem; color:var(--text-mute); margin-bottom:10px; }
 .p-rating{ display:flex; align-items:center; gap:6px; margin-bottom:10px; }
 .p-rating .cnt{ font-size:.74rem; color:var(--text-mute); }
 .p-price{ margin-top:auto; display:flex; align-items:baseline; gap:9px; }
@@ -545,6 +546,27 @@ p{ color: var(--text-soft); }
 
 @media (max-width:1180px){ .product-grid{ grid-template-columns:repeat(3,1fr); } }
 @media (max-width:860px){ .product-grid, .product-grid.cols-3{ grid-template-columns:repeat(2,1fr); } .product-grid.list-view .p-card{ flex-direction:column; } .product-grid.list-view .p-media{ width:100%; aspect-ratio:1/1; } }
+
+/* Mobile product grid: tighter gaps and padding so two columns read as a
+   compact, attractive grid rather than a stretched-out column of large
+   cards. Type sizes step down proportionally so nothing wraps awkwardly
+   in the narrower card. */
+@media (max-width:560px){
+  .product-grid, .product-grid.cols-3{ gap:12px; }
+  .p-body{ padding:10px 10px 12px; }
+  .p-cat{ font-size:.6rem; margin-bottom:3px; letter-spacing:.06em; }
+  .p-name{ font-size:.82rem; margin-bottom:4px; line-height:1.3; }
+  .p-rating{ margin-bottom:4px; gap:4px; }
+  .p-rating .cnt{ font-size:.68rem; }
+  .p-material{ font-size:.68rem; margin-bottom:6px; }
+  .p-price .now{ font-size:1rem; }
+  .p-price .was{ font-size:.75rem; }
+}
+@media (max-width:380px){
+  .product-grid, .product-grid.cols-3{ gap:9px; }
+  .p-body{ padding:8px 8px 10px; }
+  .p-name{ font-size:.78rem; }
+}
 @media (max-width:480px){ .p-body{ padding:14px; } .p-name{ font-size:.84rem; } }
 
 /* ============================================================
@@ -650,6 +672,13 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
 .opt-pill{ padding:10px 20px; border:1.5px solid var(--line); border-radius:var(--radius-full); font-size:.83rem; font-weight:600; color:var(--text-soft); transition:all var(--dur); }
 .opt-pill:hover{ border-color:var(--gold); }
 .opt-pill.active{ background:var(--ink); border-color:var(--ink); color:var(--gold-lt); }
+.opt-pill:disabled{ opacity:.4; cursor:not-allowed; text-decoration:line-through; }
+/* Color swatches: the inner span carries the actual color so the border/ring
+   can indicate selection without altering the color being shown. */
+.opt-swatch{ width:38px; height:38px; border-radius:50%; border:2px solid var(--line); padding:3px; transition:all var(--dur); cursor:pointer; }
+.opt-swatch span{ display:block; width:100%; height:100%; border-radius:50%; border:1px solid rgba(0,0,0,.12); }
+.opt-swatch:hover{ border-color:var(--gold); }
+.opt-swatch.active{ border-color:var(--ink); box-shadow:0 0 0 2px var(--gold-lt); }
 
 .pd-buy-row{ display:flex; align-items:center; gap:14px; margin-bottom:22px; flex-wrap:wrap; }
 .qty-stepper{ display:flex; align-items:center; border:1.5px solid var(--line); border-radius:var(--radius-full); overflow:hidden; flex-shrink:0; }
@@ -909,6 +938,18 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
 .auth-note{ background:var(--parchment); border-radius:var(--radius-sm); padding:12px 14px; font-size:.78rem; color:var(--text-soft); margin-bottom:20px; display:flex; gap:10px; }
 .auth-note svg{ width:16px; height:16px; color:var(--oxblood); flex-shrink:0; margin-top:1px; }
 
+/* Account panel (shown in place of the login/signup tabs once logged in) */
+.account-header{ display:flex; align-items:center; gap:14px; padding-bottom:18px; border-bottom:1px solid var(--line); margin-bottom:18px; }
+.account-avatar{ width:52px; height:52px; border-radius:50%; background:var(--oxblood); color:var(--gold-lt); display:flex; align-items:center; justify-content:center; font-family:var(--f-display); font-size:1.4rem; font-weight:600; flex-shrink:0; }
+.account-name{ font-weight:700; font-size:1.02rem; color:var(--ink); }
+.account-email{ font-size:.84rem; color:var(--text-mute); word-break:break-all; }
+.account-actions{ display:flex; flex-direction:column; gap:2px; }
+.account-action{ display:flex; align-items:center; gap:12px; width:100%; padding:14px 12px; border-radius:var(--radius-sm); text-align:left; font-size:.9rem; font-weight:500; color:var(--ink); transition:background var(--dur); }
+.account-action:hover{ background:var(--parchment); }
+.account-action svg{ width:19px; height:19px; color:var(--oxblood); flex-shrink:0; }
+.account-action span{ flex:1; min-width:0; }
+.account-action .chev{ width:15px; height:15px; color:var(--text-mute); }
+
 /* ============================================================
    CART PAGE
    ============================================================ */
@@ -1027,6 +1068,18 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
 
 .booking-flow{ display:grid; grid-template-columns:1fr 360px; gap:var(--sp-7); align-items:start; }
 .bk-step-title{ display:flex; align-items:center; gap:12px; margin-bottom:22px; }
+
+/* Proceed bar shown between step 1 (choose a service) and the detail steps */
+.bk-proceed-bar{ display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;
+  background:var(--parchment); border:1.5px solid var(--gold); border-radius:var(--radius-md);
+  padding:16px 20px; margin:24px 0 8px; }
+.bk-proceed-info{ min-width:0; }
+.bk-proceed-info .lbl{ display:block; font-size:.68rem; text-transform:uppercase; letter-spacing:.1em; color:var(--text-mute); margin-bottom:2px; }
+.bk-proceed-info strong{ font-size:.98rem; color:var(--ink); }
+@media (max-width:560px){
+  .bk-proceed-bar{ padding:14px; }
+  .bk-proceed-bar .btn{ width:100%; }
+}
 .bk-step-title .n{ width:34px; height:34px; border-radius:50%; background:var(--oxblood); color:#fff; display:flex; align-items:center; justify-content:center; font-family:var(--f-display); flex-shrink:0; }
 .mode-pills{ display:flex; gap:10px; flex-wrap:wrap; }
 .mode-pill{ flex:1; min-width:140px; padding:16px; border:1.5px solid var(--line); border-radius:var(--radius-md); text-align:center; transition:all var(--dur); }
@@ -1913,8 +1966,10 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
           <div class="checkout-card">
             <h3>Order Summary</h3>
             <div id="checkoutOrderItems"></div>
+            <div id="ckCouponRow" style="margin-top:16px;"></div>
             <div style="margin-top:16px;">
               <div class="summary-line"><span>Subtotal</span><span id="ckSubtotal">₹0</span></div>
+              <div class="summary-line" id="ckDiscountRow" style="display:none;color:var(--success);"><span id="ckDiscountLabel">Discount</span><span id="ckDiscount">₹0</span></div>
               <div class="summary-line"><span>Shipping</span><span id="ckShipping">₹0</span></div>
               <div class="summary-line" id="ckCodRow" style="display:none;"><span>COD Fee</span><span>₹40</span></div>
               <div class="summary-line total"><span>Total</span><span id="ckTotal">₹0</span></div>
@@ -1972,7 +2027,17 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
       <div class="bk-step-title"><div class="n">1</div><h3>Choose Your Puja</h3></div>
       <div class="svc-grid" id="pujaSvcGrid"></div>
 
-      <div class="booking-flow">
+      <!-- Revealed only once a service is chosen (see proceedToPujaDetails) —
+           keeps the first screen focused purely on picking the puja. -->
+      <div id="pujaProceedBar" class="bk-proceed-bar" style="display:none;">
+        <div class="bk-proceed-info">
+          <span class="lbl">Selected</span>
+          <strong id="pujaProceedName">—</strong>
+        </div>
+        <button class="btn btn-primary" onclick="proceedToPujaDetails()">Continue to Booking Details →</button>
+      </div>
+
+      <div class="booking-flow" id="pujaDetailsSection" style="display:none;">
         <div>
           <div class="checkout-card">
             <div class="bk-step-title"><div class="n">2</div><h3>Date, Time &amp; Mode</h3></div>
@@ -2008,6 +2073,7 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
               <div class="field"><label>Gotra / Sankalp Details <span class="opt">(optional)</span></label><input type="text" id="pjGotra" placeholder="Name, gotra, nakshatra if known"></div>
               <div class="field"><label>Special Requirements <span class="opt">(optional)</span></label><textarea id="pjNotes" placeholder="Any specific requests for the priest"></textarea></div>
             </form>
+            <button class="btn btn-primary btn-block btn-lg" style="margin-top:8px;" onclick="openBookingReview('puja')">Confirm &amp; Pay</button>
           </div>
         </div>
 
@@ -2033,7 +2099,15 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
       <div class="bk-step-title"><div class="n">1</div><h3>Choose A Service</h3></div>
       <div class="svc-grid" id="astroSvcGrid"></div>
 
-      <div class="booking-flow">
+      <div id="astroProceedBar" class="bk-proceed-bar" style="display:none;">
+        <div class="bk-proceed-info">
+          <span class="lbl">Selected</span>
+          <strong id="astroProceedName">—</strong>
+        </div>
+        <button class="btn btn-primary" onclick="proceedToAstroDetails()">Continue to Booking Details →</button>
+      </div>
+
+      <div class="booking-flow" id="astroDetailsSection" style="display:none;">
         <div>
           <div class="checkout-card">
             <div class="bk-step-title"><div class="n">2</div><h3>Consultation Preference</h3></div>
@@ -2072,6 +2146,7 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
               <div class="field"><label>Place Of Birth</label><input type="text" id="asPob" placeholder="City, State, Country"></div>
               <div class="field"><label>Your Question Or Concern <span class="opt">(optional)</span></label><textarea id="asNotes" placeholder="Career, marriage, health, muhurat…"></textarea></div>
             </form>
+            <button class="btn btn-primary btn-block btn-lg" style="margin-top:8px;" onclick="openBookingReview('astrology')">Confirm &amp; Pay</button>
           </div>
         </div>
 
@@ -2508,6 +2583,23 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
 <!-- ============================================================
      ORDER REVIEW MODAL — review every product from a single order
 ============================================================ -->
+<!-- ============================================================
+     BOOKING REVIEW MODAL — opens on "Confirm & Pay", Pay button at the foot
+============================================================ -->
+<div class="modal-wrap" id="bookingReviewModal">
+  <div class="modal-backdrop" onclick="closeModal('bookingReviewModal')"></div>
+  <div class="modal-box small">
+    <button class="modal-close" onclick="closeModal('bookingReviewModal')" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+    <div style="padding:26px;">
+      <h3 style="margin-bottom:4px;" id="bkReviewTitle">Confirm Your Booking</h3>
+      <p style="font-size:.84rem;color:var(--text-mute);margin-bottom:18px;">Please check these details before paying.</p>
+      <div id="bkReviewBody"></div>
+      <button class="btn btn-primary btn-block btn-lg" style="margin-top:20px;" id="bkReviewPayBtn">Pay</button>
+      <button class="btn btn-ghost btn-block" style="margin-top:8px;" onclick="closeModal('bookingReviewModal')">Go Back &amp; Edit</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-wrap" id="orderReviewModal">
   <div class="modal-backdrop" onclick="closeModal('orderReviewModal')"></div>
   <div class="modal-box">
@@ -2523,37 +2615,59 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
   <div class="modal-backdrop" onclick="closeModal('acctModal')"></div>
   <div class="modal-box small">
     <button class="modal-close" onclick="closeModal('acctModal')" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
-    <div class="auth-tabs">
+    <div class="auth-tabs" id="authTabs">
       <button class="active" data-authtab="login" onclick="switchAuthTab('login')">Log In</button>
       <button data-authtab="signup" onclick="switchAuthTab('signup')">Sign Up</button>
-      <button data-authtab="account" onclick="switchAuthTab('account')">Account</button>
     </div>
     <div class="auth-pane active" id="auth-login">
-      <div class="auth-note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 2"/></svg>Register or log in with an email and password — your account is stored securely on the Chakrashri backend.</div>
+      <div class="auth-note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 2"/></svg>Log in to track orders, save addresses, and review your purchases.</div>
       <form onsubmit="return handleDemoAuth(event)">
-        <div class="field"><label>Email Address</label><input type="email" required placeholder="you@example.com"></div>
-        <div class="field"><label>Password</label><input type="password" required placeholder="••••••••"></div>
+        <div class="field"><label>Email Address</label><input type="email" required placeholder="you@example.com" autocomplete="email"></div>
+        <div class="field"><label>Password</label><input type="password" required placeholder="••••••••" autocomplete="current-password"></div>
         <button type="submit" class="btn btn-primary btn-block">Log In</button>
       </form>
+      <p style="text-align:center;font-size:.82rem;color:var(--text-mute);margin-top:14px;">
+        New to Chakrashri? <a href="#" onclick="switchAuthTab('signup');return false;" style="color:var(--oxblood);font-weight:600;">Create an account</a>
+      </p>
     </div>
     <div class="auth-pane" id="auth-signup">
-      <div class="auth-note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 2"/></svg>Register or log in with an email and password — your account is stored securely on the Chakrashri backend.</div>
+      <div class="auth-note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 2"/></svg>Create an account to check out faster and keep all your orders in one place.</div>
       <form onsubmit="return handleDemoAuth(event)">
-        <div class="field"><label>Full Name</label><input type="text" required></div>
-        <div class="field"><label>Email Address</label><input type="email" required></div>
-        <div class="field"><label>Password</label><input type="password" required></div>
+        <div class="field"><label>Full Name</label><input type="text" required autocomplete="name"></div>
+        <div class="field"><label>Email Address</label><input type="email" required autocomplete="email"></div>
+        <div class="field"><label>Password</label><input type="password" required autocomplete="new-password" minlength="8" placeholder="At least 8 characters"></div>
         <button type="submit" class="btn btn-primary btn-block">Create Account</button>
       </form>
+      <p style="text-align:center;font-size:.82rem;color:var(--text-mute);margin-top:14px;">
+        Already have an account? <a href="#" onclick="switchAuthTab('login');return false;" style="color:var(--oxblood);font-weight:600;">Log in</a>
+      </p>
     </div>
     <div class="auth-pane" id="auth-account">
-      <div class="auth-note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 2"/></svg>Your Chakrashri account is active. View orders, manage your details, and continue shopping securely.</div>
-      <div class="account-summary">
-        <p><strong id="acctName">Customer</strong><br><span id="acctEmail">you@example.com</span></p>
-        <div class="field-row" style="gap:12px; margin-top:16px;">
-          <button class="btn btn-primary btn-block" onclick="navigateTo('orders'); closeModal('acctModal');">View Orders</button>
-          <button class="btn btn-ghost btn-block" onclick="logout();">Log Out</button>
+      <div class="account-header">
+        <div class="account-avatar" id="acctAvatar">C</div>
+        <div style="min-width:0;">
+          <div class="account-name" id="acctName">Customer</div>
+          <div class="account-email" id="acctEmail">—</div>
         </div>
       </div>
+      <div class="account-actions">
+        <button class="account-action" onclick="navigateTo('orders'); closeModal('acctModal');">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><path d="M3 6h18M16 10a4 4 0 01-8 0"/></svg>
+          <span>My Orders &amp; Bookings</span>
+          <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+        </button>
+        <button class="account-action" onclick="navigateTo('wishlist'); closeModal('acctModal');">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.6l-1-1a5.5 5.5 0 10-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 000-7.8z"/></svg>
+          <span>My Wishlist</span>
+          <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+        </button>
+        <button class="account-action" onclick="openShopWithCategory('all'); closeModal('acctModal');">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M20 7L12 3 4 7v10l8 4 8-4V7z"/><path d="M4 7l8 4 8-4M12 11v10"/></svg>
+          <span>Continue Shopping</span>
+          <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+        </button>
+      </div>
+      <button class="btn btn-ghost btn-block" style="margin-top:16px;" onclick="logout();">Log Out</button>
     </div>
   </div>
 </div>
@@ -2692,12 +2806,9 @@ function updateAccountUI(){
     btn.classList.toggle('signed-in', !!currentUser);
     btn.setAttribute('title', currentUser ? ('Logged in as ' + currentUser.name) : 'Account');
   }
-  if(currentUser){
-    const nameEl = qs('#acctName');
-    const emailEl = qs('#acctEmail');
-    if(nameEl) nameEl.textContent = currentUser.name || 'Customer';
-    if(emailEl) emailEl.textContent = currentUser.email || '';
-  }
+  // Single implementation lives in populateAccountPane so the name, email
+  // and avatar can never drift out of sync between the two call paths.
+  if(currentUser) populateAccountPane();
 }
 
 async function openAccountModal(){
@@ -2823,7 +2934,15 @@ async function openOrderReviewModal(orderId){
 
     items.forEach(function(item){
       html += '<div class="order-review-product" data-product-id="' + item.product_id + '">' +
-        '<div class="orp-name">' + escapeHtml(item.product_name_snapshot) + ' <span style="color:#8a7768;font-weight:400;">×' + item.quantity + '</span></div>';
+        '<div class="orp-name">' + escapeHtml(item.product_name_snapshot) + ' <span style="color:#8a7768;font-weight:400;">×' + item.quantity + '</span>' +
+        (Array.isArray(item.variant_snapshot) && item.variant_snapshot.length
+          ? '<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:6px;">' + item.variant_snapshot.map(function(v){
+              return '<span style="display:inline-flex;align-items:center;gap:4px;font-size:.72rem;font-weight:400;background:var(--parchment);padding:2px 8px;border-radius:20px;">' +
+                (v.colorHex ? '<span style="width:10px;height:10px;border-radius:50%;background:' + escapeHtml(v.colorHex) + ';border:1px solid rgba(0,0,0,.2);"></span>' : '') +
+                escapeHtml(v.option) + ': <b>' + escapeHtml(v.value) + '</b></span>';
+            }).join('') + '</div>'
+          : '') +
+        '</div>';
       if(!deliverable){
         html += '<div class="orp-status">Available after delivery</div>';
       } else if(item.already_reviewed){
@@ -3307,6 +3426,20 @@ window.addEventListener('popstate', function(){
   navigateTo(h, { silent:false });
 });
 /* ---------- Product card + grid rendering ---------- */
+/* Switches the product-detail tab programmatically and scrolls it into
+   view. Used by the clickable rating stars near the price, so a customer
+   who taps the stars lands directly on the reviews they wanted to read. */
+function openProductTab(tabName){
+  qsa('.pd-tab-nav button').forEach(function(b){ b.classList.toggle('active', b.dataset.pdtab === tabName); });
+  qsa('.pd-tab-pane').forEach(function(p){ p.classList.remove('active'); });
+  const pane = qs('#pdtab-' + tabName);
+  if(pane){
+    pane.classList.add('active');
+    const nav = qs('.pd-tab-nav');
+    if(nav) nav.scrollIntoView({ behavior:'smooth', block:'start' });
+  }
+}
+
 function productCardHTML(p, idx){
   const wished = wishlist.indexOf(p.id) > -1;
   const badgeHTML = p.badge ? ('<span class="badge ' + badgeInfo(p.badge).cssClass + '">' + escapeHtml(badgeInfo(p.badge).text) + '</span>') : '';
@@ -3325,9 +3458,12 @@ function productCardHTML(p, idx){
     '</div>' +
     '<div class="p-body">' +
       '<div class="p-cat">' + catLabel(p.cat) + '</div>' +
-      '<div class="p-name" onclick="openProduct(\'' + p.id + '\')">' + p.name + '</div>' +
+      '<div class="p-name" onclick="openProduct(\'' + p.id + '\')">' + escapeHtml(p.name) + '</div>' +
       '<div class="p-rating">' + starsHTML(p.rating) + '<span class="cnt">(' + p.reviews + ')</span></div>' +
-      '<div class="p-desc">' + p.shortDesc + '</div>' +
+      // Material instead of shortDesc here: shortDesc falls back to the
+      // product NAME when a product has no description set, which is what
+      // made the name appear twice on every card.
+      (p.material ? '<div class="p-material">' + escapeHtml(p.material) + '</div>' : '') +
       '<div class="p-price"><span class="now">' + formatINR(p.price) + '</span>' + wasHTML + '</div>' +
     '</div>' +
   '</div>';
@@ -3370,16 +3506,26 @@ function renderDealGrid(){
 function findCartLine(id, variant){
   return cart.find(function(l){ return l.id === id && (l.variant || '') === (variant || ''); });
 }
-function addToCart(id, qty, variant){
+function addToCart(id, qty, variant, variantId){
   qty = qty || 1;
   const p = getProduct(id);
   if(!p || !p.stock) return;
   const line = findCartLine(id, variant);
-  if(line) line.qty += qty;
-  else cart.push({ id:id, qty:qty, variant: variant || '' });
+  if(line){
+    line.qty += qty;
+    // Backfill the real variant id on a pre-existing line (e.g. a cart saved
+    // before variants existed, or a line added from a view that didn't know it).
+    if(variantId && !line.variantId) line.variantId = variantId;
+  } else {
+    cart.push({ id:id, qty:qty, variant: variant || '', variantId: variantId || null });
+  }
   saveCart();
   updateCartUI();
   toast(p.name + ' added to cart');
+  // Open the cart drawer automatically so the customer immediately sees what
+  // they added and can move to checkout — standard behaviour on most modern
+  // storefronts, and requested here.
+  openCartDrawer();
 }
 function removeFromCart(id, variant){
   cart = cart.filter(function(l){ return !(l.id === id && (l.variant||'') === (variant||'')); });
@@ -3544,6 +3690,21 @@ function qvGetQty(){ const v = qvQty; qvQty = 1; return v; }
 function switchAuthTab(tab){
   qsa('.auth-tabs button').forEach(function(b){ b.classList.toggle('active', b.dataset.authtab === tab); });
   qsa('.auth-pane').forEach(function(p){ p.classList.toggle('active', p.id === 'auth-' + tab); });
+  // The Log In / Sign Up tab strip is meaningless once you're logged in —
+  // hide it entirely so the account pane reads as a proper account panel
+  // rather than a third tab sitting next to two irrelevant ones.
+  const tabs = qs('#authTabs');
+  if(tabs) tabs.style.display = (tab === 'account') ? 'none' : '';
+  if(tab === 'account') populateAccountPane();
+}
+
+function populateAccountPane(){
+  const nameEl = qs('#acctName'), emailEl = qs('#acctEmail'), avatarEl = qs('#acctAvatar');
+  const name = (currentUser && currentUser.name) ? currentUser.name : 'Customer';
+  const email = (currentUser && currentUser.email) ? currentUser.email : '';
+  if(nameEl) nameEl.textContent = name;
+  if(emailEl) emailEl.textContent = email;
+  if(avatarEl) avatarEl.textContent = (name || email || 'C').charAt(0).toUpperCase();
 }
 async function handleDemoAuth(e){
   e.preventDefault();
@@ -3759,23 +3920,22 @@ async function renderProductDetail(id){
 
   const wished = wishlist.indexOf(id) > -1;
   const wasHTML = p.mrp > p.price ? ('<span class="was">' + formatINR(p.mrp) + '</span><span class="save">Save ' + Math.round((1-p.price/p.mrp)*100) + '%</span>') : '';
-  let optionsHTML = '';
-  if(p.options){
-    optionsHTML = '<div class="pd-options"><div class="opt-label">' + p.optionLabel + ': <span class="sel" id="pdOptSel">' + p.options[0] + '</span></div><div class="opt-pills">' +
-      p.options.map(function(o,i){ return '<button class="opt-pill ' + (i===0?'active':'') + '" onclick="pdSelectOption(this,\'' + o + '\')">' + o + '</button>'; }).join('') +
-    '</div></div>';
-  }
+  // Real variant selector is injected here once the detail fetch resolves
+  // (see renderVariantSelector) — the demo hardcoded options this replaced
+  // were never connected to real stock or pricing.
+  let optionsHTML = '<div id="pdVariantSelector"></div>';
 
   qs('#pdInfo').innerHTML =
     '<div class="p-cat">' + catLabel(p.cat) + '</div>' +
     '<h1>' + p.name + '</h1>' +
-    '<div class="pd-rating-row">' + starsHTML(p.rating) + '<span class="cnt">' + p.rating + ' (' + p.reviews + ' reviews)</span><span class="sku">SKU: ' + p.sku + '</span></div>' +
-    '<div class="pd-price">' + '<span class="now">' + formatINR(p.price) + '</span>' + wasHTML + '</div>' +
+    '<div class="pd-rating-row"><span onclick="openProductTab(\'reviews\')" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px;" title="Read all reviews">' + starsHTML(p.rating) + '<span class="cnt">' + p.rating + ' (' + p.reviews + ' reviews)</span></span><span class="sku">SKU: ' + p.sku + '</span></div>' +
+    '<div class="pd-price">' + '<span class="now" id="pdPriceNow">' + formatINR(p.price) + '</span>' + wasHTML + '</div>' +
     '<p class="pd-desc" id="pdShortDesc">' + escapeHtml(p.shortDesc) + '</p>' +
     optionsHTML +
+    '<div id="pdVariantNote" style="font-size:.8rem;color:var(--text-mute);margin-bottom:10px;min-height:1em;"></div>' +
     '<div class="pd-buy-row">' +
       '<div class="qty-stepper"><button onclick="pdChangeQty(-1)" aria-label="Decrease">−</button><span id="pdQtyDisplay">1</span><button onclick="pdChangeQty(1)" aria-label="Increase">+</button></div>' +
-      '<button class="btn btn-primary" ' + (!p.stock?'disabled':'') + ' onclick="pdAddToCart(\'' + p.id + '\')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 01-8 0"/></svg>' + (p.stock ? 'Add to Cart' : 'Out of Stock') + '</button>' +
+      '<button class="btn btn-primary" id="pdAtcBtn" ' + (!p.stock?'disabled':'') + ' onclick="pdAddToCart(\'' + p.id + '\')">' + (p.stock ? 'Add to Cart' : 'Out of Stock') + '</button>' +
       '<button class="pd-wish-btn ' + (wished?'active':'') + '" onclick="toggleWishlist(\'' + p.id + '\')" aria-label="Wishlist"><svg viewBox="0 0 24 24" fill="' + (wished?'currentColor':'none') + '" stroke="currentColor" stroke-width="1.8"><path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.6l-1-1a5.5 5.5 0 10-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 000-7.8z"/></svg></button>' +
     '</div>' +
     '<div class="pd-trust">' +
@@ -3822,7 +3982,11 @@ async function renderProductDetail(id){
     if(full.short_desc){ const el = qs('#pdShortDesc'); if(el) el.textContent = full.short_desc; }
     if(full.long_desc){ const el = qs('#pdtab-desc'); if(el) el.innerHTML = '<p>' + escapeHtml(full.long_desc).replace(/\n+/g,'</p><p>') + '</p>'; }
     p.material = full.material || p.material;
+    p.properties = detail.properties || [];
+    p.variantOptions = detail.options || [];
+    p.variants = detail.variants || [];
     qs('#pdtab-spec').innerHTML = specTableHTML(p);
+    renderVariantSelector(p);
     if(images.length){
       p.images = images;
       renderProductDetailImages(p, images);
@@ -3943,14 +4107,122 @@ function pdChangeQty(delta){
   pdQty = Math.max(1, pdQty + delta);
   qs('#pdQtyDisplay').textContent = pdQty;
 }
-function pdSelectOption(el, val){
-  qsa('.opt-pill').forEach(function(b){ b.classList.remove('active'); });
-  el.classList.add('active');
-  pdSelectedOption = val;
-  if(qs('#pdOptSel')) qs('#pdOptSel').textContent = val;
+/* ---------- Variant selection ----------
+   pdSelectedValues maps optionName -> selectedValue. Whenever it changes we
+   resolve it against the product's real variant list; a fully-specified
+   combination that matches an active variant becomes pdSelectedVariant,
+   which then drives the price, stock state, main image, and what actually
+   gets added to the cart. */
+let pdSelectedValues = {};
+let pdSelectedVariant = null;
+
+function renderVariantSelector(p){
+  const wrap = qs('#pdVariantSelector');
+  if(!wrap) return;
+  pdSelectedValues = {};
+  pdSelectedVariant = null;
+
+  const options = p.variantOptions || [];
+  if(!options.length){ wrap.innerHTML = ''; return; }
+
+  wrap.innerHTML = options.map(function(opt){
+    const pills = (opt.values || []).map(function(v){
+      if(opt.option_type === 'color'){
+        return '<button class="opt-swatch" data-option="' + escapeHtml(opt.option_name) + '" data-value="' + escapeHtml(v.value) + '" ' +
+          'onclick="selectVariantValue(this)" title="' + escapeHtml(v.value) + '" aria-label="' + escapeHtml(v.value) + '">' +
+          '<span style="background:' + escapeHtml(v.color_hex || '#ccc') + ';"></span></button>';
+      }
+      return '<button class="opt-pill" data-option="' + escapeHtml(opt.option_name) + '" data-value="' + escapeHtml(v.value) + '" onclick="selectVariantValue(this)">' + escapeHtml(v.value) + '</button>';
+    }).join('');
+    return '<div class="pd-options"><div class="opt-label">' + escapeHtml(opt.option_name) + ': ' +
+      '<span class="sel" data-selected-for="' + escapeHtml(opt.option_name) + '">Select</span></div>' +
+      '<div class="opt-pills">' + pills + '</div></div>';
+  }).join('');
 }
+
+function selectVariantValue(el){
+  const optionName = el.dataset.option;
+  const value = el.dataset.value;
+  // Deselect siblings within this option row only — other option rows keep
+  // their own selection, since a variant is a combination across all of them.
+  qsa('[data-option="' + CSS.escape(optionName) + '"]').forEach(function(b){ b.classList.remove('active'); });
+  el.classList.add('active');
+  pdSelectedValues[optionName] = value;
+  const label = qs('[data-selected-for="' + CSS.escape(optionName) + '"]');
+  if(label) label.textContent = value;
+  resolveSelectedVariant();
+}
+
+function resolveSelectedVariant(){
+  const p = getProduct(currentProductId);
+  if(!p || !Array.isArray(p.variants)) return;
+  const optionNames = (p.variantOptions || []).map(function(o){ return o.option_name; });
+  // Every option must be chosen before a variant can be identified.
+  const allChosen = optionNames.every(function(n){ return pdSelectedValues[n]; });
+  if(!allChosen){ pdSelectedVariant = null; updateVariantUI(p); return; }
+
+  pdSelectedVariant = p.variants.find(function(v){
+    const ov = Array.isArray(v.option_values) ? v.option_values : [];
+    return optionNames.every(function(n){
+      const match = ov.find(function(x){ return x.option === n; });
+      return match && match.value === pdSelectedValues[n];
+    });
+  }) || null;
+  updateVariantUI(p);
+}
+
+function updateVariantUI(p){
+  const priceEl = qs('#pdPriceNow');
+  const atcBtn = qs('#pdAtcBtn');
+  const noteEl = qs('#pdVariantNote');
+
+  if(pdSelectedVariant){
+    const price = pdSelectedVariant.price_paise != null ? Number(pdSelectedVariant.price_paise)/100 : p.price;
+    if(priceEl) priceEl.textContent = formatINR(price);
+    const inStock = pdSelectedVariant.stock_qty > 0;
+    if(atcBtn){
+      atcBtn.disabled = !inStock;
+      atcBtn.innerHTML = inStock ? 'Add to Cart' : 'Out of Stock';
+    }
+    if(noteEl){
+      noteEl.textContent = inStock
+        ? (pdSelectedVariant.stock_qty <= 5 ? 'Only ' + pdSelectedVariant.stock_qty + ' left in this option' : '')
+        : 'This option is currently out of stock';
+      noteEl.style.color = inStock ? 'var(--text-mute)' : 'var(--danger, #B23A2E)';
+    }
+    // Swap the main image to this variant's own photo when it has one.
+    if(pdSelectedVariant.image_url){
+      renderProductDetailImages(p, [pdSelectedVariant.image_url].concat(p.images || []));
+    }
+  } else {
+    if(priceEl) priceEl.textContent = formatINR(p.price);
+    const hasOptions = (p.variantOptions || []).length > 0;
+    if(atcBtn){
+      atcBtn.disabled = hasOptions; // must choose a combination first
+      atcBtn.innerHTML = hasOptions ? 'Select Options' : 'Add to Cart';
+    }
+    if(noteEl){ noteEl.textContent = ''; }
+  }
+}
+
 function pdAddToCart(id){
-  addToCart(id, pdQty, pdSelectedOption);
+  const p = getProduct(id);
+  const hasOptions = p && (p.variantOptions || []).length > 0;
+  if(hasOptions && !pdSelectedVariant){
+    toast('Please select all options first.', 'err');
+    return;
+  }
+  if(pdSelectedVariant && pdSelectedVariant.stock_qty < pdQty){
+    toast('Only ' + pdSelectedVariant.stock_qty + ' left for the selected option.', 'err');
+    return;
+  }
+  // The display label is built from the chosen values so cart/order views
+  // read naturally (e.g. "Color: Red / Size: M"); variantId is what the
+  // backend actually reserves stock against.
+  const label = pdSelectedVariant
+    ? (pdSelectedVariant.option_values || []).map(function(x){ return x.option + ': ' + x.value; }).join(' / ')
+    : '';
+  addToCart(id, pdQty, label, pdSelectedVariant ? pdSelectedVariant.id : null);
   pdQty = 1;
   const disp = qs('#pdQtyDisplay');
   if(disp) disp.textContent = 1;
@@ -3958,8 +4230,19 @@ function pdAddToCart(id){
 
 function specTableHTML(p){
   const rows = [['Material', p.material], ['Category', catLabel(p.cat)], ['SKU', p.sku], ['Country Of Origin', 'India']];
-  if(p.options) rows.push([p.optionLabel + ' Options', p.options.join(', ')]);
-  return '<table class="spec-table">' + rows.map(function(r){ return '<tr><td>' + r[0] + '</td><td>' + r[1] + '</td></tr>'; }).join('') + '</table>';
+  return '<table class="spec-table">' +
+    rows.filter(function(r){ return r[1]; }).map(function(r){ return '<tr><td>' + escapeHtml(r[0]) + '</td><td>' + escapeHtml(String(r[1])) + '</td></tr>'; }).join('') +
+    // Admin-defined properties. A color-type property renders its value with
+    // a small filled circle of that exact color alongside the name, e.g.
+    // "Color: Red ●" — the hex comes from the admin's color picker, so the
+    // swatch is always the true color rather than a guess from the name.
+    (Array.isArray(p.properties) ? p.properties.map(function(prop){
+      const swatch = prop.color_hex
+        ? '<span style="display:inline-block;width:13px;height:13px;border-radius:50%;background:' + escapeHtml(prop.color_hex) + ';border:1px solid rgba(0,0,0,.18);margin-left:7px;vertical-align:-2px;"></span>'
+        : '';
+      return '<tr><td>' + escapeHtml(prop.property_name) + '</td><td>' + escapeHtml(prop.property_value) + swatch + '</td></tr>';
+    }).join('') : '') +
+  '</table>';
 }
 
 const REVIEW_NAMES = ['Amit Kulkarni','Neha Joshi','Ravi Shankar','Pooja Reddy','Manish Gupta','Divya Menon','Suresh Pillai','Kavita Bose','Arjun Nair','Shreya Agarwal','Vikram Singh','Lakshmi Iyer'];
@@ -4043,10 +4326,8 @@ function renderCartPage(){
     '</div></div>' +
     '<div class="cart-summary">' +
       '<h3>Order Summary</h3>' +
-      '<div class="coupon-row"><input type="text" placeholder="Coupon code" id="couponInput"><button class="btn btn-ghost btn-sm" onclick="applyCoupon()">Apply</button></div>' +
-      '<div class="summary-line"><span>Subtotal</span><span>' + formatINR(subtotal) + '</span></div>' +
-      '<div class="summary-line"><span>Shipping</span><span>' + (shipping===0?'FREE':formatINR(shipping)) + '</span></div>' +
-      '<div class="summary-line total"><span>Total</span><span>' + formatINR(subtotal+shipping) + '</span></div>' +
+      buildCouponRowHTML() +
+      buildSummaryLinesHTML(subtotal, shipping) +
       '<button class="btn btn-primary btn-block btn-lg" style="margin-top:10px;" onclick="navigateTo(\'checkout\')">Proceed To Checkout</button>' +
       '<div class="trust-mini-list">' +
         '<div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>256-bit encrypted checkout</div>' +
@@ -4062,10 +4343,75 @@ function clearCart(){
   updateCartUI();
   toast('Cart cleared');
 }
-function applyCoupon(){
-  const val = qs('#couponInput').value.trim();
+/* ---------- Coupons ----------
+   appliedCoupon holds the server-validated result. The discount shown here
+   is always a PREVIEW — the authoritative discount is recalculated
+   server-side when the order is actually created, so a stale or tampered
+   client value can never affect what's really charged. */
+let appliedCoupon = null; // { code, discountPaise, description }
+
+async function applyCoupon(){
+  const input = qs('#couponInput');
+  if(!input) return;
+  const val = input.value.trim();
   if(!val){ toast('Please enter a coupon code first.', 'err'); return; }
-  toast('Coupon codes are not active in this demo store.', 'err');
+  if(!getAuthToken()){ toast('Please sign in to use a coupon.', 'err'); openAccountModal(); return; }
+
+  const subtotalPaise = Math.round(getCartSubtotal() * 100);
+  try{
+    const res = await apiFetch('/api/coupons/validate', {
+      method:'POST',
+      body: JSON.stringify({ code: val, subtotalPaise: subtotalPaise })
+    });
+    appliedCoupon = { code: res.code, discountPaise: res.discountPaise, description: res.description };
+    toast('Coupon "' + res.code + '" applied — you saved ' + formatINR(res.discountPaise/100) + '.', 'ok');
+    refreshCartAndCheckoutViews();
+  }catch(err){
+    appliedCoupon = null;
+    toast((err && err.error) ? err.error : 'Could not apply this coupon.', 'err');
+    refreshCartAndCheckoutViews();
+  }
+}
+
+function removeCoupon(){
+  appliedCoupon = null;
+  toast('Coupon removed.');
+  refreshCartAndCheckoutViews();
+}
+
+// Re-renders whichever of the two pages is currently visible, so the
+// discount line stays consistent across both without one clobbering the other.
+function refreshCartAndCheckoutViews(){
+  const h = location.hash.replace('#','').split('/')[0];
+  if(h === 'cart') renderCartPage();
+  if(h === 'checkout') renderCheckoutPage();
+}
+
+// Shared summary-lines builder used by BOTH the cart page and the checkout
+// order summary, so the two can never disagree about the discount or total.
+function buildSummaryLinesHTML(subtotal, shipping){
+  const discount = appliedCoupon ? (appliedCoupon.discountPaise / 100) : 0;
+  let html = '<div class="summary-line"><span>Subtotal</span><span>' + formatINR(subtotal) + '</span></div>';
+  if(appliedCoupon){
+    html += '<div class="summary-line" style="color:var(--success);">' +
+      '<span>Discount (' + escapeHtml(appliedCoupon.code) + ') ' +
+      '<a href="#" onclick="removeCoupon();return false;" style="font-size:.75rem;color:var(--oxblood);margin-left:6px;">remove</a></span>' +
+      '<span>− ' + formatINR(discount) + '</span></div>';
+  }
+  html += '<div class="summary-line"><span>Shipping</span><span>' + (shipping===0?'FREE':formatINR(shipping)) + '</span></div>' +
+    '<div class="summary-line total"><span>Total</span><span>' + formatINR(Math.max(0, subtotal - discount + shipping)) + '</span></div>';
+  return html;
+}
+
+function buildCouponRowHTML(){
+  if(appliedCoupon){
+    return '<div class="coupon-row" style="align-items:center;">' +
+      '<div style="flex:1;min-width:0;font-size:.85rem;"><strong>' + escapeHtml(appliedCoupon.code) + '</strong> applied' +
+      (appliedCoupon.description ? '<br><span style="color:var(--text-mute);font-size:.78rem;">' + escapeHtml(appliedCoupon.description) + '</span>' : '') +
+      '</div>' +
+      '<button class="btn btn-ghost btn-sm" onclick="removeCoupon()">Remove</button></div>';
+  }
+  return '<div class="coupon-row"><input type="text" placeholder="Coupon code" id="couponInput"><button class="btn btn-ghost btn-sm" onclick="applyCoupon()">Apply</button></div>';
 }
 
 /* ---------- Checkout page ---------- */
@@ -4104,10 +4450,26 @@ function updateCheckoutTotals(){
   const activeMethodEl = qs('.pay-method.active');
   const method = activeMethodEl ? activeMethodEl.dataset.method : 'upi';
   const codFee = method === 'cod' ? 40 : 0;
+  const discount = appliedCoupon ? (appliedCoupon.discountPaise / 100) : 0;
+
   qs('#ckSubtotal').textContent = formatINR(subtotal);
+  const discRow = qs('#ckDiscountRow');
+  if(discRow){
+    discRow.style.display = appliedCoupon ? '' : 'none';
+    if(appliedCoupon){
+      qs('#ckDiscountLabel').textContent = 'Discount (' + appliedCoupon.code + ')';
+      qs('#ckDiscount').textContent = '− ' + formatINR(discount);
+    }
+  }
   qs('#ckShipping').textContent = shipping===0?'FREE':formatINR(shipping);
   qs('#ckCodRow').style.display = codFee ? '' : 'none';
-  qs('#ckTotal').textContent = formatINR(subtotal + shipping + codFee);
+  // Math.max(0, ...) guards the display against ever showing a negative
+  // total; the authoritative amount is recomputed server-side at order
+  // creation regardless of what's shown here.
+  qs('#ckTotal').textContent = formatINR(Math.max(0, subtotal - discount + shipping + codFee));
+
+  const couponRow = qs('#ckCouponRow');
+  if(couponRow) couponRow.innerHTML = buildCouponRowHTML();
 }
 function selectPayMethod(el){
   qsa('.pay-method').forEach(function(m){
@@ -4145,7 +4507,7 @@ async function placeOrder(){
   const paymentMethod = method === 'cod' ? 'cod' : 'razorpay';
 
   // build items array expected by backend
-  const items = cart.map(function(l){ return { productId: l.id, quantity: l.qty }; });
+  const items = cart.map(function(l){ return { productId: l.id, variantId: l.variantId || null, quantity: l.qty }; });
   if(!items.length){ toast('Your cart is empty.', 'err'); navigateTo('cart'); return; }
 
   qs('#checkoutLayout').style.display = 'none';
@@ -4170,7 +4532,7 @@ async function placeOrder(){
       if(addrRes && addrRes.id) shippingAddressId = addrRes.id;
     }catch(e){ console.warn('Could not create shipping address on server, proceeding without it', e); }
 
-    const body = await apiFetch('/api/payments/create-order', { method: 'POST', body: JSON.stringify({ items: items, shippingAddressId: shippingAddressId, paymentMethod: paymentMethod }) });
+    const body = await apiFetch('/api/payments/create-order', { method: 'POST', body: JSON.stringify({ items: items, shippingAddressId: shippingAddressId, paymentMethod: paymentMethod, couponCode: appliedCoupon ? appliedCoupon.code : null }) });
 
     if (body.requiresRazorpay === false) {
       qs('#checkoutProcessing').style.display = 'none';
@@ -4179,6 +4541,7 @@ async function placeOrder(){
       qs('#successDeliveryDate').textContent = new Date(new Date().setDate(new Date().getDate() + 5)).toLocaleDateString('en-IN', { day:'numeric', month:'long', year:'numeric' });
       toast('Your cash-on-delivery order has been placed. We will contact you with delivery details soon.');
       cart = [];
+      appliedCoupon = null; // a coupon is single-use per order — clear it so it can't carry over to the next one
       saveCart();
       updateCartUI();
       window.scrollTo({ top:0 });
@@ -4219,6 +4582,7 @@ async function placeOrder(){
 
           // clear local cart and update UI
           cart = [];
+          appliedCoupon = null; // a coupon is single-use per order — clear it so it can't carry over to the next one
           saveCart();
           updateCartUI();
           window.scrollTo({ top:0 });
@@ -4284,7 +4648,29 @@ function renderPujaPage(){
   if(dateEl){ dateEl.min = tomorrowISO(); if(!dateEl.value) dateEl.value = tomorrowISO(); }
   renderPujaSummary();
 }
-function selectPujaService(id){ selectedPuja = id; renderPujaPage(); }
+function selectPujaService(id){
+  selectedPuja = id;
+  renderPujaPage();
+  // Reveal the Continue bar with the chosen puja named on it. The detail
+  // steps stay hidden until Continue is pressed, so step 1 stays focused
+  // purely on choosing what to book.
+  const svc = PUJA_SERVICES.find(function(s){ return s.id === id; });
+  const bar = qs('#pujaProceedBar');
+  if(bar && svc){
+    qs('#pujaProceedName').textContent = svc.name + ' · ' + formatINR(svc.price);
+    bar.style.display = '';
+    bar.scrollIntoView({ behavior:'smooth', block:'center' });
+  }
+}
+
+function proceedToPujaDetails(){
+  if(!selectedPuja){ toast('Please choose a puja first.', 'err'); return; }
+  const section = qs('#pujaDetailsSection');
+  if(section){
+    section.style.display = '';
+    section.scrollIntoView({ behavior:'smooth', block:'start' });
+  }
+}
 function selectPujaMode(el){
   qsa('#pujaModePills .mode-pill').forEach(function(p){ p.classList.remove('active'); });
   el.classList.add('active');
@@ -4313,8 +4699,77 @@ function renderPujaSummary(){
     '<div class="row"><span>Date</span><strong>' + dateDisplay + '</strong></div>' +
     '<div class="row"><span>Time Slot</span><strong>' + pujaSlot + '</strong></div>' +
     '<div class="total-row"><span>Total</span><span>' + formatINR(svc.price) + '</span></div>' +
-    '<button class="btn btn-gold btn-block" onclick="confirmPujaBooking()">Confirm &amp; Pay</button>';
+    '<button class="btn btn-gold btn-block" onclick="openBookingReview(\'puja\')">Review Booking</button>';
 }
+/* ---------- Booking review popup ----------
+   Opens on "Confirm & Pay". Validation runs BEFORE the popup opens, so any
+   errors are highlighted on the form the customer is already looking at,
+   rather than appearing inside a modal they'd have to dismiss to fix. The
+   Pay button then triggers the real payment flow. */
+function openBookingReview(type){
+  const isPuja = type === 'puja';
+
+  if(isPuja){
+    if(!selectedPuja){ toast('Please select a puja first.', 'err'); return; }
+    const checks = [ validateField('pjName','text'), validateField('pjPhone','phone'), validateField('pjEmail','email') ];
+    if(pujaMode === 'home') checks.push(validateField('pjAddress','text'));
+    if(!checks.every(Boolean)){ toast('Please check the highlighted fields before continuing.', 'err'); return; }
+    if(!qs('#pujaDate') || !qs('#pujaDate').value){ toast('Please choose a date.', 'err'); return; }
+  } else {
+    if(!selectedAstro){ toast('Please select a service first.', 'err'); return; }
+    const checks = [ validateField('asName','text'), validateField('asPhone','phone'), validateField('asEmail','email'), validateField('asDob','text') ];
+    if(!checks.every(Boolean)){ toast('Please check the highlighted fields before continuing.', 'err'); return; }
+    if(!qs('#astroDate') || !qs('#astroDate').value){ toast('Please choose a date.', 'err'); return; }
+  }
+
+  const svc = isPuja
+    ? PUJA_SERVICES.find(function(s){ return s.id === selectedPuja; })
+    : ASTRO_SERVICES.find(function(s){ return s.id === selectedAstro; });
+  if(!svc){ toast('Please select a service first.', 'err'); return; }
+
+  const dateVal = isPuja ? qs('#pujaDate').value : qs('#astroDate').value;
+  const dateDisplay = new Date(dateVal + 'T00:00:00').toLocaleDateString('en-IN', { day:'numeric', month:'long', year:'numeric' });
+  const modeLabel = isPuja
+    ? (pujaMode === 'home' ? 'Home Visit' : pujaMode === 'online' ? 'Online Sankalp' : 'At Temple')
+    : (astroMode === 'call' ? 'Phone Call' : astroMode === 'video' ? 'Video Call' : 'Written Report');
+  const slot = isPuja ? pujaSlot : astroSlot;
+  const name = isPuja ? qs('#pjName').value : qs('#asName').value;
+  const phone = isPuja ? qs('#pjPhone').value : qs('#asPhone').value;
+  const email = isPuja ? qs('#pjEmail').value : qs('#asEmail').value;
+
+  function row(label, value){
+    return '<div style="display:flex;justify-content:space-between;gap:14px;padding:9px 0;border-bottom:1px solid var(--line);font-size:.86rem;">' +
+      '<span style="color:var(--text-mute);">' + escapeHtml(label) + '</span>' +
+      '<strong style="text-align:right;">' + escapeHtml(value) + '</strong></div>';
+  }
+
+  qs('#bkReviewTitle').textContent = isPuja ? 'Confirm Your Puja Booking' : 'Confirm Your Consultation';
+  qs('#bkReviewBody').innerHTML =
+    row(isPuja ? 'Puja' : 'Service', svc.name) +
+    row(isPuja ? 'Mode' : 'Delivery', modeLabel) +
+    row('Date', dateDisplay) +
+    row('Time Slot', slot) +
+    row('Name', name) +
+    row('Phone', phone) +
+    row('Email', email) +
+    (isPuja && pujaMode === 'home' && qs('#pjAddress').value.trim() ? row('Address', qs('#pjAddress').value.trim()) : '') +
+    '<div style="display:flex;justify-content:space-between;margin-top:16px;font-family:var(--f-display);font-size:1.3rem;color:var(--oxblood);">' +
+      '<span>Total</span><span>' + formatINR(svc.price) + '</span></div>';
+
+  const payBtn = qs('#bkReviewPayBtn');
+  payBtn.textContent = 'Pay ' + formatINR(svc.price);
+  // Replace the node to clear any listener bound on a previous open, so a
+  // customer who reviews twice doesn't trigger two payment attempts.
+  const freshBtn = payBtn.cloneNode(true);
+  payBtn.parentNode.replaceChild(freshBtn, payBtn);
+  freshBtn.addEventListener('click', function(){
+    closeModal('bookingReviewModal');
+    if(isPuja) confirmPujaBooking(); else confirmAstroBooking();
+  });
+
+  openModal('bookingReviewModal');
+}
+
 async function confirmPujaBooking(){
   if(!selectedPuja){ toast('Please select a puja first.', 'err'); return; }
   const checks = [ validateField('pjName','text'), validateField('pjPhone','phone'), validateField('pjEmail','email') ];
@@ -4329,9 +4784,10 @@ async function confirmPujaBooking(){
   const dateVal = qs('#pujaDate') ? qs('#pujaDate').value : '';
   if(!dateVal){ toast('Please choose a date.', 'err'); return; }
 
-  const btn = document.activeElement;
-  const originalBtnHtml = btn ? btn.innerHTML : null;
-  if(btn){ btn.disabled = true; btn.innerHTML = 'Processing…'; }
+  // Deliberately NOT document.activeElement: after the review popup closes,
+  // that is usually <body>, and writing innerHTML into it would wipe the
+  // entire page. A non-destructive toast conveys the same thing safely.
+  toast('Opening secure payment…');
 
   try{
     const body = await apiFetch('/api/bookings/puja', { method:'POST', body: JSON.stringify({
@@ -4382,8 +4838,6 @@ async function confirmPujaBooking(){
   }catch(err){
     console.error(err);
     toast((err && (err.error || err.message)) ? (err.error || err.message) : 'Could not start booking. Please try again.', 'err');
-  }finally{
-    if(btn){ btn.disabled = false; btn.innerHTML = originalBtnHtml; }
   }
 }
 
@@ -4404,7 +4858,26 @@ function renderAstroPage(){
   if(dateEl){ dateEl.min = tomorrowISO(); if(!dateEl.value) dateEl.value = tomorrowISO(); }
   renderAstroSummary();
 }
-function selectAstroService(id){ selectedAstro = id; renderAstroPage(); }
+function selectAstroService(id){
+  selectedAstro = id;
+  renderAstroPage();
+  const svc = ASTRO_SERVICES.find(function(s){ return s.id === id; });
+  const bar = qs('#astroProceedBar');
+  if(bar && svc){
+    qs('#astroProceedName').textContent = svc.name + ' · ' + formatINR(svc.price);
+    bar.style.display = '';
+    bar.scrollIntoView({ behavior:'smooth', block:'center' });
+  }
+}
+
+function proceedToAstroDetails(){
+  if(!selectedAstro){ toast('Please choose a service first.', 'err'); return; }
+  const section = qs('#astroDetailsSection');
+  if(section){
+    section.style.display = '';
+    section.scrollIntoView({ behavior:'smooth', block:'start' });
+  }
+}
 function selectAstroMode(el){
   qsa('#astroModePills .mode-pill').forEach(function(p){ p.classList.remove('active'); });
   el.classList.add('active');
@@ -4433,7 +4906,7 @@ function renderAstroSummary(){
     '<div class="row"><span>Date</span><strong>' + dateDisplay + '</strong></div>' +
     '<div class="row"><span>Time Slot</span><strong>' + astroSlot + '</strong></div>' +
     '<div class="total-row"><span>Total</span><span>' + formatINR(svc.price) + '</span></div>' +
-    '<button class="btn btn-gold btn-block" onclick="confirmAstroBooking()">Confirm &amp; Pay</button>';
+    '<button class="btn btn-gold btn-block" onclick="openBookingReview(\'astrology\')">Review Booking</button>';
 }
 async function confirmAstroBooking(){
   if(!selectedAstro){ toast('Please select a service first.', 'err'); return; }
@@ -4446,9 +4919,10 @@ async function confirmAstroBooking(){
   const dateVal = qs('#astroDate') ? qs('#astroDate').value : '';
   if(!dateVal){ toast('Please choose a date.', 'err'); return; }
 
-  const btn = document.activeElement;
-  const originalBtnHtml = btn ? btn.innerHTML : null;
-  if(btn){ btn.disabled = true; btn.innerHTML = 'Processing…'; }
+  // Deliberately NOT document.activeElement: after the review popup closes,
+  // that is usually <body>, and writing innerHTML into it would wipe the
+  // entire page. A non-destructive toast conveys the same thing safely.
+  toast('Opening secure payment…');
 
   try{
     const body = await apiFetch('/api/bookings/astrology', { method:'POST', body: JSON.stringify({
@@ -4504,8 +4978,6 @@ async function confirmAstroBooking(){
   }catch(err){
     console.error(err);
     toast((err && (err.error || err.message)) ? (err.error || err.message) : 'Could not start booking. Please try again.', 'err');
-  }finally{
-    if(btn){ btn.disabled = false; btn.innerHTML = originalBtnHtml; }
   }
 }
 /* ============================================================

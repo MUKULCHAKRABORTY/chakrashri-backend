@@ -231,6 +231,163 @@ scripts/        # create-admin.js, run-migrations.js, test-db-connection.js,
 test/           # unit.test.js — tests against the REAL application modules, see "Round 4" below
 ```
 
+## Round 10c — The Verification Script Had Gone Stale (False Confidence)
+
+`npm run verify` was reporting **"All expected tables exist — 12/12 found"** and
+**"ALL CHECKS PASSED"** — while the database actually had **20** tables. The
+`EXPECTED_TABLES` list in `scripts/test-db-connection.js` was last updated at migration 003 and
+never extended as migrations 004–008 added eight more.
+
+The result was technically true but misleading: the script was silently *not* verifying
+`booking_services`, `product_reviews`, `coupons`, `coupon_redemptions`, `product_properties`,
+`product_options`, `product_option_values`, or `product_variants` — i.e. essentially everything
+built in the last several rounds. A missing table or column among those would have passed
+verification and only surfaced later as a runtime failure during a real customer checkout.
+
+Now covers all 20 tables, cross-checked programmatically against what the migration files
+actually create (exact match, no drift in either direction). Column-level checks were extended
+too, including the ones checkout writes on every single order: `orders.coupon_code`,
+`orders.discount_paise`, `order_items.variant_id`, and `order_items.variant_snapshot`.
+
+## Round 10b — nodemailer Upgraded to 9.0.5 (Security Advisory Cleared)
+
+`npm audit` flagged 8 high-severity advisories against nodemailer 6.x. Assessed against this
+codebase's actual usage rather than upgrading blindly:
+
+- **6 of the 8 did not apply here at all** — this code never sets `envelope`, never sets a custom
+  transport `name`, never sets `List-*` headers, never uses `jsonTransport`, never uses OAuth2
+  (it uses plain SMTP user/pass), and never uses the message-level `raw` option.
+- The remaining two (address interpretation, addressparser DoS) touch address parsing of values
+  that already pass `express-validator`'s `isEmail().normalizeEmail()` at registration.
+
+Upgraded to **9.0.5** regardless, since the advisory is real and this codebase only uses the most
+stable part of the nodemailer API (`createTransport({host, port, secure, auth})` and
+`sendMail({from, to, subject, html})`). Done as a targeted version bump, **not** `npm audit fix
+--force`, which installs breaking major upgrades across unrelated packages.
+
+Verified rather than assumed: installed 9.0.5, confirmed `src/utils/mailer.js` loads and exports
+correctly, confirmed `createTransport` accepts this exact config shape, re-ran `npm audit`
+(**0 vulnerabilities**), re-ran the full test suite against real dependencies (47/47), and booted
+`server.js` with every route and middleware wired without error.
+
+## Round 10 — Self-Audit: Three Gaps Found and Closed
+
+Re-checked the full requirement list against what was actually built, rather than assuming. Three
+real gaps turned up:
+
+**1. Variant details were captured but never displayed.** The backend correctly stored and
+returned each order item's `variant_snapshot`, but neither the admin order drawer nor the
+customer's order view rendered it — so a seller opening an order could not actually see which
+variation was purchased, which was the whole point of the request. Both views now show each
+purchased option as a pill (with the colour swatch for colour options).
+
+**2. The booking flow was only half-changed.** The requirement was a two-step confirm: a
+**Confirm & Pay** button below the details form, which pops up a summary of all entered details
+with a **Pay** button at its foot. The previous round only renamed the sidebar button and never
+built the popup. Now implemented properly — validation runs *before* the popup opens, so errors
+highlight on the form the customer is already looking at rather than inside a modal they'd have
+to dismiss to fix. The sidebar summary button now reads "Review Booking" and opens the same popup.
+
+**3. A latent page-destroying bug, found while wiring the above.** Both booking functions used
+`const btn = document.activeElement` and then `btn.innerHTML = 'Processing…'` to show a loading
+state. After the new review popup closes, `document.activeElement` is typically `<body>` — so
+that line would have replaced the **entire page contents** with the word "Processing…". Replaced
+with a non-destructive toast. This was pre-existing and would have been reachable in other ways
+too; the popup change simply made it near-certain to fire.
+
+## Round 9 — Coupons, Product Variants, Properties, and a Large UI Pass
+
+### Coupon system (built with seller protection as the first concern)
+
+Discount codes, creatable from the admin dashboard (**Coupons** in the sidebar), supporting
+percentage or flat-amount discounts, a maximum-discount cap on percentage coupons, minimum order
+value, total usage limit, per-customer usage limit, and an expiry date.
+
+Because a coupon bug costs real money, the correctness guarantees are worth stating explicitly:
+
+- **The discount is computed server-side only.** What the browser shows at checkout is a preview;
+  the authoritative amount is recalculated inside the order-creation transaction. A tampered or
+  stale client value cannot affect what's actually charged.
+- **The coupon row is locked (`SELECT ... FOR UPDATE`) during checkout**, so two simultaneous
+  orders can't both slip past a "last remaining use" limit — the same race-condition protection
+  already used for stock.
+- **Redemption is recorded in the same transaction as the order.** If checkout fails for any
+  reason (stock ran out, gateway error), the redemption rolls back with it — a failed checkout can
+  never burn a customer's use of a coupon.
+- **The discount is clamped at both layers** — in the coupon logic and again in the totals
+  calculation — so it can never exceed the order value or produce a negative total, even if a
+  coupon were misconfigured.
+- **A coupon that would zero out an order entirely is rejected** rather than silently creating a
+  ₹0 order (which Razorpay would reject anyway, leaving a confusing stuck order).
+- Every redemption is recorded individually in `coupon_redemptions`, so usage limits are counted
+  from a real audit trail rather than a single counter that could drift.
+
+One judgement call worth flagging for your accountant: **GST is scaled proportionally to the
+discount** (a 20%-off coupon reduces the GST total by 20%). India's actual GST-on-discount rules
+can depend on how a discount is structured and disclosed on the invoice, so please have your CA
+confirm this matches your specific coupon structures before relying on it for filing. The
+free-shipping threshold is deliberately evaluated on the **original** subtotal — it reflects the
+value of goods bought, not the amount paid after a coupon.
+
+### Product variants (the industry-standard model)
+
+Products can now have real purchasable variations — Options (e.g. "Colour") → Values (e.g. "Red")
+→ Variants (a specific combination). Each variant has **its own stock, and optionally its own
+price and image**. Selecting a variant on the storefront live-updates the price, stock message,
+and main product image. Colour options are picked from a real colour picker in the admin, so the
+storefront swatch shows the true shade rather than guessing from a name like "Maroon".
+
+**A critical bug this work introduced was caught and fixed before shipping:** `restoreOrderStock`
+(used for cancellations, refunds, and failed payments) was restoring stock to `products` in all
+cases. For a variant purchase that would have credited the wrong pool entirely — inflating the
+base product's stock while leaving the actual variant permanently short. Now variant-aware, with
+end-to-end tests proving variant stock decrements correctly and the base product stock is never
+touched for a variant-only purchase.
+
+Order items store a **frozen snapshot** of the variant's option values at purchase time, so the
+admin order view shows exactly what a customer bought even if that variant is later edited or
+removed — the same principle already used for product names and prices.
+
+### Product properties (Additional Information)
+
+Separately from variants, admins can add free-form name/value properties (e.g. "Finish: Antique
+Gold") shown in the product's Additional Information tab. Colour-type properties render with a
+small filled circle of that exact colour, as requested.
+
+### Storefront changes
+
+- **Cart drawer opens automatically** when an item is added.
+- **Coupon field on both the cart and checkout order summary**, with a live discount line.
+- **Product cards fixed** — the name was appearing twice because `shortDesc` falls back to the
+  product name when no description is set. The name now appears once in bold, with the material
+  shown in small text below the rating instead.
+- **Mobile product grid tightened** — reduced gaps, padding, and type sizes at 560px and 380px
+  breakpoints so two columns read as a compact grid rather than a stretched-out single column.
+- **Review stars are now clickable** on the product page and jump straight to the Reviews tab.
+- **Login and Sign Up merged** into two tabs with cross-links; once logged in the tab strip is
+  replaced entirely by a proper account panel showing the real name, email, and initial avatar,
+  with links to orders, wishlist, and continue shopping (it previously showed a placeholder
+  "you@example.com").
+- **Puja and Astrology pages restructured into steps** — services are shown first on their own,
+  and the date/mode/details steps only appear after pressing **Continue to Booking Details**. The
+  final button is now **Review & Pay**, since it opens the payment sheet rather than confirming
+  directly.
+
+### Admin dashboard changes
+
+- **Found why the Revenue and Order Status charts appeared empty**: both had a silent
+  `catch {}` that swallowed every error, so an API failure, a blocked Chart.js CDN, and a genuine
+  "no orders yet" state all looked identical — a blank box with no explanation. Each case now
+  shows a specific message, and the charts render responsively with formatted ₹ tooltips.
+- **Dashboard stat boxes fixed on mobile** — the grid used `minmax(200px, 1fr)`, which resolves to
+  a single column on a phone (a ~360px screen can't fit two 200px tracks), stacking all four
+  stats into one tall strip. Now two-up with proportionally tighter padding.
+- **Badge filter and Badge column** added to Products, applying together with the category filter.
+- **Total and Payment Status columns** added to both booking tables, so you can confirm money
+  actually arrived (verified against Razorpay) before confirming or scheduling a booking.
+- **Coupons section** for full coupon management.
+- **Properties and Variants builders** in the product form.
+
 ## Round 8 — Service Creation Diagnostic, Status Emails, Order-Level Reviews, Flexbox Bugs
 
 **"Could not create service" — now with a concrete Postgres error code (42P01, "undefined table")

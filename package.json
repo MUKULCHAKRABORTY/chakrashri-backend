@@ -14,19 +14,19 @@
     "verify": "npm run test:unit && npm run test:db && npm run test:razorpay"
   },
   "dependencies": {
-    "express": "^4.19.2",
-    "pg": "^8.12.0",
     "bcryptjs": "^2.4.3",
-    "jsonwebtoken": "^9.0.2",
-    "razorpay": "^2.9.4",
-    "dotenv": "^16.4.5",
+    "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
-    "helmet": "^7.1.0",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
     "express-rate-limit": "^7.4.0",
     "express-validator": "^7.2.0",
-    "nodemailer": "^6.9.14",
+    "helmet": "^7.1.0",
+    "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
-    "cookie-parser": "^1.4.6"
+    "nodemailer": "^9.0.5",
+    "pg": "^8.12.0",
+    "razorpay": "^2.9.4"
   },
   "devDependencies": {
     "nodemon": "^3.1.4"

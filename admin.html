@@ -155,6 +155,30 @@ h1,h2,h3{ font-family:var(--f-display); font-weight:600; color:var(--ink); }
 .grid-3{ display:grid; grid-template-columns:repeat(3,1fr); gap:20px; }
 @media (max-width:1100px){ .grid-2,.grid-3{ grid-template-columns:1fr; } }
 
+/* Chart containers need a definite height because the charts are configured
+   with maintainAspectRatio:false (so they fill the card responsively rather
+   than distorting on narrow screens). */
+.chart-holder{ position:relative; height:260px; }
+@media (max-width:700px){ .chart-holder{ height:220px; } }
+
+/* Dashboard stat boxes on mobile: the auto-fit minmax(200px,...) above
+   resolves to a SINGLE column on a phone (a ~360px screen can't fit two
+   200px tracks), which stacked all four stats into one tall strip. Forcing
+   two columns with tighter padding makes the dashboard scannable at a
+   glance on mobile, which is the whole point of these boxes. */
+@media (max-width:700px){
+  .stat-grid{ grid-template-columns:repeat(2,1fr); gap:10px; }
+  .stat-card{ padding:12px 13px; }
+  .stat-card .lbl{ font-size:.62rem; margin-bottom:5px; letter-spacing:.05em; }
+  .stat-card .val{ font-size:1.2rem; word-break:break-word; }
+  .card{ padding:14px; margin-bottom:14px; }
+  .content{ padding:16px 14px 50px; }
+  .topbar{ padding:12px 14px; }
+}
+@media (max-width:380px){
+  .stat-card .val{ font-size:1.05rem; }
+}
+
 /* ===== Tables ===== */
 .table-wrap{ overflow-x:auto; }
 table.data{ width:100%; border-collapse:collapse; font-size:.86rem; }
@@ -313,6 +337,10 @@ code.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.78rem; 
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
         Booking Services
       </button>
+      <button class="nav-btn" data-view="coupons" onclick="switchView('coupons')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M20 12a2 2 0 012-2V7a1 1 0 00-1-1H3a1 1 0 00-1 1v3a2 2 0 010 4v3a1 1 0 001 1h18a1 1 0 001-1v-3a2 2 0 01-2-2z"/><path d="M9 9l6 6M9 15l6-6"/></svg>
+        Coupons
+      </button>
       <button class="nav-btn" data-view="customers" onclick="switchView('customers')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/></svg>
         Customers
@@ -370,11 +398,11 @@ code.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.78rem; 
         <div class="grid-2">
           <div class="card">
             <div class="card-head"><h3>Revenue — last 30 days</h3></div>
-            <canvas id="revenueChart" height="110"></canvas>
+            <div class="chart-holder"><canvas id="revenueChart" height="110"></canvas></div>
           </div>
           <div class="card">
             <div class="card-head"><h3>Order Status</h3></div>
-            <canvas id="statusChart" height="110"></canvas>
+            <div class="chart-holder"><canvas id="statusChart" height="110"></canvas></div>
           </div>
         </div>
 
@@ -406,12 +434,15 @@ code.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.78rem; 
           <select class="filter-select" id="productCategoryFilter" onchange="loadProducts(1)">
             <option value="">All categories</option>
           </select>
+          <select class="filter-select" id="productBadgeFilter" onchange="loadProducts(1)">
+            <option value="">All badges</option>
+          </select>
           <button class="btn btn-primary btn-sm" style="margin-left:auto;" onclick="openProductForm()">+ Add Product</button>
         </div>
         <div class="card" style="padding:0;">
           <div class="table-wrap"><table class="data">
-            <thead><tr><th></th><th>Name</th><th>SKU</th><th>Category</th><th>Price</th><th>Stock</th><th>Status</th><th></th></tr></thead>
-            <tbody id="productsTbody"><tr><td colspan="8" class="loading-row"><span class="spinner"></span></td></tr></tbody>
+            <thead><tr><th></th><th>Name</th><th>SKU</th><th>Category</th><th>Badge</th><th>Price</th><th>Stock</th><th>Status</th><th></th></tr></thead>
+            <tbody id="productsTbody"><tr><td colspan="9" class="loading-row"><span class="spinner"></span></td></tr></tbody>
           </table></div>
         </div>
         <div class="pager" id="productsPager"></div>
@@ -449,12 +480,12 @@ code.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.78rem; 
         </div>
         <div class="card" style="padding:0;">
           <div class="table-wrap"><table class="data" id="pujaTable">
-            <thead><tr><th>Puja Type</th><th>Contact</th><th>Date</th><th>Time Slot</th><th>Status</th><th></th></tr></thead>
-            <tbody id="pujaTbody"><tr><td colspan="6" class="loading-row"><span class="spinner"></span></td></tr></tbody>
+            <thead><tr><th>Puja Type</th><th>Contact</th><th>Date</th><th>Time Slot</th><th>Total</th><th>Payment</th><th>Status</th><th></th></tr></thead>
+            <tbody id="pujaTbody"><tr><td colspan="8" class="loading-row"><span class="spinner"></span></td></tr></tbody>
           </table></div>
           <div class="table-wrap" id="astroTableWrap" style="display:none;"><table class="data">
-            <thead><tr><th>Mode</th><th>Contact</th><th>Date</th><th>Time Slot</th><th>Status</th><th></th></tr></thead>
-            <tbody id="astroTbody"><tr><td colspan="6" class="loading-row"><span class="spinner"></span></td></tr></tbody>
+            <thead><tr><th>Mode</th><th>Contact</th><th>Date</th><th>Time Slot</th><th>Total</th><th>Payment</th><th>Status</th><th></th></tr></thead>
+            <tbody id="astroTbody"><tr><td colspan="8" class="loading-row"><span class="spinner"></span></td></tr></tbody>
           </table></div>
         </div>
       </section>
@@ -472,6 +503,19 @@ code.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.78rem; 
           <div class="table-wrap"><table class="data">
             <thead><tr><th>Name</th><th>Price</th><th>Duration</th><th>Status</th><th></th></tr></thead>
             <tbody id="servicesTbody"><tr><td colspan="5" class="loading-row"><span class="spinner"></span></td></tr></tbody>
+          </table></div>
+        </div>
+      </section>
+
+      <!-- ============ COUPONS ============ -->
+      <section class="view" id="view-coupons">
+        <div class="toolbar">
+          <button class="btn btn-primary btn-sm" style="margin-left:auto;" onclick="openCouponForm()">+ Create Coupon</button>
+        </div>
+        <div class="card" style="padding:0;">
+          <div class="table-wrap"><table class="data">
+            <thead><tr><th>Code</th><th>Discount</th><th>Min Order</th><th>Used</th><th>Valid Until</th><th>Status</th><th></th></tr></thead>
+            <tbody id="couponsTbody"><tr><td colspan="7" class="loading-row"><span class="spinner"></span></td></tr></tbody>
           </table></div>
         </div>
       </section>
@@ -540,11 +584,88 @@ code.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.78rem; 
           <button class="btn btn-ghost btn-sm" onclick="addProductImage()">Add</button>
         </div>
         <div class="hint">Images are hosted externally (e.g. Cloudinary) and referenced by URL — paste a link above.</div>
+
+        <!-- ===== Additional Information properties ===== -->
+        <div class="divider"></div>
+        <label style="display:block;font-size:.72rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--oxblood);margin-bottom:6px;">Additional Information</label>
+        <div class="hint" style="margin-bottom:10px;">Informational only — shown in the product's "Additional Information" tab. For options a customer <em>chooses</em> (and that have their own stock), use Variants below instead.</div>
+        <div id="pfPropertiesList" style="margin-bottom:10px;"></div>
+        <div class="form-grid" style="gap:8px;">
+          <div class="field" style="margin:0;"><input id="pfPropName" placeholder="Property name (e.g. Finish)"></div>
+          <div class="field" style="margin:0;"><input id="pfPropValue" placeholder="Value (e.g. Antique Gold)"></div>
+          <div class="field" style="margin:0;display:flex;align-items:center;gap:8px;">
+            <input type="color" id="pfPropColor" value="#C9A227" style="width:44px;height:38px;padding:2px;border:1.5px solid var(--parchment-2);border-radius:9px;background:#fff;">
+            <label style="margin:0;text-transform:none;letter-spacing:0;font-weight:500;font-size:.8rem;display:flex;align-items:center;gap:5px;">
+              <input type="checkbox" id="pfPropIsColor" style="width:15px;height:15px;"> Colour swatch
+            </label>
+          </div>
+          <div class="field" style="margin:0;"><button class="btn btn-ghost btn-sm" style="width:100%;" onclick="addProductProperty()">Add Property</button></div>
+        </div>
+
+        <!-- ===== Variants ===== -->
+        <div class="divider"></div>
+        <label style="display:block;font-size:.72rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--oxblood);margin-bottom:6px;">Variants (Options Customers Choose)</label>
+        <div class="hint" style="margin-bottom:10px;">Step 1: define an option (e.g. "Colour") and its values. Step 2: create a variant for each combination you actually sell — each has its own stock, and optionally its own price and image.</div>
+
+        <div id="pfOptionsList" style="margin-bottom:12px;"></div>
+        <div class="form-grid" style="gap:8px;">
+          <div class="field" style="margin:0;"><input id="pfOptName" placeholder="Option name (e.g. Colour, Size)"></div>
+          <div class="field" style="margin:0;">
+            <select id="pfOptType">
+              <option value="text">Text values (e.g. S, M, L)</option>
+              <option value="color">Colour values (shows swatches)</option>
+            </select>
+          </div>
+          <div class="field full" style="margin:0;"><input id="pfOptValues" placeholder="Values, comma separated — e.g. Red, Blue, Green"></div>
+          <div class="field full" style="margin:0;"><button class="btn btn-ghost btn-sm" style="width:100%;" onclick="addProductOption()">Add Option</button>
+            <div class="hint">For colour options you'll pick each exact shade after adding.</div>
+          </div>
+        </div>
+
+        <div style="margin-top:16px;">
+          <label style="display:block;font-size:.72rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--oxblood);margin-bottom:10px;">Variant Combinations</label>
+          <div id="pfVariantsList" style="margin-bottom:10px;"></div>
+          <div id="pfVariantBuilder"></div>
+        </div>
       </div>
     </div>
     <div class="modal-foot">
       <button class="btn btn-ghost" onclick="closeModal('productModal')">Cancel</button>
       <button class="btn btn-primary" id="pfSaveBtn" onclick="saveProduct()">Save Product</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== COUPON FORM MODAL ===================== -->
+<div class="overlay" id="couponModal">
+  <div class="modal wide">
+    <div class="modal-head">
+      <h3 id="couponModalTitle">Create Coupon</h3>
+      <div class="close-x" onclick="closeModal('couponModal')">✕</div>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="field"><label>Coupon Code *</label><input id="cfCode" placeholder="DIWALI20" style="text-transform:uppercase;"><div class="hint">Customers type this at checkout. Stored uppercase.</div></div>
+        <div class="field"><label>Discount Type *</label>
+          <select id="cfType" onchange="onCouponTypeChange()">
+            <option value="percentage">Percentage off</option>
+            <option value="fixed">Flat amount off</option>
+          </select>
+        </div>
+        <div class="field" id="cfPercentField"><label>Discount Percent *</label><input id="cfPercent" type="number" min="0.01" max="100" step="0.01" placeholder="10"><div class="hint">e.g. 10 = 10% off</div></div>
+        <div class="field" id="cfMaxDiscountField"><label>Max Discount (₹)</label><input id="cfMaxDiscount" type="number" min="1" step="1" placeholder="Optional cap"><div class="hint">Caps a percentage coupon, e.g. "10% off up to ₹500". Strongly recommended.</div></div>
+        <div class="field" id="cfValueField" style="display:none;"><label>Discount Amount (₹) *</label><input id="cfValue" type="number" min="1" step="1" placeholder="200"></div>
+        <div class="field"><label>Minimum Order (₹)</label><input id="cfMinOrder" type="number" min="0" step="1" placeholder="0"><div class="hint">Cart subtotal must reach this before the coupon applies.</div></div>
+        <div class="field"><label>Total Usage Limit</label><input id="cfUsageTotal" type="number" min="1" step="1" placeholder="Unlimited"><div class="hint">Across all customers. Leave blank for unlimited.</div></div>
+        <div class="field"><label>Uses Per Customer</label><input id="cfUsagePerCustomer" type="number" min="1" step="1" value="1"></div>
+        <div class="field"><label>Valid Until</label><input id="cfValidUntil" type="date"><div class="hint">Leave blank for no expiry.</div></div>
+        <div class="field full"><label>Description</label><input id="cfDescription" placeholder="Shown to the customer when the coupon is applied"></div>
+        <div class="field checkbox"><input type="checkbox" id="cfActive" checked><label style="margin:0;text-transform:none;letter-spacing:0;font-weight:500;">Active (customers can use it)</label></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal('couponModal')">Cancel</button>
+      <button class="btn btn-primary" id="cfSaveBtn" onclick="saveCoupon()">Save Coupon</button>
     </div>
   </div>
 </div>
@@ -753,6 +874,7 @@ const VIEW_META = {
   orders:    { title: 'Orders',    sub: 'Track and fulfill customer orders' },
   bookings:  { title: 'Bookings',  sub: 'Puja and astrology consultation requests' },
   services:  { title: 'Booking Services', sub: 'Manage puja and astrology pricing — this is the only source of truth customers are charged from' },
+  coupons:   { title: 'Coupons', sub: 'Create and manage discount codes — limits and expiry are enforced server-side at checkout' },
   customers: { title: 'Customers', sub: 'Everyone who has an account' },
   auditlog:  { title: 'Audit Log', sub: 'Every admin action, for accountability' }
 };
@@ -775,6 +897,7 @@ function refreshCurrentView(){
   else if (currentView === 'orders') loadOrders(1);
   else if (currentView === 'bookings') loadBookings();
   else if (currentView === 'services') loadBookingServicesAdmin();
+  else if (currentView === 'coupons') loadCoupons();
   else if (currentView === 'customers') loadCustomers(1);
   else if (currentView === 'auditlog') loadAuditLog();
 }
@@ -827,35 +950,89 @@ async function loadDashboard(){
   loadLowStock();
 }
 
+function showChartMessage(canvasId, message){
+  // Charts render into a <canvas>, which can't show text — so replace it
+  // with a styled message div. A blank box with no explanation (the old
+  // silent-catch behaviour) gave no way to tell "no orders yet" apart from
+  // "the chart library failed to load".
+  const canvas = qs('#' + canvasId);
+  if(!canvas) return;
+  const holder = document.createElement('div');
+  holder.id = canvasId + '_msg';
+  holder.style.cssText = 'text-align:center;padding:40px 20px;color:#8a7768;font-size:.88rem;';
+  holder.textContent = message;
+  canvas.replaceWith(holder);
+}
+
+function restoreChartCanvas(canvasId, height){
+  // Puts the <canvas> back if a previous render replaced it with a message.
+  const msg = qs('#' + canvasId + '_msg');
+  if(msg){
+    const canvas = document.createElement('canvas');
+    canvas.id = canvasId;
+    canvas.height = height || 110;
+    msg.replaceWith(canvas);
+  }
+}
+
 async function loadRevenueChart(){
+  restoreChartCanvas('revenueChart', 110);
+  if (typeof Chart === 'undefined') {
+    showChartMessage('revenueChart', 'Chart library could not be loaded. Check your network connection and refresh.');
+    return;
+  }
   try {
     const body = await api('/api/admin/analytics/revenue-by-day?days=30');
-    const labels = body.days.map((d) => new Date(d.day).toLocaleDateString('en-IN', { day:'numeric', month:'short' }));
-    const data = body.days.map((d) => Number(d.revenue_paise) / 100);
+    const days = body.days || [];
+    if (!days.length) {
+      showChartMessage('revenueChart', 'No paid orders in the last 30 days yet — revenue will appear here as orders come in.');
+      return;
+    }
+    const labels = days.map((d) => new Date(d.day).toLocaleDateString('en-IN', { day:'numeric', month:'short' }));
+    const data = days.map((d) => Number(d.revenue_paise) / 100);
     const ctx = qs('#revenueChart').getContext('2d');
     if (revenueChartInstance) revenueChartInstance.destroy();
     revenueChartInstance = new Chart(ctx, {
       type: 'line',
       data: { labels, datasets: [{ label: 'Revenue (₹)', data, borderColor: '#7A1128', backgroundColor: 'rgba(122,17,40,.08)', fill: true, tension: .3, pointRadius: 2 }] },
-      options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => '₹' + c.parsed.y.toLocaleString('en-IN') } } },
+        scales: { y: { beginAtZero: true, ticks: { callback: (v) => '₹' + v.toLocaleString('en-IN') } } }
+      }
     });
-  } catch (err) { /* chart is non-critical; fail silently rather than blocking the dashboard */ }
+  } catch (err) {
+    showChartMessage('revenueChart', 'Could not load revenue data: ' + ((err && err.error) || 'unknown error'));
+  }
 }
 
 async function loadStatusChart(){
+  restoreChartCanvas('statusChart', 110);
+  if (typeof Chart === 'undefined') {
+    showChartMessage('statusChart', 'Chart library could not be loaded. Check your network connection and refresh.');
+    return;
+  }
   try {
     const body = await api('/api/admin/analytics/order-status-breakdown');
+    const breakdown = body.breakdown || [];
+    if (!breakdown.length) {
+      showChartMessage('statusChart', 'No orders yet — the status breakdown will appear here once orders start coming in.');
+      return;
+    }
     const colors = { pending:'#9C7E1C', paid:'#3E7A4F', processing:'#2E4E8C', shipped:'#E08A1E', delivered:'#3E7A4F', cancelled:'#8a7768', refunded:'#B23A2E', payment_failed:'#B23A2E' };
-    const labels = body.breakdown.map((r) => r.status);
-    const data = body.breakdown.map((r) => Number(r.count));
+    const labels = breakdown.map((r) => r.status);
+    const data = breakdown.map((r) => Number(r.count));
     const ctx = qs('#statusChart').getContext('2d');
     if (statusChartInstance) statusChartInstance.destroy();
     statusChartInstance = new Chart(ctx, {
       type: 'doughnut',
       data: { labels, datasets: [{ data, backgroundColor: labels.map((l) => colors[l] || '#C9A227') }] },
-      options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } } }
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } } }
     });
-  } catch (err) { /* non-critical */ }
+  } catch (err) {
+    showChartMessage('statusChart', 'Could not load order status data: ' + ((err && err.error) || 'unknown error'));
+  }
 }
 
 async function loadTopProducts(){
@@ -885,27 +1062,33 @@ async function loadLowStock(){
 /* =========================================================================
    PRODUCTS
    ========================================================================= */
-let productsState = { page: 1, categories: new Set() };
+let productsState = { page: 1, categories: new Set(), badges: new Set() };
 const debounceLoadProducts = debounce(() => loadProducts(1), 350);
 
 async function loadProducts(page){
   productsState.page = page || 1;
   const tbody = qs('#productsTbody');
-  tbody.innerHTML = '<tr><td colspan="8" class="loading-row"><span class="spinner"></span></td></tr>';
+  tbody.innerHTML = '<tr><td colspan="9" class="loading-row"><span class="spinner"></span></td></tr>';
   const search = qs('#productSearch').value.trim();
   const category = qs('#productCategoryFilter').value;
+  const badge = qs('#productBadgeFilter').value;
   const params = new URLSearchParams({ page: productsState.page, limit: 20 });
   if (search) params.set('search', search);
   if (category) params.set('category', category);
+  if (badge) params.set('badge', badge);
 
   try {
     const body = await api('/api/admin/products?' + params.toString());
     const products = body.products || [];
-    products.forEach((p) => productsState.categories.add(p.category));
+    products.forEach((p) => {
+      productsState.categories.add(p.category);
+      if (p.badge) productsState.badges.add(p.badge);
+    });
     refreshCategoryFilterOptions();
+    refreshBadgeFilterOptions();
 
     if (!products.length) {
-      tbody.innerHTML = '<tr><td colspan="8"><div class="empty">No products found.' + (search || category ? ' Try clearing filters.' : ' Add your first product to get started.') + '</div></td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9"><div class="empty">No products found.' + (search || category || badge ? ' Try clearing filters.' : ' Add your first product to get started.') + '</div></td></tr>';
       qs('#productsPager').innerHTML = '';
       return;
     }
@@ -914,6 +1097,7 @@ async function loadProducts(page){
       <td><b>${esc(p.name)}</b></td>
       <td class="muted">${esc(p.sku)}</td>
       <td class="muted">${esc(p.category)}</td>
+      <td>${p.badge ? '<span class="pill pill-warn">' + esc(p.badge) + '</span>' : '<span class="muted">—</span>'}</td>
       <td>${paise(p.price_paise)}</td>
       <td>${p.stock_qty > 0 ? p.stock_qty : '<span class="pill pill-danger">Out of stock</span>'}</td>
       <td><span class="pill ${p.is_active !== false ? 'pill-success' : 'pill-neutral'}">${p.is_active !== false ? 'Active' : 'Hidden'}</span></td>
@@ -930,7 +1114,7 @@ async function loadProducts(page){
       <span>Page ${productsState.page}</span>
       <button class="btn btn-ghost btn-sm" ${products.length<20?'disabled':''} onclick="loadProducts(${productsState.page+1})">Next →</button>`;
   } catch (err) {
-    tbody.innerHTML = '<tr><td colspan="8"><div class="empty">Could not load products.</div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9"><div class="empty">Could not load products.</div></td></tr>';
   }
 }
 
@@ -942,12 +1126,26 @@ function refreshCategoryFilterOptions(){
   sel.value = current;
 }
 
+function refreshBadgeFilterOptions(){
+  const sel = qs('#productBadgeFilter');
+  if (!sel) return;
+  const current = sel.value;
+  sel.innerHTML = '<option value="">All badges</option>' +
+    Array.from(productsState.badges).sort().map((b) => `<option value="${esc(b)}">${esc(b)}</option>`).join('');
+  sel.value = current;
+}
+
 let editingProductId = null;
 let editingProductImages = [];
 
 async function openProductForm(id){
   editingProductId = id || null;
   editingProductImages = [];
+  // Reset every editing collection, or data from a previously edited
+  // product would leak into the next form that's opened.
+  editingProductProperties = [];
+  editingProductOptions = [];
+  editingProductVariants = [];
   qs('#productModalTitle').textContent = id ? 'Edit Product' : 'Add Product';
   ['pfName','pfSku','pfSlug','pfCategory','pfPrice','pfMrp','pfStock','pfHsn','pfBadge','pfMaterial','pfShortDesc','pfLongDesc'].forEach((f) => qs('#'+f).value = '');
   qs('#pfGst').value = '3';
@@ -977,11 +1175,215 @@ async function openProductForm(id){
       qs('#pfLongDesc').value = p.long_desc || '';
       editingProductImages = body.images || [];
       renderProductImageChips();
+      editingProductProperties = body.properties || [];
+      renderProductProperties();
+      editingProductOptions = body.options || [];
+      editingProductVariants = body.variants || [];
+      renderProductOptions();
     } catch (err) {
       toast(err.error || 'Could not load product details.', 'err');
       closeModal('productModal');
     }
   }
+}
+
+/* ===== Product properties (Additional Information) ===== */
+let editingProductProperties = [];
+
+function renderProductProperties(){
+  const wrap = qs('#pfPropertiesList');
+  if (!wrap) return;
+  if (!editingProductProperties.length) { wrap.innerHTML = '<div class="hint">No properties yet.</div>'; return; }
+  wrap.innerHTML = editingProductProperties.map((p) => `
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--ivory);border-radius:8px;margin-bottom:6px;">
+      <span style="font-weight:600;font-size:.85rem;">${esc(p.property_name)}</span>
+      <span style="font-size:.85rem;">${esc(p.property_value)}</span>
+      ${p.color_hex ? `<span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:${esc(p.color_hex)};border:1px solid rgba(0,0,0,.2);"></span>` : ''}
+      <button class="btn btn-ghost btn-sm" style="margin-left:auto;color:var(--danger);" onclick="removeProductProperty('${p.id}')">Remove</button>
+    </div>`).join('');
+}
+
+async function addProductProperty(){
+  if (!editingProductId) { toast('Save the product first, then add properties.', 'err'); return; }
+  const name = qs('#pfPropName').value.trim();
+  const value = qs('#pfPropValue').value.trim();
+  if (!name || !value) { toast('Enter both a property name and value.', 'err'); return; }
+  const isColor = qs('#pfPropIsColor').checked;
+  try {
+    const body = await api('/api/products/' + editingProductId + '/properties', {
+      method: 'POST',
+      body: JSON.stringify({ property_name: name, property_value: value, color_hex: isColor ? qs('#pfPropColor').value : null })
+    });
+    editingProductProperties.push(body.property);
+    renderProductProperties();
+    qs('#pfPropName').value = ''; qs('#pfPropValue').value = ''; qs('#pfPropIsColor').checked = false;
+  } catch (err) { toast(err.error || 'Could not add property.', 'err'); }
+}
+
+async function removeProductProperty(propId){
+  try {
+    await api('/api/products/' + editingProductId + '/properties/' + propId, { method: 'DELETE' });
+    editingProductProperties = editingProductProperties.filter((p) => p.id !== propId);
+    renderProductProperties();
+  } catch (err) { toast(err.error || 'Could not remove property.', 'err'); }
+}
+
+/* ===== Product options & variants ===== */
+let editingProductOptions = [];
+let editingProductVariants = [];
+
+function renderProductOptions(){
+  const wrap = qs('#pfOptionsList');
+  if (!wrap) return;
+  if (!editingProductOptions.length) { wrap.innerHTML = '<div class="hint">No options defined yet.</div>'; renderVariantBuilder(); return; }
+  wrap.innerHTML = editingProductOptions.map((opt) => `
+    <div style="padding:10px 12px;background:var(--ivory);border-radius:9px;margin-bottom:8px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+        <strong style="font-size:.88rem;">${esc(opt.option_name)}</strong>
+        <span class="pill pill-neutral" style="font-size:.65rem;">${esc(opt.option_type)}</span>
+        <button class="btn btn-ghost btn-sm" style="margin-left:auto;color:var(--danger);" onclick="removeProductOption('${opt.id}')">Remove</button>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;">
+        ${(opt.values||[]).map((v) => `
+          <span style="display:inline-flex;align-items:center;gap:5px;padding:4px 9px;background:#fff;border:1px solid var(--parchment-2);border-radius:20px;font-size:.78rem;">
+            ${opt.option_type === 'color' ? `<input type="color" value="${esc(v.color_hex || '#cccccc')}" onchange="updateOptionValueColor('${opt.id}','${v.id}',this.value)" style="width:20px;height:20px;padding:0;border:none;background:none;cursor:pointer;" title="Pick the exact shade">` : ''}
+            ${esc(v.value)}
+            <button onclick="removeOptionValue('${opt.id}','${v.id}')" style="color:var(--danger);font-weight:700;line-height:1;" title="Remove value">×</button>
+          </span>`).join('')}
+      </div>
+    </div>`).join('');
+  renderVariantBuilder();
+}
+
+async function addProductOption(){
+  if (!editingProductId) { toast('Save the product first, then add options.', 'err'); return; }
+  const name = qs('#pfOptName').value.trim();
+  const type = qs('#pfOptType').value;
+  const valuesRaw = qs('#pfOptValues').value.trim();
+  if (!name) { toast('Enter an option name.', 'err'); return; }
+  if (!valuesRaw) { toast('Enter at least one value.', 'err'); return; }
+  const values = valuesRaw.split(',').map((v) => ({ value: v.trim() })).filter((v) => v.value);
+  try {
+    const body = await api('/api/products/' + editingProductId + '/options', {
+      method: 'POST',
+      body: JSON.stringify({ option_name: name, option_type: type, values })
+    });
+    editingProductOptions.push(body.option);
+    renderProductOptions();
+    qs('#pfOptName').value = ''; qs('#pfOptValues').value = '';
+    if (type === 'color') toast('Option added — now pick the exact shade for each colour.', 'ok');
+  } catch (err) { toast(err.error || 'Could not add option.', 'err'); }
+}
+
+async function updateOptionValueColor(optionId, valueId, hex){
+  try {
+    await api('/api/products/' + editingProductId + '/options/' + optionId + '/values/' + valueId, {
+      method: 'PATCH', body: JSON.stringify({ colorHex: hex })
+    });
+    const opt = editingProductOptions.find((o) => o.id === optionId);
+    const val = opt && (opt.values||[]).find((v) => v.id === valueId);
+    if (val) val.color_hex = hex;
+    renderProductOptions();
+  } catch (err) { toast(err.error || 'Could not update colour.', 'err'); }
+}
+
+async function removeOptionValue(optionId, valueId){
+  try {
+    await api('/api/products/' + editingProductId + '/options/' + optionId + '/values/' + valueId, { method: 'DELETE' });
+    const opt = editingProductOptions.find((o) => o.id === optionId);
+    if (opt) opt.values = (opt.values||[]).filter((v) => v.id !== valueId);
+    renderProductOptions();
+  } catch (err) { toast(err.error || 'Could not remove value.', 'err'); }
+}
+
+async function removeProductOption(optionId){
+  try {
+    await api('/api/products/' + editingProductId + '/options/' + optionId, { method: 'DELETE' });
+    editingProductOptions = editingProductOptions.filter((o) => o.id !== optionId);
+    renderProductOptions();
+  } catch (err) { toast(err.error || 'Could not remove option.', 'err'); }
+}
+
+function renderProductVariants(){
+  const wrap = qs('#pfVariantsList');
+  if (!wrap) return;
+  const active = editingProductVariants.filter((v) => v.is_active !== false);
+  if (!active.length) { wrap.innerHTML = '<div class="hint">No variants yet. Define options above, then add combinations below.</div>'; return; }
+  wrap.innerHTML = active.map((v) => {
+    const label = (v.option_values || []).map((x) => x.option + ': ' + x.value).join(' / ');
+    return `<div style="display:flex;align-items:center;gap:10px;padding:9px 11px;background:var(--ivory);border-radius:8px;margin-bottom:6px;flex-wrap:wrap;">
+      <span style="font-weight:600;font-size:.84rem;">${esc(label)}</span>
+      <span class="muted" style="font-size:.8rem;">Stock: ${v.stock_qty}</span>
+      <span class="muted" style="font-size:.8rem;">${v.price_paise != null ? paise(v.price_paise) : 'base price'}</span>
+      ${v.image_url ? '<span class="muted" style="font-size:.8rem;">has image</span>' : ''}
+      <button class="btn btn-ghost btn-sm" style="margin-left:auto;color:var(--danger);" onclick="removeProductVariant('${v.id}')">Remove</button>
+    </div>`;
+  }).join('');
+}
+
+function renderVariantBuilder(){
+  const wrap = qs('#pfVariantBuilder');
+  if (!wrap) return;
+  if (!editingProductOptions.length) { wrap.innerHTML = ''; renderProductVariants(); return; }
+  wrap.innerHTML =
+    '<div class="form-grid" style="gap:8px;">' +
+      editingProductOptions.map((opt) => `
+        <div class="field" style="margin:0;">
+          <label>${esc(opt.option_name)}</label>
+          <select id="vb_${opt.id}">
+            ${(opt.values||[]).map((v) => `<option value="${esc(v.value)}">${esc(v.value)}</option>`).join('')}
+          </select>
+        </div>`).join('') +
+      '<div class="field" style="margin:0;"><label>Stock *</label><input id="vbStock" type="number" min="0" step="1" value="0"></div>' +
+      '<div class="field" style="margin:0;"><label>Price (₹)</label><input id="vbPrice" type="number" min="1" step="0.01" placeholder="Leave blank = base price"></div>' +
+      '<div class="field full" style="margin:0;"><label>Variant Image URL</label><input id="vbImage" placeholder="https://… shown when this variant is selected"></div>' +
+      '<div class="field full" style="margin:0;"><button class="btn btn-primary btn-sm" style="width:100%;" onclick="addProductVariant()">Add This Combination</button></div>' +
+    '</div>';
+  renderProductVariants();
+}
+
+async function addProductVariant(){
+  if (!editingProductId) return;
+  const option_values = editingProductOptions.map((opt) => {
+    const sel = qs('#vb_' + opt.id);
+    const chosen = sel ? sel.value : null;
+    const valueRow = (opt.values||[]).find((v) => v.value === chosen);
+    const entry = { option: opt.option_name, value: chosen };
+    // Carry the colour onto the variant snapshot so the storefront can show
+    // the right swatch even if the option definition changes later.
+    if (opt.option_type === 'color' && valueRow && valueRow.color_hex) entry.colorHex = valueRow.color_hex;
+    return entry;
+  });
+  if (option_values.some((o) => !o.value)) { toast('Choose a value for every option.', 'err'); return; }
+
+  const stock = parseInt(qs('#vbStock').value, 10);
+  const price = parseFloat(qs('#vbPrice').value);
+  const image = qs('#vbImage').value.trim();
+  if (!(stock >= 0)) { toast('Enter a valid stock quantity.', 'err'); return; }
+
+  try {
+    const body = await api('/api/products/' + editingProductId + '/variants', {
+      method: 'POST',
+      body: JSON.stringify({
+        option_values,
+        stock_qty: stock,
+        price_paise: price > 0 ? Math.round(price * 100) : null,
+        image_url: image || null
+      })
+    });
+    editingProductVariants.push(body.variant);
+    renderProductVariants();
+    qs('#vbStock').value = '0'; qs('#vbPrice').value = ''; qs('#vbImage').value = '';
+    toast('Variant added.', 'ok');
+  } catch (err) { toast(err.error || 'Could not add variant.', 'err'); }
+}
+
+async function removeProductVariant(variantId){
+  try {
+    await api('/api/products/' + editingProductId + '/variants/' + variantId, { method: 'DELETE' });
+    editingProductVariants = editingProductVariants.filter((v) => v.id !== variantId);
+    renderProductVariants();
+  } catch (err) { toast(err.error || 'Could not remove variant.', 'err'); }
 }
 
 function renderProductImageChips(){
@@ -1065,9 +1467,14 @@ async function saveProduct(){
       // reopen via Edit just to reach the image section.
       editingProductId = created.product.id;
       editingProductImages = [];
+      editingProductProperties = [];
+      editingProductOptions = [];
+      editingProductVariants = [];
       qs('#productModalTitle').textContent = 'Edit Product';
       qs('#pfImagesSection').style.display = '';
       renderProductImageChips();
+      renderProductProperties();
+      renderProductOptions();
       qs('#pfNewImageUrl').focus();
     }
     loadProducts(productsState.page);
@@ -1152,7 +1559,17 @@ function renderOrderDetail(o, items){
   const terminal = ['cancelled','refunded','payment_failed'].includes(o.status);
 
   const itemsHtml = items.map((i) => `
-    <tr><td>${esc(i.product_name_snapshot)}</td><td>×${i.quantity}</td><td>${paise(i.line_total_paise)}</td></tr>
+    <tr>
+      <td>
+        ${esc(i.product_name_snapshot)}
+        ${Array.isArray(i.variant_snapshot) && i.variant_snapshot.length ? `<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:6px;">` +
+          i.variant_snapshot.map((v) => `<span style="display:inline-flex;align-items:center;gap:4px;font-size:.72rem;background:var(--parchment);padding:2px 8px;border-radius:20px;">` +
+            (v.colorHex ? `<span style="width:10px;height:10px;border-radius:50%;background:${esc(v.colorHex)};border:1px solid rgba(0,0,0,.2);"></span>` : '') +
+            `${esc(v.option)}: <b>${esc(v.value)}</b></span>`).join('') + `</div>` : ''}
+      </td>
+      <td>×${i.quantity}</td>
+      <td>${paise(i.line_total_paise)}</td>
+    </tr>
   `).join('');
 
   const statusOptions = ['processing','shipped','delivered','cancelled','refunded']
@@ -1253,6 +1670,10 @@ function switchBookingTab(tab){
 }
 
 const BOOKING_STATUS_PILL = { requested: 'pill-warn', confirmed: 'pill-info', completed: 'pill-success', cancelled: 'pill-neutral' };
+// Payment status comes from the Razorpay verification/webhook flow — the
+// admin can see at a glance whether money actually arrived before they
+// confirm or schedule the booking.
+const PAYMENT_STATUS_PILL = { paid: 'pill-success', unpaid: 'pill-warn', failed: 'pill-danger' };
 
 async function loadBookings(){
   if (currentBookingTab === 'puja') loadPujaBookings(); else loadAstrologyBookings();
@@ -1261,37 +1682,41 @@ async function loadBookings(){
 let pujaBookingsCache = [];
 async function loadPujaBookings(){
   const tbody = qs('#pujaTbody');
-  tbody.innerHTML = '<tr><td colspan="6" class="loading-row"><span class="spinner"></span></td></tr>';
+  tbody.innerHTML = '<tr><td colspan="8" class="loading-row"><span class="spinner"></span></td></tr>';
   try {
     const body = await api('/api/bookings/puja');
     pujaBookingsCache = body.bookings;
-    if (!body.bookings.length) { tbody.innerHTML = '<tr><td colspan="6"><div class="empty">No puja bookings yet.</div></td></tr>'; return; }
+    if (!body.bookings.length) { tbody.innerHTML = '<tr><td colspan="8"><div class="empty">No puja bookings yet.</div></td></tr>'; return; }
     tbody.innerHTML = body.bookings.map((b) => `<tr>
       <td><b>${esc(b.puja_type)}</b></td>
       <td>${esc(b.contact_name)}<br><span class="muted">${esc(b.contact_phone)}</span></td>
       <td>${fmtDate(b.preferred_date)}</td>
       <td>${esc(b.preferred_time_slot)}</td>
+      <td>${b.amount_paise ? paise(b.amount_paise) : '<span class="muted">—</span>'}</td>
+      <td><span class="pill ${PAYMENT_STATUS_PILL[b.payment_status]||'pill-neutral'}">${esc(b.payment_status||'unpaid')}</span></td>
       <td><span class="pill ${BOOKING_STATUS_PILL[b.status]||'pill-neutral'}">${esc(b.status)}</span></td>
       <td><button class="btn btn-ghost btn-sm" onclick="openBookingModal('${b.id}')">Manage</button></td>
     </tr>`).join('');
-  } catch (err) { tbody.innerHTML = '<tr><td colspan="6"><div class="empty">Could not load bookings.</div></td></tr>'; }
+  } catch (err) { tbody.innerHTML = '<tr><td colspan="8"><div class="empty">Could not load bookings.</div></td></tr>'; }
 }
 
 async function loadAstrologyBookings(){
   const tbody = qs('#astroTbody');
-  tbody.innerHTML = '<tr><td colspan="6" class="loading-row"><span class="spinner"></span></td></tr>';
+  tbody.innerHTML = '<tr><td colspan="8" class="loading-row"><span class="spinner"></span></td></tr>';
   try {
     const body = await api('/api/bookings/astrology');
-    if (!body.bookings.length) { tbody.innerHTML = '<tr><td colspan="6"><div class="empty">No astrology bookings yet.</div></td></tr>'; return; }
+    if (!body.bookings.length) { tbody.innerHTML = '<tr><td colspan="8"><div class="empty">No astrology bookings yet.</div></td></tr>'; return; }
     tbody.innerHTML = body.bookings.map((b) => `<tr>
       <td style="text-transform:capitalize;"><b>${esc(b.consultation_mode)}</b></td>
       <td>${esc(b.contact_name)}<br><span class="muted">${esc(b.contact_phone)}</span></td>
       <td>${fmtDate(b.preferred_date)}</td>
       <td>${esc(b.preferred_time_slot)}</td>
+      <td>${b.amount_paise ? paise(b.amount_paise) : '<span class="muted">—</span>'}</td>
+      <td><span class="pill ${PAYMENT_STATUS_PILL[b.payment_status]||'pill-neutral'}">${esc(b.payment_status||'unpaid')}</span></td>
       <td><span class="pill ${BOOKING_STATUS_PILL[b.status]||'pill-neutral'}">${esc(b.status)}</span></td>
       <td><button class="btn btn-ghost btn-sm" onclick="openAstrologyDetail('${b.id}')">Manage</button></td>
     </tr>`).join('');
-  } catch (err) { tbody.innerHTML = '<tr><td colspan="6"><div class="empty">Could not load bookings.</div></td></tr>'; }
+  } catch (err) { tbody.innerHTML = '<tr><td colspan="8"><div class="empty">Could not load bookings.</div></td></tr>'; }
 }
 
 function openBookingModal(id){
@@ -1497,6 +1922,164 @@ function deleteServiceConfirm(id, name){
       toast('Service hidden.', 'ok');
       loadBookingServicesAdmin();
     } catch (err) { toast(err.error || 'Could not delete service.', 'err'); }
+  });
+}
+
+/* =========================================================================
+   COUPONS
+   ========================================================================= */
+let couponsCache = [];
+
+async function loadCoupons(){
+  const tbody = qs('#couponsTbody');
+  tbody.innerHTML = '<tr><td colspan="7" class="loading-row"><span class="spinner"></span></td></tr>';
+  try {
+    const body = await api('/api/coupons/admin/all');
+    couponsCache = body.coupons || [];
+    if (!couponsCache.length) {
+      tbody.innerHTML = '<tr><td colspan="7"><div class="empty">No coupons yet. Create one to start running offers.</div></td></tr>';
+      return;
+    }
+    tbody.innerHTML = couponsCache.map((c) => {
+      const discount = c.discount_type === 'percentage'
+        ? esc(Number(c.discount_percent) + '% off') + (c.max_discount_paise ? ' <span class="muted">(max ' + paise(c.max_discount_paise) + ')</span>' : '')
+        : paise(c.discount_value_paise) + ' off';
+      const expired = c.valid_until && new Date(c.valid_until) < new Date();
+      const exhausted = c.usage_limit_total !== null && c.used_count >= c.usage_limit_total;
+      let statusPill = '<span class="pill pill-success">Active</span>';
+      if (!c.is_active) statusPill = '<span class="pill pill-neutral">Disabled</span>';
+      else if (expired) statusPill = '<span class="pill pill-danger">Expired</span>';
+      else if (exhausted) statusPill = '<span class="pill pill-danger">Limit reached</span>';
+      return `<tr>
+        <td><b>${esc(c.code)}</b>${c.description ? '<br><span class="muted">' + esc(c.description) + '</span>' : ''}</td>
+        <td>${discount}</td>
+        <td>${Number(c.min_order_paise) > 0 ? paise(c.min_order_paise) : '<span class="muted">—</span>'}</td>
+        <td>${c.used_count}${c.usage_limit_total !== null ? ' / ' + c.usage_limit_total : ' <span class="muted">/ ∞</span>'}</td>
+        <td class="muted">${c.valid_until ? fmtDate(c.valid_until) : 'No expiry'}</td>
+        <td>${statusPill}</td>
+        <td>
+          <div style="display:flex;gap:6px;">
+            <button class="btn btn-ghost btn-sm" onclick="openCouponForm('${c.id}')">Edit</button>
+            ${c.is_active ? `<button class="btn btn-ghost btn-sm" style="color:var(--danger);" onclick="deactivateCouponConfirm('${c.id}','${esc(c.code).replace(/'/g,"\\'")}')">Disable</button>` : ''}
+          </div>
+        </td>
+      </tr>`;
+    }).join('');
+  } catch (err) {
+    tbody.innerHTML = '<tr><td colspan="7"><div class="empty">Could not load coupons.</div></td></tr>';
+  }
+}
+
+function onCouponTypeChange(){
+  const isPercent = qs('#cfType').value === 'percentage';
+  qs('#cfPercentField').style.display = isPercent ? '' : 'none';
+  qs('#cfMaxDiscountField').style.display = isPercent ? '' : 'none';
+  qs('#cfValueField').style.display = isPercent ? 'none' : '';
+}
+
+let editingCouponId = null;
+function openCouponForm(id){
+  editingCouponId = id || null;
+  qs('#couponModalTitle').textContent = id ? 'Edit Coupon' : 'Create Coupon';
+  const codeEl = qs('#cfCode');
+
+  if (id) {
+    const c = couponsCache.find((x) => x.id === id);
+    if (!c) { toast('Coupon not found — try refreshing.', 'err'); return; }
+    codeEl.value = c.code;
+    // The code is the customer-facing identifier and may already be printed
+    // on marketing material or sitting in someone's cart — changing it after
+    // creation would silently break those, so it's read-only on edit.
+    codeEl.disabled = true;
+    qs('#cfType').value = c.discount_type;
+    qs('#cfType').disabled = true; // switching type would invalidate the stored discount fields
+    qs('#cfPercent').value = c.discount_percent != null ? Number(c.discount_percent) : '';
+    qs('#cfValue').value = c.discount_value_paise != null ? Number(c.discount_value_paise) / 100 : '';
+    qs('#cfMaxDiscount').value = c.max_discount_paise != null ? Number(c.max_discount_paise) / 100 : '';
+    qs('#cfMinOrder').value = Number(c.min_order_paise) / 100;
+    qs('#cfUsageTotal').value = c.usage_limit_total != null ? c.usage_limit_total : '';
+    qs('#cfUsagePerCustomer').value = c.usage_limit_per_customer;
+    qs('#cfValidUntil').value = c.valid_until ? new Date(c.valid_until).toISOString().slice(0,10) : '';
+    qs('#cfDescription').value = c.description || '';
+    qs('#cfActive').checked = c.is_active;
+  } else {
+    codeEl.value = '';
+    codeEl.disabled = false;
+    qs('#cfType').value = 'percentage';
+    qs('#cfType').disabled = false;
+    ['cfPercent','cfValue','cfMaxDiscount','cfUsageTotal','cfValidUntil','cfDescription'].forEach((f) => qs('#'+f).value = '');
+    qs('#cfMinOrder').value = '';
+    qs('#cfUsagePerCustomer').value = '1';
+    qs('#cfActive').checked = true;
+  }
+  onCouponTypeChange();
+  openModalEl('couponModal');
+}
+
+async function saveCoupon(){
+  const type = qs('#cfType').value;
+  const code = qs('#cfCode').value.trim().toUpperCase();
+  const percent = parseFloat(qs('#cfPercent').value);
+  const value = parseFloat(qs('#cfValue').value);
+
+  // Client-side checks mirror the server's rules so mistakes are caught
+  // before a round trip — but the server validates independently regardless.
+  if (!editingCouponId && code.length < 3) { toast('Coupon code must be at least 3 characters.', 'err'); return; }
+  if (type === 'percentage' && !(percent > 0 && percent <= 100)) { toast('Enter a discount percent between 0.01 and 100.', 'err'); return; }
+  if (type === 'fixed' && !(value > 0)) { toast('Enter a discount amount greater than zero.', 'err'); return; }
+
+  const maxDiscount = parseFloat(qs('#cfMaxDiscount').value);
+  const minOrder = parseFloat(qs('#cfMinOrder').value);
+  const usageTotal = parseInt(qs('#cfUsageTotal').value, 10);
+  const usagePerCustomer = parseInt(qs('#cfUsagePerCustomer').value, 10);
+  const validUntil = qs('#cfValidUntil').value;
+
+  const payload = {
+    description: qs('#cfDescription').value.trim() || null,
+    min_order_paise: minOrder > 0 ? Math.round(minOrder * 100) : 0,
+    usage_limit_total: usageTotal > 0 ? usageTotal : null,
+    usage_limit_per_customer: usagePerCustomer > 0 ? usagePerCustomer : 1,
+    // Sent as end-of-day so a coupon dated today stays usable all day rather
+    // than expiring at midnight-start.
+    valid_until: validUntil ? new Date(validUntil + 'T23:59:59').toISOString() : null,
+    is_active: qs('#cfActive').checked
+  };
+  if (type === 'percentage') {
+    payload.discount_percent = percent;
+    payload.max_discount_paise = maxDiscount > 0 ? Math.round(maxDiscount * 100) : null;
+  } else {
+    payload.discount_value_paise = Math.round(value * 100);
+  }
+
+  const btn = qs('#cfSaveBtn');
+  btn.disabled = true;
+  try {
+    if (editingCouponId) {
+      await api('/api/coupons/' + editingCouponId, { method: 'PUT', body: JSON.stringify(payload) });
+      toast('Coupon updated.', 'ok');
+    } else {
+      payload.code = code;
+      payload.discount_type = type;
+      await api('/api/coupons', { method: 'POST', body: JSON.stringify(payload) });
+      toast('Coupon created.', 'ok');
+    }
+    closeModal('couponModal');
+    loadCoupons();
+  } catch (err) {
+    const msg = err.error || (err.errors && err.errors[0] && err.errors[0].msg) || 'Could not save coupon.';
+    toast(msg + (err.code ? ' (code: ' + err.code + ')' : ''), 'err');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function deactivateCouponConfirm(id, code){
+  confirmAction('Disable Coupon', `Disable "${code}"? Customers will no longer be able to use it. Past orders that already used it are unaffected.`, async () => {
+    try {
+      await api('/api/coupons/' + id, { method: 'DELETE' });
+      toast('Coupon disabled.', 'ok');
+      loadCoupons();
+    } catch (err) { toast(err.error || 'Could not disable coupon.', 'err'); }
   });
 }
 

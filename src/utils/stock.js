@@ -28,9 +28,13 @@ async function restoreOrderStock(orderId, finalStatus, reason, adminUserId) {
       return { restored: false, reason: 'already_restored', previousStatus: order[0].status };
     }
 
-    const { rows: items } = await client.query('SELECT product_id, quantity FROM order_items WHERE order_id = $1', [orderId]);
+    const { rows: items } = await client.query('SELECT product_id, variant_id, quantity FROM order_items WHERE order_id = $1', [orderId]);
     for (const item of items) {
-      await client.query('UPDATE products SET stock_qty = stock_qty + $1 WHERE id = $2', [item.quantity, item.product_id]);
+      if (item.variant_id) {
+        await client.query('UPDATE product_variants SET stock_qty = stock_qty + $1 WHERE id = $2', [item.quantity, item.variant_id]);
+      } else {
+        await client.query('UPDATE products SET stock_qty = stock_qty + $1 WHERE id = $2', [item.quantity, item.product_id]);
+      }
     }
     await client.query('UPDATE orders SET status = $2, updated_at = now() WHERE id = $1', [orderId, finalStatus]);
     await client.query(

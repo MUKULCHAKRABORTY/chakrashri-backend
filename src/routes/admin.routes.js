@@ -73,7 +73,7 @@ router.get('/orders/:id', async (req, res) => {
     );
     if (!orderRows.length) return res.status(404).json({ error: 'Order not found.' });
     const { rows: items } = await db.query(
-      'SELECT id, product_id, product_name_snapshot, unit_price_paise, quantity, line_total_paise FROM order_items WHERE order_id = $1',
+      'SELECT id, product_id, product_name_snapshot, unit_price_paise, quantity, line_total_paise, variant_id, variant_snapshot FROM order_items WHERE order_id = $1',
       [req.params.id]
     );
     res.json({ order: orderRows[0], items });
@@ -199,7 +199,7 @@ router.get('/products', async (req, res) => {
   const page = Math.max(1, parseInt(req.query.page, 10) || 1);
   const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
   const offset = (page - 1) * limit;
-  const { search, category } = req.query;
+  const { search, category, badge } = req.query;
   const conditions = [];
   const params = [];
   if (search) {
@@ -209,6 +209,12 @@ router.get('/products', async (req, res) => {
   if (category) {
     params.push(category);
     conditions.push(`category = $${params.length}`);
+  }
+  if (badge) {
+    // Combined with category via AND, so selecting both narrows to products
+    // matching both — which is the expected behaviour when two filters are set.
+    params.push(badge);
+    conditions.push(`badge = $${params.length}`);
   }
   const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
   params.push(limit, offset);
@@ -228,7 +234,14 @@ router.get('/products/:id', async (req, res) => {
     const { rows } = await db.query('SELECT * FROM products WHERE id = $1', [req.params.id]);
     if (!rows.length) return res.status(404).json({ error: 'Product not found.' });
     const { rows: images } = await db.query('SELECT * FROM product_images WHERE product_id = $1 ORDER BY sort_order', [req.params.id]);
-    res.json({ product: rows[0], images });
+    const { rows: properties } = await db.query('SELECT * FROM product_properties WHERE product_id = $1 ORDER BY sort_order', [req.params.id]);
+    const { rows: options } = await db.query('SELECT * FROM product_options WHERE product_id = $1 ORDER BY sort_order', [req.params.id]);
+    for (const opt of options) {
+      const { rows: values } = await db.query('SELECT * FROM product_option_values WHERE option_id = $1 ORDER BY sort_order', [opt.id]);
+      opt.values = values;
+    }
+    const { rows: variants } = await db.query('SELECT * FROM product_variants WHERE product_id = $1 ORDER BY created_at', [req.params.id]);
+    res.json({ product: rows[0], images, properties, options, variants });
   } catch (err) {
     res.status(500).json({ error: 'Could not load product.' });
   }

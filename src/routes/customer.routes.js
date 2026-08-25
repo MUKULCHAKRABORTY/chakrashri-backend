@@ -41,6 +41,7 @@ router.get('/orders/:id', async (req, res) => {
     }
     const { rows: items } = await db.query(
       `SELECT oi.product_id, oi.product_name_snapshot, oi.unit_price_paise, oi.quantity, oi.line_total_paise,
+              oi.variant_id, oi.variant_snapshot,
               p.slug AS product_slug,
               EXISTS(
                 SELECT 1 FROM product_reviews pr WHERE pr.product_id = oi.product_id AND pr.user_id = $2
