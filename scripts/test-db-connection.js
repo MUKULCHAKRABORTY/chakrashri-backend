@@ -26,6 +26,7 @@ const EXPECTED_TABLES = [
 // adding missing columns — this check catches that instead of letting it
 // surface later as a runtime "column does not exist" error during checkout.
 const EXPECTED_COLUMNS = {
+  addresses: ['id', 'user_id', 'full_name', 'phone', 'email', 'line1', 'city', 'state', 'pincode'],
   users: ['id', 'email', 'password_hash', 'role', 'is_active'],
   products: ['id', 'sku', 'slug', 'price_paise', 'stock_qty', 'gst_rate', 'is_active'],
   orders: [
@@ -37,8 +38,8 @@ const EXPECTED_COLUMNS = {
     'id', 'order_id', 'product_id', 'quantity', 'line_total_paise',
     'variant_id', 'variant_snapshot'       // 008 — written for every variant purchase
   ],
-  puja_bookings: ['id', 'user_id', 'puja_type', 'preferred_date', 'status', 'payment_status', 'amount_paise', 'razorpay_order_id'],
-  astrology_bookings: ['id', 'user_id', 'consultation_mode', 'birth_details', 'status', 'payment_status', 'amount_paise', 'razorpay_order_id'],
+  puja_bookings: ['id', 'user_id', 'puja_type', 'preferred_date', 'status', 'payment_status', 'amount_paise', 'razorpay_order_id', 'updated_at', 'refund_id'],
+  astrology_bookings: ['id', 'user_id', 'consultation_mode', 'birth_details', 'status', 'payment_status', 'amount_paise', 'razorpay_order_id', 'updated_at', 'refund_id'],
   admin_audit_log: ['id', 'admin_user_id', 'action', 'entity_type', 'entity_id'],
   password_reset_tokens: ['id', 'user_id', 'token_hash', 'expires_at', 'used_at'],
   booking_services: ['id', 'service_type', 'name', 'price_paise', 'is_active'],

@@ -2879,22 +2879,28 @@ async function renderOrdersPage(){
     html += '<h3 style="margin:0 0 12px;">Product Orders</h3><div class="orders-table-wrap"><table class="admin-table"><thead><tr><th>Order</th><th>Product</th><th>Qty</th><th>Status</th><th>Payment</th><th>Total</th><th>Placed</th><th>Review</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
   }
 
-  const allBookings = (pujaBookings || []).map(function(b){ return Object.assign({ _kind:'Puja', _label: b.puja_type }, b); })
-    .concat((astroBookings || []).map(function(b){ return Object.assign({ _kind:'Astrology', _label: b.consultation_mode }, b); }));
+  // service_name comes from the booking_services catalog — previously the
+  // astrology row showed only the consultation mode ("call"), which made a
+  // real, paid booking look like it hadn't registered at all.
+  const allBookings = (pujaBookings || []).map(function(b){ return Object.assign({ _kind:'Puja', _label: b.service_name || b.puja_type }, b); })
+    .concat((astroBookings || []).map(function(b){ return Object.assign({ _kind:'Astrology', _label: b.service_name || b.consultation_mode }, b); }));
 
   if(allBookings.length){
     const bRows = allBookings.map(function(b){
       const paid = b.payment_status === 'paid';
       const pillStyle = 'display:inline-block;padding:3px 10px;border-radius:20px;font-size:.72rem;font-weight:600;' + (paid ? 'background:#E7F1E9;color:#3E7A4F;' : 'background:#FBF3DC;color:#9C7E1C;');
+      const typePill = 'display:inline-block;padding:3px 10px;border-radius:20px;font-size:.7rem;font-weight:600;' + (b._kind === 'Puja' ? 'background:#F1E4C8;color:#7A1128;' : 'background:#E4E0F0;color:#2E1B45;');
+      const refunded = b.refunded_amount_paise ? ' <span style="color:#B23A2E;font-size:.72rem;">(refunded ' + formatINR(b.refunded_amount_paise/100) + ')</span>' : '';
       return '<tr>' +
-        '<td><strong>' + escapeHtml(b._kind) + '</strong> — ' + escapeHtml(b._label || '') + '</td>' +
+        '<td><span style="' + typePill + '">' + escapeHtml(b._kind) + '</span></td>' +
+        '<td><strong>' + escapeHtml(b._label || '') + '</strong></td>' +
         '<td>' + new Date(b.preferred_date).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' }) + ' · ' + escapeHtml(b.preferred_time_slot || '') + '</td>' +
-        '<td><span style="' + pillStyle + '">' + (paid ? 'Paid' : 'Unpaid') + '</span></td>' +
+        '<td><span style="' + pillStyle + '">' + (paid ? 'Paid' : 'Unpaid') + '</span>' + refunded + '</td>' +
         '<td>' + escapeHtml((b.status||'requested')) + '</td>' +
         '<td>' + formatINR((b.amount_paise || 0) / 100) + '</td>' +
       '</tr>';
     }).join('');
-    html += '<h3 style="margin:28px 0 12px;">Puja & Astrology Bookings</h3><div class="orders-table-wrap"><table class="admin-table"><thead><tr><th>Service</th><th>Scheduled</th><th>Payment</th><th>Status</th><th>Amount</th></tr></thead><tbody>' + bRows + '</tbody></table></div>';
+    html += '<h3 style="margin:28px 0 12px;">Puja & Astrology Bookings</h3><div class="orders-table-wrap"><table class="admin-table"><thead><tr><th>Type</th><th>Service</th><th>Scheduled</th><th>Payment</th><th>Status</th><th>Amount</th></tr></thead><tbody>' + bRows + '</tbody></table></div>';
   }
 
   if(!userOrders.length && !allBookings.length){
@@ -4521,6 +4527,11 @@ async function placeOrder(){
       const addrPayload = {
         full_name: qs('#ckName') ? (qs('#ckName').value.trim()) : '',
         phone: qs('#ckPhone') ? (qs('#ckPhone').value.trim()) : '',
+        // The checkout form already collects this, but it was never sent —
+        // so the admin order view had no delivery contact email, and an
+        // order intended for a different recipient (gift, office) had no
+        // way to record theirs.
+        email: qs('#ckEmail') ? (qs('#ckEmail').value.trim()) : '',
         line1: qs('#ckAddress') ? (qs('#ckAddress').value.trim()) : '',
         line2: '',
         city: qs('#ckCity') ? (qs('#ckCity').value.trim()) : '',

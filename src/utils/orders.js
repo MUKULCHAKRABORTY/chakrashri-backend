@@ -264,7 +264,11 @@ async function reserveStockAndCreateOrder({ userId, items, shippingAddressId, pa
         `INSERT INTO order_items
           (order_id, product_id, product_name_snapshot, unit_price_paise, quantity, line_total_paise, variant_id, variant_snapshot)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-        [id, item.productId, item.name, item.unitPricePaise, item.quantity, item.lineTotalPaise, item.variantId, item.variantSnapshot]
+        // variantSnapshot is an ARRAY, so it must be stringified for the jsonb
+        // column — pg turns arrays into Postgres array literals, not JSON.
+        // Without this, every variant purchase would fail at this insert.
+        [id, item.productId, item.name, item.unitPricePaise, item.quantity, item.lineTotalPaise, item.variantId,
+          item.variantSnapshot ? JSON.stringify(item.variantSnapshot) : null]
       );
     }
 

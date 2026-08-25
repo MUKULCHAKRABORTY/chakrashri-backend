@@ -429,6 +429,42 @@ section("[4] reserveStockAndCreateOrder — the REAL checkout function, run agai
 // ============================================================
 // [5] Real CORS origin normalization: src/utils/cors.js
 // ============================================================
+section('[4b] jsonb serialization — the array-vs-object trap that broke variant creation');
+{
+  // node-postgres auto-serializes a plain OBJECT to JSON for a jsonb column,
+  // but converts a JS ARRAY into a Postgres ARRAY literal ({"..."}), which
+  // jsonb rejects with error 22P02. This bit twice: variant creation in the
+  // admin, and variant_snapshot on every variant purchase. These tests pin
+  // the actual pg behaviour so the distinction can't be "tidied away" again.
+  let prepareValue = null;
+  try { ({ prepareValue } = require('pg/lib/utils')); } catch (e) { /* pg not installed */ }
+
+  test('a plain OBJECT serializes to valid JSON (safe to pass unstringified)', function(){
+    if (!prepareValue) return; // skipped when pg isn't installed
+    const out = prepareValue({ dob: '1990-01-01' });
+    assert.doesNotThrow(() => JSON.parse(out), 'object form must be parseable JSON');
+  });
+
+  test('THE TRAP: a JS ARRAY does NOT serialize to JSON — it becomes a Postgres array literal', function(){
+    if (!prepareValue) return;
+    const out = prepareValue([{ option: 'Colour', value: 'Red' }]);
+    // This is exactly why option_values / variant_snapshot must be
+    // JSON.stringify()'d before being sent to a jsonb column.
+    assert.ok(out.startsWith('{"'), 'pg produces a Postgres array literal for arrays');
+    let parsedAsJson = true;
+    try { const p = JSON.parse(out); parsedAsJson = Array.isArray(p); } catch (e) { parsedAsJson = false; }
+    assert.strictEqual(parsedAsJson, false, 'the array form is NOT usable as jsonb — must be stringified first');
+  });
+
+  test('JSON.stringify on the array produces valid, correctly-shaped JSON', function(){
+    const arr = [{ option: 'Colour', value: 'Red', colorHex: '#C9302C' }];
+    const parsed = JSON.parse(JSON.stringify(arr));
+    assert.strictEqual(Array.isArray(parsed), true);
+    assert.strictEqual(parsed[0].value, 'Red');
+    assert.strictEqual(parsed[0].colorHex, '#C9302C');
+  });
+}
+
 section('[5] normalizeOrigin — the REAL function server.js uses for CLIENT_URL (the exact bug hit during deployment)');
 {
   const { normalizeOrigin } = require('../src/utils/cors');

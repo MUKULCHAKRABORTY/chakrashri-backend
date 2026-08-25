@@ -63,8 +63,9 @@ router.get('/orders/:id', async (req, res) => {
   try {
     const { rows: orderRows } = await db.query(
       `SELECT o.*, u.name AS customer_name, u.email AS customer_email,
-              a.full_name AS ship_name, a.phone AS ship_phone, a.line1 AS ship_line1,
-              a.line2 AS ship_line2, a.city AS ship_city, a.state AS ship_state, a.pincode AS ship_pincode
+              a.full_name AS ship_name, a.phone AS ship_phone, a.email AS ship_email, a.line1 AS ship_line1,
+              a.line2 AS ship_line2, a.city AS ship_city, a.state AS ship_state, a.pincode AS ship_pincode,
+              a.country AS ship_country
        FROM orders o
        LEFT JOIN users u ON u.id = o.user_id
        LEFT JOIN addresses a ON a.id = o.shipping_address_id

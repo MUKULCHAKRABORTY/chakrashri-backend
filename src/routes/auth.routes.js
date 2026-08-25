@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
 const { body, validationResult } = require('express-validator');
 const db = require('../config/db');
+const { requireAuth } = require('../middleware/auth');
 const { sendPasswordResetEmail } = require('../utils/mailer');
 
 const router = express.Router();
@@ -228,5 +229,23 @@ router.post(
     }
   }
 );
+
+// ---------- Who am I? ----------
+// The front end calls this on load and whenever the account modal opens, to
+// decide whether to show the login form or the account panel. It was missing
+// entirely, so that call 404'd every time and the UI always fell back to the
+// login form even for a logged-in customer.
+router.get('/me', requireAuth, async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      'SELECT id, name, email, phone, role, created_at FROM users WHERE id = $1 AND is_active = true',
+      [req.user.id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Account not found.' });
+    res.json({ user: rows[0] });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not load your account.' });
+  }
+});
 
 module.exports = router;

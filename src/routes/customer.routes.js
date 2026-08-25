@@ -61,8 +61,13 @@ router.get('/orders/:id', async (req, res) => {
 router.get('/bookings/puja', async (req, res) => {
   try {
     const { rows } = await db.query(
-      `SELECT id, puja_type, preferred_date, preferred_time_slot, status, payment_status, amount_paise, notes, created_at
-       FROM puja_bookings WHERE user_id = $1 ORDER BY created_at DESC LIMIT 100`,
+      `SELECT pb.id, pb.puja_type, pb.preferred_date, pb.preferred_time_slot, pb.status,
+              pb.payment_status, pb.amount_paise, pb.notes, pb.created_at,
+              pb.refund_id, pb.refunded_amount_paise,
+              COALESCE(bs.name, pb.puja_type) AS service_name
+       FROM puja_bookings pb
+       LEFT JOIN booking_services bs ON bs.id = pb.service_id
+       WHERE pb.user_id = $1 ORDER BY pb.created_at DESC LIMIT 100`,
       [req.user.id]
     );
     res.json({ bookings: rows });
@@ -78,8 +83,13 @@ router.get('/bookings/puja', async (req, res) => {
 router.get('/bookings/astrology', async (req, res) => {
   try {
     const { rows } = await db.query(
-      `SELECT id, consultation_mode, preferred_date, preferred_time_slot, status, payment_status, amount_paise, created_at
-       FROM astrology_bookings WHERE user_id = $1 ORDER BY created_at DESC LIMIT 100`,
+      `SELECT ab.id, ab.consultation_mode, ab.preferred_date, ab.preferred_time_slot, ab.status,
+              ab.payment_status, ab.amount_paise, ab.created_at,
+              ab.refund_id, ab.refunded_amount_paise,
+              COALESCE(bs.name, ab.consultation_mode) AS service_name
+       FROM astrology_bookings ab
+       LEFT JOIN booking_services bs ON bs.id = ab.service_id
+       WHERE ab.user_id = $1 ORDER BY ab.created_at DESC LIMIT 100`,
       [req.user.id]
     );
     res.json({ bookings: rows });

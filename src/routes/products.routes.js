@@ -581,7 +581,12 @@ router.post(
       const { rows } = await db.query(
         `INSERT INTO product_variants (product_id, sku, option_values, price_paise, stock_qty, image_url)
          VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-        [req.params.id, sku || null, option_values, price_paise || null, stock_qty, image_url || null]
+        // JSON.stringify is REQUIRED here even though pg auto-serializes plain
+        // objects for jsonb: pg converts a JS *array* into a Postgres ARRAY
+        // literal ({"{...}"}) rather than JSON, which jsonb then rejects with
+        // error 22P02. Objects (e.g. birth_details) are fine unstringified;
+        // arrays are not. Verified against pg's own prepareValue().
+        [req.params.id, sku || null, JSON.stringify(option_values), price_paise || null, stock_qty, image_url || null]
       );
       res.status(201).json({ variant: rows[0] });
     } catch (err) {
@@ -601,7 +606,7 @@ router.put('/:id/variants/:variantId', requireAuth, requireRole('admin', 'staff'
     if (req.body[f] !== undefined) { params.push(req.body[f]); updates.push(`${f} = $${params.length}`); }
   });
   if (req.body.option_values !== undefined) {
-    params.push(req.body.option_values);
+    params.push(JSON.stringify(req.body.option_values)); // array -> jsonb, see note in the POST handler above
     updates.push(`option_values = $${params.length}`);
   }
   if (!updates.length) return res.status(400).json({ error: 'No valid fields to update.' });

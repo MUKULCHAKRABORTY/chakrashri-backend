@@ -480,12 +480,12 @@ code.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.78rem; 
         </div>
         <div class="card" style="padding:0;">
           <div class="table-wrap"><table class="data" id="pujaTable">
-            <thead><tr><th>Puja Type</th><th>Contact</th><th>Date</th><th>Time Slot</th><th>Total</th><th>Payment</th><th>Status</th><th></th></tr></thead>
-            <tbody id="pujaTbody"><tr><td colspan="8" class="loading-row"><span class="spinner"></span></td></tr></tbody>
+            <thead><tr><th>Type</th><th>Service</th><th>Contact</th><th>Date</th><th>Time Slot</th><th>Total</th><th>Payment</th><th>Status</th><th></th></tr></thead>
+            <tbody id="pujaTbody"><tr><td colspan="9" class="loading-row"><span class="spinner"></span></td></tr></tbody>
           </table></div>
           <div class="table-wrap" id="astroTableWrap" style="display:none;"><table class="data">
-            <thead><tr><th>Mode</th><th>Contact</th><th>Date</th><th>Time Slot</th><th>Total</th><th>Payment</th><th>Status</th><th></th></tr></thead>
-            <tbody id="astroTbody"><tr><td colspan="8" class="loading-row"><span class="spinner"></span></td></tr></tbody>
+            <thead><tr><th>Type</th><th>Service</th><th>Contact</th><th>Date</th><th>Time Slot</th><th>Total</th><th>Payment</th><th>Status</th><th></th></tr></thead>
+            <tbody id="astroTbody"><tr><td colspan="9" class="loading-row"><span class="spinner"></span></td></tr></tbody>
           </table></div>
         </div>
       </section>
@@ -1594,11 +1594,18 @@ function renderOrderDetail(o, items){
 
     <div class="divider"></div>
     <label style="display:block;font-size:.72rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--oxblood);margin-bottom:8px;">Shipping Address</label>
-    ${o.ship_name ? `<div style="font-size:.86rem;line-height:1.6;">
-      ${esc(o.ship_name)} · ${esc(o.ship_phone)}<br>
-      ${esc(o.ship_line1)}${o.ship_line2 ? ', ' + esc(o.ship_line2) : ''}<br>
-      ${esc(o.ship_city)}, ${esc(o.ship_state)} ${esc(o.ship_pincode)}
-    </div>` : '<div class="muted">No shipping address on file.</div>'}
+    ${o.ship_name ? `<dl class="kv">
+      <dt>Recipient</dt><dd>${esc(o.ship_name)}</dd>
+      <dt>Phone</dt><dd>${esc(o.ship_phone)}</dd>
+      ${o.ship_email ? `<dt>Email</dt><dd>${esc(o.ship_email)}</dd>` : ''}
+      <dt>Address</dt><dd>${esc(o.ship_line1)}</dd>
+      ${o.ship_line2 ? `<dt>Landmark / Area</dt><dd>${esc(o.ship_line2)}</dd>` : ''}
+      <dt>City</dt><dd>${esc(o.ship_city)}</dd>
+      <dt>State</dt><dd>${esc(o.ship_state)}</dd>
+      <dt>PIN Code</dt><dd>${esc(o.ship_pincode)}</dd>
+      <dt>Country</dt><dd>${esc(o.ship_country || 'India')}</dd>
+      ${o.customer_email && o.customer_email !== o.ship_email ? `<dt>Account Email</dt><dd>${esc(o.customer_email)}</dd>` : ''}
+    </dl>` : '<div class="muted">No shipping address on file.</div>'}
 
     <div class="divider"></div>
     <label style="display:block;font-size:.72rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--oxblood);margin-bottom:8px;">Items</label>
@@ -1682,13 +1689,14 @@ async function loadBookings(){
 let pujaBookingsCache = [];
 async function loadPujaBookings(){
   const tbody = qs('#pujaTbody');
-  tbody.innerHTML = '<tr><td colspan="8" class="loading-row"><span class="spinner"></span></td></tr>';
+  tbody.innerHTML = '<tr><td colspan="9" class="loading-row"><span class="spinner"></span></td></tr>';
   try {
     const body = await api('/api/bookings/puja');
     pujaBookingsCache = body.bookings;
-    if (!body.bookings.length) { tbody.innerHTML = '<tr><td colspan="8"><div class="empty">No puja bookings yet.</div></td></tr>'; return; }
+    if (!body.bookings.length) { tbody.innerHTML = '<tr><td colspan="9"><div class="empty">No puja bookings yet.</div></td></tr>'; return; }
     tbody.innerHTML = body.bookings.map((b) => `<tr>
-      <td><b>${esc(b.puja_type)}</b></td>
+      <td><span class="pill" style="background:#F1E4C8;color:#7A1128;">Puja</span></td>
+      <td><b>${esc(b.service_name || b.puja_type)}</b>${b.preferred_mode ? '<br><span class="muted">' + esc(b.preferred_mode) + '</span>' : ''}</td>
       <td>${esc(b.contact_name)}<br><span class="muted">${esc(b.contact_phone)}</span></td>
       <td>${fmtDate(b.preferred_date)}</td>
       <td>${esc(b.preferred_time_slot)}</td>
@@ -1697,17 +1705,18 @@ async function loadPujaBookings(){
       <td><span class="pill ${BOOKING_STATUS_PILL[b.status]||'pill-neutral'}">${esc(b.status)}</span></td>
       <td><button class="btn btn-ghost btn-sm" onclick="openBookingModal('${b.id}')">Manage</button></td>
     </tr>`).join('');
-  } catch (err) { tbody.innerHTML = '<tr><td colspan="8"><div class="empty">Could not load bookings.</div></td></tr>'; }
+  } catch (err) { tbody.innerHTML = '<tr><td colspan="9"><div class="empty">Could not load bookings.</div></td></tr>'; }
 }
 
 async function loadAstrologyBookings(){
   const tbody = qs('#astroTbody');
-  tbody.innerHTML = '<tr><td colspan="8" class="loading-row"><span class="spinner"></span></td></tr>';
+  tbody.innerHTML = '<tr><td colspan="9" class="loading-row"><span class="spinner"></span></td></tr>';
   try {
     const body = await api('/api/bookings/astrology');
-    if (!body.bookings.length) { tbody.innerHTML = '<tr><td colspan="8"><div class="empty">No astrology bookings yet.</div></td></tr>'; return; }
+    if (!body.bookings.length) { tbody.innerHTML = '<tr><td colspan="9"><div class="empty">No astrology bookings yet.</div></td></tr>'; return; }
     tbody.innerHTML = body.bookings.map((b) => `<tr>
-      <td style="text-transform:capitalize;"><b>${esc(b.consultation_mode)}</b></td>
+      <td><span class="pill" style="background:#E4E0F0;color:#2E1B45;">Astrology</span></td>
+      <td><b>${esc(b.service_name || b.consultation_mode)}</b><br><span class="muted" style="text-transform:capitalize;">${esc(b.consultation_mode)}</span></td>
       <td>${esc(b.contact_name)}<br><span class="muted">${esc(b.contact_phone)}</span></td>
       <td>${fmtDate(b.preferred_date)}</td>
       <td>${esc(b.preferred_time_slot)}</td>
@@ -1716,7 +1725,7 @@ async function loadAstrologyBookings(){
       <td><span class="pill ${BOOKING_STATUS_PILL[b.status]||'pill-neutral'}">${esc(b.status)}</span></td>
       <td><button class="btn btn-ghost btn-sm" onclick="openAstrologyDetail('${b.id}')">Manage</button></td>
     </tr>`).join('');
-  } catch (err) { tbody.innerHTML = '<tr><td colspan="8"><div class="empty">Could not load bookings.</div></td></tr>'; }
+  } catch (err) { tbody.innerHTML = '<tr><td colspan="9"><div class="empty">Could not load bookings.</div></td></tr>'; }
 }
 
 function openBookingModal(id){

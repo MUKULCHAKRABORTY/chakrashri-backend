@@ -28,13 +28,14 @@ router.post(
     body('line1').trim().notEmpty(),
     body('city').trim().notEmpty(),
     body('state').trim().notEmpty(),
-    body('pincode').trim().isLength({ min: 4, max: 10 })
+    body('pincode').trim().isLength({ min: 4, max: 10 }),
+    body('email').optional({ nullable: true, checkFalsy: true }).isEmail().normalizeEmail()
   ],
   async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
-    const { full_name, phone, line1, line2, city, state, pincode, country, is_default } = req.body;
+    const { full_name, phone, email, line1, line2, city, state, pincode, country, is_default } = req.body;
     try {
       // If this is marked default (or it's the customer's first address),
       // clear any existing default first so there's never more than one.
@@ -42,10 +43,10 @@ router.post(
         await db.query('UPDATE addresses SET is_default = false WHERE user_id = $1', [req.user.id]);
       }
       const result = await db.query(
-        `INSERT INTO addresses (user_id, full_name, phone, line1, line2, city, state, pincode, country, is_default)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+        `INSERT INTO addresses (user_id, full_name, phone, email, line1, line2, city, state, pincode, country, is_default)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
          RETURNING *`,
-        [req.user.id, full_name, phone, line1, line2 || null, city, state, pincode, country || 'India', !!is_default]
+        [req.user.id, full_name, phone, email || null, line1, line2 || null, city, state, pincode, country || 'India', !!is_default]
       );
       res.status(201).json(result.rows[0]);
     } catch (err) {
@@ -56,7 +57,7 @@ router.post(
 
 // ---------- Update an address (must belong to the caller) ----------
 router.put('/:id', async (req, res) => {
-  const allowedFields = ['full_name', 'phone', 'line1', 'line2', 'city', 'state', 'pincode', 'country', 'is_default'];
+  const allowedFields = ['full_name', 'phone', 'email', 'line1', 'line2', 'city', 'state', 'pincode', 'country', 'is_default'];
   const updates = [];
   const params = [];
   allowedFields.forEach((field) => {
