@@ -3,6 +3,20 @@ const db = require('../config/db');
 const { validateAndComputeCoupon, recordCouponRedemption } = require('./coupons');
 
 /**
+ * Builds the out-of-stock message shown at checkout. Tells the customer both
+ * what IS available and exactly how many to remove, rather than only saying
+ * "not enough stock" and leaving them to work it out themselves.
+ * Exported so the exact wording is covered by tests.
+ */
+function stockShortfallMessage(productName, available, requested) {
+  if (available <= 0) {
+    return `"${productName}" is out of stock right now.`;
+  }
+  const excess = requested - available;
+  return `Stock available for "${productName}": ${available}. Kindly remove ${excess} to buy it.`;
+}
+
+/**
  * Validates raw cart items and aggregates duplicate entries into a single
  * quantity per (product, variant) pair. Pulled out as its own pure function
  * (no DB, no I/O) specifically so it can be unit-tested directly — this is
@@ -146,9 +160,33 @@ async function reserveStockAndCreateOrder({ userId, items, shippingAddressId, pa
       variants = rows;
     }
 
+    // Which of these products actually have active variants? A product with
+    // variants can ONLY be bought through one of them.
+    //
+    // This guard is load-bearing, not cosmetic: products.stock_qty for a
+    // variant product is now derived by a database trigger from the variant
+    // sum. If a "base product" purchase were allowed, its decrement to
+    // products.stock_qty would be immediately overwritten by the trigger on
+    // the next variant change — silently erasing the sale from inventory and
+    // handing out free stock. Rejecting it here is what makes the derived
+    // model safe.
+    const { rows: variantCounts } = await client.query(
+      `SELECT product_id, COUNT(*)::int AS cnt FROM product_variants
+       WHERE product_id = ANY($1) AND is_active = true GROUP BY product_id`,
+      [productIds]
+    );
+    const hasVariants = new Set(variantCounts.filter((r) => r.cnt > 0).map((r) => r.product_id));
+
     const orderItems = aggregatedItems.map((item) => {
       const product = products.find((p) => p.id === item.productId);
       if (!product) throw Object.assign(new Error('One of the items in your cart is no longer available.'), { status: 400 });
+
+      if (!item.variantId && hasVariants.has(product.id)) {
+        throw Object.assign(
+          new Error(`Please choose an option for "${product.name}" before checking out.`),
+          { status: 400 }
+        );
+      }
 
       if (item.variantId) {
         const variant = variants.find((v) => v.id === item.variantId && v.product_id === item.productId);
@@ -156,7 +194,7 @@ async function reserveStockAndCreateOrder({ userId, items, shippingAddressId, pa
           throw Object.assign(new Error(`The selected option for "${product.name}" is no longer available.`), { status: 400 });
         }
         if (variant.stock_qty < item.quantity) {
-          throw Object.assign(new Error(`"${product.name}" (selected option) only has ${variant.stock_qty} left in stock.`), { status: 409 });
+          throw Object.assign(new Error(stockShortfallMessage(product.name, variant.stock_qty, item.quantity)), { status: 409 });
         }
         // A variant's own price overrides the base product price when set;
         // NULL means "inherit the product's price" — this lets an admin
@@ -176,7 +214,7 @@ async function reserveStockAndCreateOrder({ userId, items, shippingAddressId, pa
       }
 
       if (product.stock_qty < item.quantity) {
-        throw Object.assign(new Error(`"${product.name}" only has ${product.stock_qty} left in stock.`), { status: 409 });
+        throw Object.assign(new Error(stockShortfallMessage(product.name, product.stock_qty, item.quantity)), { status: 409 });
       }
       return {
         productId: product.id,
@@ -280,4 +318,4 @@ async function reserveStockAndCreateOrder({ userId, items, shippingAddressId, pa
   });
 }
 
-module.exports = { reserveStockAndCreateOrder, validateAndAggregateCart, calculateOrderTotals };
+module.exports = { reserveStockAndCreateOrder, validateAndAggregateCart, calculateOrderTotals, stockShortfallMessage };

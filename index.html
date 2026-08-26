@@ -445,6 +445,30 @@ p{ color: var(--text-soft); }
 .hero-visual{ position:relative; height:100%; display:flex; align-items:center; justify-content:center; padding:var(--sp-6) 0; }
 .hero-visual svg{ width:min(92%, 520px); height:auto; overflow:visible; }
 .yantra-outer{ transform-origin:250px 250px; animation:spinSlow 90s linear infinite; }
+
+/* #17 — the bindu (centre point) pulses continuously. Only this element
+   changes; the surrounding yantra rotation is untouched. */
+.yantra-bindu{ animation:binduPulse 1.6s ease-in-out infinite; transform-origin:250px 250px; }
+@keyframes binduPulse{
+  0%, 100%{ opacity:1; r:5.5; }
+  50%{ opacity:.35; r:7.5; }
+}
+
+/* #16 — developer credit with a live green status dot */
+.dev-credit{ font-weight:700; color:var(--gold-lt); text-decoration:none; letter-spacing:.02em;
+  position:relative; display:inline-flex; align-items:center; gap:6px; transition:color .2s; }
+.dev-credit:hover{ color:#fff; }
+.dev-dot{ width:7px; height:7px; border-radius:50%; background:#2ecc71; display:inline-block;
+  box-shadow:0 0 0 0 rgba(46,204,113,.7); animation:devDotBlink 1.4s ease-in-out infinite; }
+@keyframes devDotBlink{
+  0%{ opacity:1; box-shadow:0 0 0 0 rgba(46,204,113,.65); }
+  70%{ opacity:.55; box-shadow:0 0 0 6px rgba(46,204,113,0); }
+  100%{ opacity:1; box-shadow:0 0 0 0 rgba(46,204,113,0); }
+}
+/* Respect users who've asked the OS to reduce motion. */
+@media (prefers-reduced-motion: reduce){
+  .yantra-bindu, .dev-dot{ animation:none; }
+}
 @keyframes spinSlow{ to{ transform:rotate(360deg); } }
 @media (prefers-reduced-motion:reduce){ .yantra-outer{ animation:none; } }
 .hero-visual .glow{ position:absolute; width:70%; padding-bottom:70%; border-radius:50%; background:radial-gradient(circle, rgba(201,162,39,.22), transparent 70%); filter:blur(10px); }
@@ -1408,7 +1432,7 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
   <div class="drawer-foot">
     <div class="contact-line">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 16.9v3a2 2 0 01-2.2 2 19.8 19.8 0 01-8.6-3 19.5 19.5 0 01-6-6 19.8 19.8 0 01-3-8.7A2 2 0 014.1 2h3a2 2 0 012 1.7c.1 1 .4 2 .7 3a2 2 0 01-.5 2.1L8 10a16 16 0 006 6l1.2-1.3a2 2 0 012.1-.5c1 .3 2 .5 3 .7a2 2 0 011.7 2z"/></svg>
-      +91 98765 43210
+      +91 70765 11660
     </div>
     <div class="contact-line">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4h16v16H4z"/><path d="M4 6l8 7 8-7"/></svg>
@@ -1482,7 +1506,7 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
               <polygon points="250,188 303.7,281 196.3,281"/>
               <polygon points="250,312 196.3,219 303.7,219"/>
             </g>
-            <circle cx="250" cy="250" r="5.5" fill="var(--gold-lt)"/>
+            <circle class="yantra-bindu" cx="250" cy="250" r="5.5" fill="var(--gold-lt)"/>
           </svg>
         </div>
       </div>
@@ -2247,7 +2271,7 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
         <div>
           <div class="contact-card">
             <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 16.9v3a2 2 0 01-2.2 2 19.8 19.8 0 01-8.6-3 19.5 19.5 0 01-6-6 19.8 19.8 0 01-3-8.7A2 2 0 014.1 2h3a2 2 0 012 1.7c.1 1 .4 2 .7 3a2 2 0 01-.5 2.1L8 10a16 16 0 006 6l1.2-1.3a2 2 0 012.1-.5c1 .3 2 .5 3 .7a2 2 0 011.7 2z"/></svg></div>
-            <div><strong>Call Us</strong><p>+91 98765 43210 (10 AM – 7 PM, all days)</p></div>
+            <div><strong>Call Us</strong><p>+91 70765 11660 (10 AM – 7 PM, all days)</p></div>
           </div>
           <div class="contact-card">
             <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4h16v16H4z"/><path d="M4 6l8 7 8-7"/></svg></div>
@@ -2255,7 +2279,7 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
           </div>
           <div class="contact-card">
             <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 10c0 6-9 12-9 12S3 16 3 10a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg></div>
-            <div><strong>Visit Us</strong><p>Chakrashri House, MG Road, Nashik, Maharashtra 422001</p></div>
+            <div><strong>Visit Us</strong><p>Burra Baajar, Howrah, Kolkata, West Bengal</p></div>
           </div>
           <div class="contact-card" style="border-bottom:none;">
             <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg></div>
@@ -2555,14 +2579,14 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
       <div class="footer-col">
         <h4>Get In Touch</h4>
         <ul class="footer-contact">
-          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 16.9v3a2 2 0 01-2.2 2 19.8 19.8 0 01-8.6-3 19.5 19.5 0 01-6-6 19.8 19.8 0 01-3-8.7A2 2 0 014.1 2h3a2 2 0 012 1.7c.1 1 .4 2 .7 3a2 2 0 01-.5 2.1L8 10a16 16 0 006 6l1.2-1.3a2 2 0 012.1-.5c1 .3 2 .5 3 .7a2 2 0 011.7 2z"/></svg><span>+91 98765 43210</span></li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 16.9v3a2 2 0 01-2.2 2 19.8 19.8 0 01-8.6-3 19.5 19.5 0 01-6-6 19.8 19.8 0 01-3-8.7A2 2 0 014.1 2h3a2 2 0 012 1.7c.1 1 .4 2 .7 3a2 2 0 01-.5 2.1L8 10a16 16 0 006 6l1.2-1.3a2 2 0 012.1-.5c1 .3 2 .5 3 .7a2 2 0 011.7 2z"/></svg><span>+91 70765 11660</span></li>
           <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4h16v16H4z"/><path d="M4 6l8 7 8-7"/></svg><span>support@chakrashri.com</span></li>
-          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 10c0 6-9 12-9 12S3 16 3 10a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg><span>Chakrashri House, MG Road, Nashik, Maharashtra 422001</span></li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 10c0 6-9 12-9 12S3 16 3 10a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg><span>Burra Baajar, Howrah, Kolkata, West Bengal</span></li>
         </ul>
       </div>
     </div>
     <div class="footer-bottom">
-      <small>© 2026 Chakrashri. All rights reserved. Made with reverence in Nashik.</small>
+      <small>© 2026 Chakrashri. All rights reserved. Developed by <a href="https://mukulchakraborty.netlify.app" target="_blank" rel="noopener noreferrer" class="dev-credit">dev.MUKUL<span class="dev-dot" aria-hidden="true"></span></a></small>
       <div class="pay-icons">
         <span>UPI</span><span>VISA</span><span>Mastercard</span><span>RuPay</span><span>Net Banking</span><span>COD</span>
       </div>
@@ -2620,6 +2644,7 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
       <button data-authtab="signup" onclick="switchAuthTab('signup')">Sign Up</button>
     </div>
     <div class="auth-pane active" id="auth-login">
+      <div id="authRequiredNote" style="display:none;background:#FBEAE8;color:#B23A2E;border-radius:8px;padding:12px 14px;font-size:.85rem;font-weight:600;margin-bottom:14px;"></div>
       <div class="auth-note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 2"/></svg>Log in to track orders, save addresses, and review your purchases.</div>
       <form onsubmit="return handleDemoAuth(event)">
         <div class="field"><label>Email Address</label><input type="email" required placeholder="you@example.com" autocomplete="email"></div>
@@ -2811,7 +2836,25 @@ function updateAccountUI(){
   if(currentUser) populateAccountPane();
 }
 
+/* Shown whenever a logged-out visitor tries to do something that requires an
+   account (checkout, booking). Gives a clear reason rather than a bare
+   "invalid" error, and drops them straight on the Log In tab with the
+   Sign Up link one click away. */
+async function promptLoginRequired(actionText){
+  const note = qs('#authRequiredNote');
+  if(note){
+    note.textContent = actionText || 'Please log in or create an account to continue.';
+    note.style.display = '';
+  }
+  switchAuthTab('login');
+  openModal('acctModal');
+  toast(actionText || 'Please log in to continue.', 'err');
+}
+
 async function openAccountModal(){
+  const note = qs('#authRequiredNote');
+  if(note) note.style.display = 'none'; // only shown for a blocked action
+
   if(getAuthToken()){
     await loadCurrentUser();
     if(currentUser) switchAuthTab('account');
@@ -4361,7 +4404,7 @@ async function applyCoupon(){
   if(!input) return;
   const val = input.value.trim();
   if(!val){ toast('Please enter a coupon code first.', 'err'); return; }
-  if(!getAuthToken()){ toast('Please sign in to use a coupon.', 'err'); openAccountModal(); return; }
+  if(!getAuthToken()){ await promptLoginRequired('Please log in to apply a coupon.'); return; }
 
   const subtotalPaise = Math.round(getCartSubtotal() * 100);
   try{
@@ -4489,19 +4532,19 @@ function selectPayMethod(el){
   updateCheckoutTotals();
 }
 async function placeOrder(){
+  // Checked FIRST: making someone complete the whole address form before
+  // telling them they need an account is a needless dead end.
+  if(!getAuthToken()){
+    await promptLoginRequired('Please log in or create an account to place your order.');
+    return;
+  }
+
   const checks = [
     validateField('ckName','text'), validateField('ckPhone','phone'), validateField('ckEmail','email'),
     validateField('ckAddress','text'), validateField('ckCity','text'), validateField('ckState','text'), validateField('ckPin','text')
   ];
   const valid = checks.every(Boolean);
   if(!valid){ toast('Please check the highlighted fields — a valid email and phone number are needed.', 'err'); return; }
-
-  // Require customer to be authenticated for order creation (server enforces this)
-  if(!getAuthToken()){
-    toast('Please log in or create an account before checkout.');
-    openModal('acctModal');
-    return;
-  }
 
   const subtotal = getCartSubtotal();
   const shipping = getShippingCost(subtotal);
@@ -4788,7 +4831,7 @@ async function confirmPujaBooking(){
     checks.push(validateField('pjAddress','text'));
   }
   if(!checks.every(Boolean)){ toast('Please check the highlighted fields — a valid email and phone number are needed.', 'err'); return; }
-  if(!getAuthToken()){ toast('Please sign in to book a puja.', 'err'); openAccountModal(); return; }
+  if(!getAuthToken()){ await promptLoginRequired('Please log in or create an account to book a puja.'); return; }
 
   const svc = PUJA_SERVICES.find(function(s){ return s.id === selectedPuja; });
   if(!svc){ toast('Please select a puja first.', 'err'); return; }
@@ -4923,7 +4966,7 @@ async function confirmAstroBooking(){
   if(!selectedAstro){ toast('Please select a service first.', 'err'); return; }
   const checks = [ validateField('asName','text'), validateField('asPhone','phone'), validateField('asEmail','email'), validateField('asDob','text') ];
   if(!checks.every(Boolean)){ toast('Please check the highlighted fields — a valid email and phone number are needed.', 'err'); return; }
-  if(!getAuthToken()){ toast('Please sign in to book a consultation.', 'err'); openAccountModal(); return; }
+  if(!getAuthToken()){ await promptLoginRequired('Please log in or create an account to book a consultation.'); return; }
 
   const svc = ASTRO_SERVICES.find(function(s){ return s.id === selectedAstro; });
   if(!svc){ toast('Please select a service first.', 'err'); return; }

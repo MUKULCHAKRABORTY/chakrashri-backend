@@ -6,6 +6,7 @@ const { requireAuth, requireRole } = require('../middleware/auth');
 const { sendBookingConfirmation, sendBookingStatusUpdate } = require('../utils/mailer');
 const { createBookingWithPayment } = require('../utils/bookingPayments');
 const { timingSafeEqualHex } = require('../utils/crypto');
+const razorpay = require('../config/razorpay');
 
 const router = express.Router();
 
@@ -186,7 +187,39 @@ router.get('/astrology', requireAuth, requireRole('admin', 'staff'), async (req,
 // explicit single-record fetch (not bulk-listable), and only to staff/admin.
 router.get('/astrology/:id', requireAuth, requireRole('admin', 'staff'), async (req, res) => {
   try {
-    const result = await db.query('SELECT * FROM astrology_bookings WHERE id = $1', [req.params.id]);
+    // Joins the service catalog and the customer account so the admin's
+    // Manage view can show every field the customer was actually asked for,
+    // rather than a partial row.
+    const result = await db.query(
+      `SELECT ab.*, bs.name AS service_name, bs.duration_label,
+              u.name AS account_name, u.email AS account_email
+       FROM astrology_bookings ab
+       LEFT JOIN booking_services bs ON bs.id = ab.service_id
+       LEFT JOIN users u ON u.id = ab.user_id
+       WHERE ab.id = $1`,
+      [req.params.id]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Booking not found.' });
+    res.json({ booking: result.rows[0] });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not load booking.' });
+  }
+});
+
+// ---------- Staff: single puja booking detail ----------
+// Astrology had a detail endpoint but puja never did, so the admin's puja
+// "Manage" dialog could only show whatever happened to be in the list row.
+router.get('/puja/:id', requireAuth, requireRole('admin', 'staff'), async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT pb.*, bs.name AS service_name, bs.duration_label,
+              u.name AS account_name, u.email AS account_email
+       FROM puja_bookings pb
+       LEFT JOIN booking_services bs ON bs.id = pb.service_id
+       LEFT JOIN users u ON u.id = pb.user_id
+       WHERE pb.id = $1`,
+      [req.params.id]
+    );
     if (!result.rows.length) return res.status(404).json({ error: 'Booking not found.' });
     res.json({ booking: result.rows[0] });
   } catch (err) {
@@ -261,6 +294,80 @@ router.patch('/astrology/:id/status', requireAuth, requireRole('admin', 'staff')
     res.json({ booking: result.rows[0] });
   } catch (err) {
     res.status(500).json({ error: 'Could not update booking status.' });
+  }
+});
+
+// ---------- Admin: refund a booking payment (real money movement) ----------
+// Mirrors the order refund flow: calls Razorpay's Refunds API so money
+// actually returns to the customer, records the real refund id, and notifies
+// them — rather than just flipping a status and leaving the payment captured.
+router.post('/:type/:id/refund', requireAuth, requireRole('admin'), async (req, res) => {
+  const { type, id } = req.params;
+  if (!['puja', 'astrology'].includes(type)) return res.status(400).json({ error: 'Invalid booking type.' });
+  const table = type === 'puja' ? 'puja_bookings' : 'astrology_bookings';
+  const { refundAmountPaise } = req.body;
+
+  try {
+    const { rows } = await db.query(`SELECT * FROM ${table} WHERE id = $1`, [id]);
+    if (!rows.length) return res.status(404).json({ error: 'Booking not found.' });
+    const booking = rows[0];
+
+    if (booking.payment_status !== 'paid' || !booking.razorpay_payment_id) {
+      return res.status(409).json({ error: 'This booking has no captured payment to refund.' });
+    }
+    if (booking.refund_id) {
+      return res.status(409).json({ error: 'This booking has already been refunded.' });
+    }
+
+    const paid = Number(booking.amount_paise) || 0;
+    const amountToRefund = Number.isInteger(refundAmountPaise) && refundAmountPaise > 0
+      ? Math.min(refundAmountPaise, paid) // never refund more than was actually paid
+      : paid;                              // default: full refund
+
+    let refund;
+    try {
+      refund = await razorpay.payments.refund(booking.razorpay_payment_id, {
+        amount: amountToRefund,
+        speed: 'normal',
+        notes: { reason: 'admin_initiated_booking_refund', bookingType: type, adminUserId: req.user.id }
+      });
+    } catch (err) {
+      return res.status(502).json({ error: `Razorpay refund failed: ${err.error?.description || err.message}` });
+    }
+
+    const { rows: updated } = await db.query(
+      `UPDATE ${table}
+       SET refund_id = $1, refunded_amount_paise = $2,
+           payment_status = 'refunded', status = 'cancelled', updated_at = now()
+       WHERE id = $3 RETURNING *`,
+      [refund.id, amountToRefund, id]
+    );
+
+    await db.query(
+      `INSERT INTO admin_audit_log (admin_user_id, action, entity_type, entity_id, detail)
+       VALUES ($1, 'refund_booking', $2, $3, $4)`,
+      [req.user.id, type + '_booking', id, JSON.stringify({ refundId: refund.id, amountPaise: amountToRefund })]
+    );
+
+    // Fire-and-forget: a mail failure must not undo a completed refund.
+    (async () => {
+      try {
+        const { rows: u } = await db.query('SELECT name, email FROM users WHERE id = $1', [booking.user_id]);
+        if (u.length) {
+          await sendBookingStatusUpdate({
+            email: u[0].email, name: u[0].name,
+            type: type === 'puja' ? 'puja' : 'astrology consultation',
+            status: 'cancelled',
+            preferredDate: booking.preferred_date, preferredTimeSlot: booking.preferred_time_slot
+          });
+        }
+      } catch (err) { console.error('[bookings] refund email failed:', err.message); }
+    })();
+
+    res.json({ booking: updated[0], refundId: refund.id, refundedAmountPaise: amountToRefund });
+  } catch (err) {
+    console.error('[bookings] refund failed:', err.message, err.code || '');
+    res.status(500).json({ error: 'Could not process refund.', code: err.code || null });
   }
 });
 

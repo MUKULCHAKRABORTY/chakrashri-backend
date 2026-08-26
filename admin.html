@@ -261,6 +261,30 @@ table.data .muted{ color:#8a7768; font-size:.8rem; }
 .kv{ display:grid; grid-template-columns:120px 1fr; gap:6px 12px; font-size:.86rem; }
 .kv dt{ color:#8a7768; }
 .kv dd{ font-weight:500; }
+
+/* ---------- Booking "Manage" detail ---------- */
+.bk-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:16px;
+  padding-bottom:14px; border-bottom:1px solid var(--parchment-2); margin-bottom:12px; }
+.bk-service{ font-family:var(--f-display); font-size:1.12rem; font-weight:600; color:var(--ink); line-height:1.3; }
+.bk-sub{ font-size:.78rem; color:#8a7768; margin-top:2px; }
+.bk-amount{ font-family:var(--f-display); font-size:1.25rem; font-weight:700; color:var(--oxblood); white-space:nowrap; }
+.bk-pills{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:18px; }
+
+.bk-section{ margin-bottom:18px; }
+.bk-section-title{ font-size:.68rem; font-weight:700; letter-spacing:.1em; text-transform:uppercase;
+  color:var(--oxblood); margin:0 0 8px; padding-bottom:6px; border-bottom:1px solid var(--parchment); }
+/* Two columns on desktop so the question and the customer's answer read as a
+   pair; collapses to stacked rows on narrow screens rather than squashing. */
+.bk-row{ display:grid; grid-template-columns:minmax(150px, 42%) 1fr; gap:12px;
+  padding:7px 0; border-bottom:1px solid var(--ivory); align-items:start; }
+.bk-row:last-child{ border-bottom:none; }
+.bk-q{ font-size:.8rem; color:#8a7768; line-height:1.45; }
+.bk-a{ font-size:.88rem; font-weight:600; color:var(--ink); line-height:1.45; word-break:break-word; }
+@media (max-width:560px){
+  .bk-row{ grid-template-columns:1fr; gap:2px; padding:8px 0; }
+  .bk-q{ font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; }
+  .bk-head{ flex-direction:column; gap:8px; }
+}
 .divider{ height:1px; background:var(--parchment); margin:16px 0; }
 code.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.78rem; background:var(--parchment); padding:2px 6px; border-radius:5px; }
 
@@ -1728,60 +1752,146 @@ async function loadAstrologyBookings(){
   } catch (err) { tbody.innerHTML = '<tr><td colspan="9"><div class="empty">Could not load bookings.</div></td></tr>'; }
 }
 
-function openBookingModal(id){
-  const booking = pujaBookingsCache.find((b) => b.id === id);
-  if (!booking) { toast('Booking not found — try refreshing.', 'err'); return; }
-  const type = 'puja';
-  qs('#bookingModalTitle').textContent = booking.puja_type || 'Booking';
-  qs('#bookingModalBody').innerHTML = `
-    <dl class="kv">
-      <dt>Contact</dt><dd>${esc(booking.contact_name)} · ${esc(booking.contact_phone)}</dd>
-      <dt>Date</dt><dd>${fmtDate(booking.preferred_date)}</dd>
-      <dt>Time Slot</dt><dd>${esc(booking.preferred_time_slot)}</dd>
-      ${booking.notes ? `<dt>Notes</dt><dd>${esc(booking.notes)}</dd>` : ''}
-    </dl>
-    <div class="divider"></div>
-    <div class="field"><label>Status</label>
-      <select id="bmStatus">
-        ${['requested','confirmed','completed','cancelled'].map((s) => `<option value="${s}" ${booking.status===s?'selected':''}>${s}</option>`).join('')}
-      </select>
-    </div>
-    <button class="btn btn-primary" style="width:100%;" onclick="updateBookingStatus('${type}','${id}')">Update Status</button>
-  `;
-  openModalEl('bookingModal');
+/* ---------- Booking "Manage" dialog ----------
+   Rebuilt to show EVERY field the customer was actually asked, as a clean
+   question -> answer list, grouped into sections. The previous version showed
+   a handful of fields crammed together with no grouping, so an admin could
+   not see what the customer had actually submitted. */
+
+function bookingRow(label, value, opts){
+  opts = opts || {};
+  if (value === null || value === undefined || value === '') {
+    if (!opts.showEmpty) return '';
+    value = '—';
+  }
+  return `<div class="bk-row">
+    <div class="bk-q">${esc(label)}</div>
+    <div class="bk-a"${opts.mono ? ' style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.8rem;"' : ''}>${esc(String(value))}</div>
+  </div>`;
 }
 
-async function openAstrologyDetail(id){
-  qs('#bookingModalTitle').textContent = 'Astrology Consultation';
+function bookingSection(title, rowsHtml){
+  if (!rowsHtml || !rowsHtml.trim()) return '';
+  return `<div class="bk-section"><h4 class="bk-section-title">${esc(title)}</h4>${rowsHtml}</div>`;
+}
+
+// Turns the stored birth_details JSON into readable labels rather than raw keys
+const BIRTH_LABELS = {
+  dob: 'Date of Birth', timeOfBirth: 'Time of Birth',
+  placeOfBirth: 'Place of Birth', notes: 'Question / Concern'
+};
+
+async function openBookingModal(id){ return openBookingDetail('puja', id); }
+async function openAstrologyDetail(id){ return openBookingDetail('astrology', id); }
+
+async function openBookingDetail(type, id){
+  const isPuja = type === 'puja';
+  qs('#bookingModalTitle').textContent = isPuja ? 'Puja Booking' : 'Astrology Consultation';
   qs('#bookingModalBody').innerHTML = '<div class="loading-row"><span class="spinner"></span></div>';
   openModalEl('bookingModal');
+
   try {
-    const body = await api('/api/bookings/astrology/' + id);
+    const body = await api('/api/bookings/' + type + '/' + id);
     const b = body.booking;
-    const birth = b.birth_details || {};
-    qs('#bookingModalBody').innerHTML = `
-      <dl class="kv">
-        <dt>Contact</dt><dd>${esc(b.contact_name)} · ${esc(b.contact_phone)}</dd>
-        <dt>Mode</dt><dd style="text-transform:capitalize;">${esc(b.consultation_mode)}</dd>
-        <dt>Date</dt><dd>${fmtDate(b.preferred_date)}</dd>
-        <dt>Time Slot</dt><dd>${esc(b.preferred_time_slot)}</dd>
-      </dl>
-      <div class="divider"></div>
-      <label style="display:block;font-size:.72rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--oxblood);margin-bottom:8px;">Birth Details</label>
-      <dl class="kv">
-        ${Object.entries(birth).length ? Object.entries(birth).map(([k,v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('') : '<dd class="muted">Not provided.</dd>'}
-      </dl>
-      <div class="divider"></div>
-      <div class="field"><label>Status</label>
+    const paid = b.payment_status === 'paid';
+    const refunded = !!b.refund_id;
+
+    const statusPill = `<span class="pill ${BOOKING_STATUS_PILL[b.status] || 'pill-neutral'}">${esc(b.status)}</span>`;
+    const payPill = refunded
+      ? '<span class="pill pill-danger">refunded</span>'
+      : `<span class="pill ${PAYMENT_STATUS_PILL[b.payment_status] || 'pill-neutral'}">${esc(b.payment_status || 'unpaid')}</span>`;
+
+    let html = `
+      <div class="bk-head">
+        <div>
+          <div class="bk-service">${esc(b.service_name || (isPuja ? b.puja_type : b.consultation_mode))}</div>
+          <div class="bk-sub">${esc(b.duration_label || '')}</div>
+        </div>
+        <div class="bk-amount">${b.amount_paise ? paise(b.amount_paise) : '—'}</div>
+      </div>
+      <div class="bk-pills">${statusPill}${payPill}
+        ${refunded ? `<span class="muted" style="font-size:.75rem;">Refunded ${paise(b.refunded_amount_paise || 0)}</span>` : ''}
+      </div>`;
+
+    html += bookingSection('Booking Details',
+      bookingRow(isPuja ? 'Puja Selected' : 'Service Selected', b.service_name || (isPuja ? b.puja_type : ''), { showEmpty: true }) +
+      (isPuja ? bookingRow('Where should the puja be performed?', b.preferred_mode) : bookingRow('How would you like the consultation?', b.consultation_mode)) +
+      bookingRow('Preferred Date', fmtDate(b.preferred_date), { showEmpty: true }) +
+      bookingRow('Preferred Time Slot', b.preferred_time_slot, { showEmpty: true })
+    );
+
+    html += bookingSection('Contact Details Given by Customer',
+      bookingRow('Full Name', b.contact_name, { showEmpty: true }) +
+      bookingRow('Phone Number', b.contact_phone, { showEmpty: true }) +
+      bookingRow('Account Email', b.account_email) +
+      bookingRow('Account Holder', b.account_name)
+    );
+
+    if (isPuja) {
+      html += bookingSection('Additional Information',
+        bookingRow('Special Requirements / Gotra', b.notes, { showEmpty: true })
+      );
+    } else {
+      const birth = b.birth_details || {};
+      const birthRows = Object.keys(birth).length
+        ? Object.entries(birth).map(([k, v]) => bookingRow(BIRTH_LABELS[k] || k, v)).join('')
+        : bookingRow('Birth Details', null, { showEmpty: true });
+      html += bookingSection('Birth Details Given by Customer', birthRows);
+    }
+
+    html += bookingSection('Payment',
+      bookingRow('Amount', b.amount_paise ? paise(b.amount_paise) : '—', { showEmpty: true }) +
+      bookingRow('Payment Status', refunded ? 'refunded' : (b.payment_status || 'unpaid'), { showEmpty: true }) +
+      bookingRow('Razorpay Order ID', b.razorpay_order_id, { mono: true }) +
+      bookingRow('Razorpay Payment ID', b.razorpay_payment_id, { mono: true }) +
+      bookingRow('Refund ID', b.refund_id, { mono: true }) +
+      bookingRow('Booked On', fmtDateTime(b.created_at), { showEmpty: true })
+    );
+
+    html += `<div class="divider"></div>
+      <div class="field"><label>Update Booking Status</label>
         <select id="bmStatus">
           ${['requested','confirmed','completed','cancelled'].map((s) => `<option value="${s}" ${b.status===s?'selected':''}>${s}</option>`).join('')}
         </select>
       </div>
-      <button class="btn btn-primary" style="width:100%;" onclick="updateBookingStatus('astrology','${id}')">Update Status</button>
-    `;
+      <button class="btn btn-primary" style="width:100%;" onclick="updateBookingStatus('${type}','${id}')">Update Status</button>`;
+
+    // Refund is only offered when there is genuinely a captured payment to
+    // return, and never twice — the server enforces both rules again anyway.
+    if (paid && !refunded) {
+      html += `<div class="divider"></div>
+        <label style="display:block;font-size:.72rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--oxblood);margin-bottom:8px;">Refund</label>
+        <div class="field"><label>Refund Amount (₹) — leave blank for a full refund</label>
+          <input id="bmRefundAmount" type="number" min="1" step="0.01" placeholder="${((b.amount_paise||0)/100).toFixed(2)}"></div>
+        <div class="hint" style="margin-bottom:10px;">This calls Razorpay's real Refunds API — money actually returns to the customer, and they are emailed.</div>
+        <button class="btn btn-danger" style="width:100%;" onclick="refundBooking('${type}','${id}', ${b.amount_paise || 0})">Refund This Booking</button>`;
+    }
+
+    qs('#bookingModalBody').innerHTML = html;
   } catch (err) {
     qs('#bookingModalBody').innerHTML = `<div class="empty">${esc(err.error || 'Could not load booking.')}</div>`;
   }
+}
+
+function refundBooking(type, id, amountPaise){
+  const input = qs('#bmRefundAmount');
+  const entered = input && input.value ? parseFloat(input.value) : null;
+  const refundPaise = entered > 0 ? Math.round(entered * 100) : null;
+  const label = refundPaise ? paise(refundPaise) : paise(amountPaise);
+
+  confirmAction('Confirm Refund', `Refund ${label} to the customer? This moves real money via Razorpay and cannot be undone.`, async () => {
+    try {
+      await api(`/api/bookings/${type}/${id}/refund`, {
+        method: 'POST',
+        body: JSON.stringify(refundPaise ? { refundAmountPaise: refundPaise } : {})
+      });
+      toast('Refund processed — the customer has been emailed.', 'ok');
+      closeModal('bookingModal');
+      loadBookings();
+    } catch (err) {
+      toast(err.error || 'Could not process refund.', 'err');
+    }
+  });
 }
 
 async function updateBookingStatus(type, id){

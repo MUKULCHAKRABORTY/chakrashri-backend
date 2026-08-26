@@ -277,6 +277,12 @@ section("[4] reserveStockAndCreateOrder — the REAL checkout function, run agai
           const ids = params[0];
           return { rows: ids.filter((id) => variantsById[id]).map((id) => ({ id, ...variantsById[id] })) };
         }
+        if (sql.includes('COUNT(*)::int AS cnt FROM product_variants')) {
+          // Mirrors the real guard query: which products have active variants
+          const counts = {};
+          Object.values(variantsById).forEach((v) => { counts[v.product_id] = (counts[v.product_id] || 0) + 1; });
+          return { rows: Object.entries(counts).map(([product_id, cnt]) => ({ product_id, cnt })) };
+        }
         if (sql.startsWith('UPDATE products SET stock_qty')) {
           const [qty, id] = params;
           updateCalls.push({ id, qty });
@@ -337,7 +343,7 @@ section("[4] reserveStockAndCreateOrder — the REAL checkout function, run agai
       );
     } catch (err) {
       threw = true;
-      assert.match(err.message, /only has 3 left in stock/);
+      assert.match(err.message, /Stock available for "Rudraksha Mala": 3\. Kindly remove 1 to buy it/);
     }
     assert.strictEqual(threw, true, 'must reject an oversell attempt instead of silently succeeding');
     assert.strictEqual(fakeDb.updateCalls.length, 0, 'no stock should be touched when the aggregated request exceeds availability');
@@ -403,6 +409,47 @@ section("[4] reserveStockAndCreateOrder — the REAL checkout function, run agai
     assert.strictEqual(result.total, 75000 + 7900 + Math.round(75000 * 0.03));
   });
 
+  test('THE FREE-INVENTORY HOLE: a product WITH variants cannot be bought as a plain base product', async () => {
+    // Why this matters: products.stock_qty for a variant product is derived by
+    // a DB trigger from the variant sum. If a base-product purchase were
+    // allowed, its decrement would be overwritten by the trigger on the next
+    // variant change — erasing the sale from inventory entirely and handing
+    // out free stock. This test is the guard against that.
+    const products = { p1: { name: 'Rudraksha Mala', price_paise: 50000, stock_qty: 10, gst_rate: 3 } };
+    const variants = { v_red: { product_id: 'p1', price_paise: null, stock_qty: 4, option_values: [{ option: 'Colour', value: 'Red' }] } };
+    const fakeDb = makeFakeDb(products, variants);
+    let threw = false;
+    try {
+      await withMockedDb(fakeDb, (orders) =>
+        orders.reserveStockAndCreateOrder({
+          userId: 'u1',
+          items: [{ productId: 'p1', quantity: 1 }], // no variantId — must be refused
+          shippingAddressId: null, paymentMethod: 'cod', initialStatus: 'processing'
+        })
+      );
+    } catch (err) {
+      threw = true;
+      assert.match(err.message, /Please choose an option/);
+    }
+    assert.strictEqual(threw, true, 'must refuse a base-product purchase when variants exist');
+    assert.strictEqual(fakeDb.updateCalls.length, 0, 'product stock must not be touched at all');
+    assert.strictEqual(fakeDb.variantUpdateCalls.length, 0, 'no variant stock touched either');
+  });
+
+  test('a product with NO variants is still buyable directly (guard does not over-reach)', async () => {
+    const products = { p2: { name: 'Brass Diya', price_paise: 30000, stock_qty: 5, gst_rate: 3 } };
+    const fakeDb = makeFakeDb(products, {}); // no variants at all
+    const result = await withMockedDb(fakeDb, (orders) =>
+      orders.reserveStockAndCreateOrder({
+        userId: 'u1', items: [{ productId: 'p2', quantity: 2 }],
+        shippingAddressId: null, paymentMethod: 'cod', initialStatus: 'processing'
+      })
+    );
+    assert.strictEqual(fakeDb.updateCalls.length, 1, 'normal products must still decrement product stock');
+    assert.strictEqual(products.p2.stock_qty, 3);
+    assert.ok(result.total > 0);
+  });
+
   test('VARIANT: insufficient variant stock is rejected even though the base product has plenty', async () => {
     const products = { p1: { name: 'Rudraksha Mala', price_paise: 50000, stock_qty: 999, gst_rate: 3 } };
     const variants = { v_red: { product_id: 'p1', price_paise: null, stock_qty: 1, option_values: [{ option: 'Color', value: 'Red' }] } };
@@ -420,7 +467,7 @@ section("[4] reserveStockAndCreateOrder — the REAL checkout function, run agai
       );
     } catch (err) {
       threw = true;
-      assert.match(err.message, /only has 1 left in stock/);
+      assert.match(err.message, /Stock available for "Rudraksha Mala": 1\. Kindly remove 1 to buy it/);
     }
     assert.strictEqual(threw, true, 'must reject based on the VARIANT stock (1), ignoring the base product stock (999)');
   });
@@ -462,6 +509,20 @@ section('[4b] jsonb serialization — the array-vs-object trap that broke varian
     assert.strictEqual(Array.isArray(parsed), true);
     assert.strictEqual(parsed[0].value, 'Red');
     assert.strictEqual(parsed[0].colorHex, '#C9302C');
+  });
+}
+
+section('[4c] variant stock architecture — the guard that keeps derived product stock honest');
+{
+  const { stockShortfallMessage } = require('../src/utils/orders');
+
+  test('shortfall message names the available count and how many to remove', () => {
+    const msg = stockShortfallMessage('Rudraksha Mala', 3, 5);
+    assert.match(msg, /Stock available for "Rudraksha Mala": 3/);
+    assert.match(msg, /Kindly remove 2 to buy it/);
+  });
+  test('zero stock gets a plain out-of-stock message, not "remove N"', () => {
+    assert.match(stockShortfallMessage('Sphatik Mala', 0, 2), /is out of stock right now/);
   });
 }
 
