@@ -30,7 +30,13 @@ router.get('/', async (req, res) => {
   params.push(limit, offset);
   const sql = `SELECT p.id, p.sku, p.name, p.slug, p.category, p.price_paise, p.mrp_paise, p.badge, p.rating,
                       p.review_count, p.stock_qty,
-                      (SELECT pi.url FROM product_images pi WHERE pi.product_id = p.id ORDER BY pi.sort_order LIMIT 1) AS image_url
+                      (SELECT pi.url FROM product_images pi WHERE pi.product_id = p.id ORDER BY pi.sort_order LIMIT 1) AS image_url,
+                      -- The shop grid needs to know a product has variants BEFORE
+                      -- the detail page loads: without it, a quick-add on the grid
+                      -- would put a variant product in the cart with no variant
+                      -- chosen, and checkout would then reject the whole order.
+                      EXISTS(SELECT 1 FROM product_variants v
+                              WHERE v.product_id = p.id AND v.is_active = true) AS has_variants
                FROM products p
                WHERE ${conditions.join(' AND ')}
                ORDER BY p.created_at DESC

@@ -274,6 +274,11 @@ table.data .muted{ color:#8a7768; font-size:.8rem; }
 .tab-strip{ display:flex; gap:6px; margin-bottom:18px; border-bottom:1px solid var(--parchment-2); }
 .tab-btn{ padding:10px 16px; font-size:.86rem; font-weight:600; color:var(--oxblood); opacity:.55; border-bottom:2px solid transparent; cursor:pointer; }
 .tab-btn.active{ opacity:1; border-bottom-color:var(--oxblood); }
+/* #26 — inline row for adding a value to an existing option */
+.opt-add-row{ display:flex; gap:6px; align-items:center; margin-top:10px; padding-top:10px; border-top:1px dashed var(--parchment-2); }
+.opt-add-row input:not([type="color"]){ flex:1; min-width:0; padding:7px 10px; border:1.5px solid var(--parchment-2); border-radius:8px; font-size:.82rem; background:#fff; }
+.opt-add-row input[type="color"]{ width:36px; height:32px; padding:2px; border:1.5px solid var(--parchment-2); border-radius:8px; background:#fff; cursor:pointer; flex:none; }
+
 .img-chip{ position:relative; width:64px; height:64px; border-radius:8px; overflow:hidden; background:var(--parchment); flex:none; }
 .img-chip img{ width:100%; height:100%; object-fit:cover; }
 .img-chip .rm{ position:absolute; top:2px; right:2px; width:18px; height:18px; background:rgba(43,10,18,.75); color:#fff; border-radius:50%; display:flex; align-items:center; justify-content:center; cursor:pointer; font-size:.7rem; }
@@ -1431,8 +1436,48 @@ function renderProductOptions(){
             <button onclick="removeOptionValue('${opt.id}','${v.id}')" style="color:var(--danger);font-weight:700;line-height:1;" title="Remove value">×</button>
           </span>`).join('')}
       </div>
+      <div class="opt-add-row">
+        <input id="ov_${opt.id}" placeholder="Add another value${opt.option_type === 'color' ? ' (then pick its shade)' : ''}"
+               onkeydown="if(event.key==='Enter'){event.preventDefault();addOptionValueInline('${opt.id}');}">
+        ${opt.option_type === 'color' ? `<input type="color" id="ovc_${opt.id}" value="#C9A227" title="Colour for the new value">` : ''}
+        <button class="btn btn-ghost btn-sm" onclick="addOptionValueInline('${opt.id}')">Add Value</button>
+      </div>
     </div>`).join('');
   renderVariantBuilder();
+}
+
+/* #26 — Adds a value to an option that already exists, so a new size or
+   colour can be introduced later without deleting and rebuilding the option
+   (which would orphan every variant built on it). Existing variants are
+   untouched; the new value simply becomes available in the combination
+   builder below. */
+async function addOptionValueInline(optionId){
+  const input = qs('#ov_' + optionId);
+  if (!input) return;
+  const value = input.value.trim();
+  if (!value) { toast('Enter a value first.', 'err'); return; }
+
+  const opt = editingProductOptions.find((o) => o.id === optionId);
+  if (!opt) return;
+  // Case-insensitive duplicate check, mirroring the server's UNIQUE constraint,
+  // so the admin gets a clear message instead of a 409.
+  if ((opt.values || []).some((v) => v.value.toLowerCase() === value.toLowerCase())) {
+    toast(`"${value}" already exists in ${opt.option_name}.`, 'err');
+    return;
+  }
+
+  const colorEl = qs('#ovc_' + optionId);
+  try {
+    const body = await api('/api/products/' + editingProductId + '/options/' + optionId + '/values', {
+      method: 'POST',
+      body: JSON.stringify({ value, colorHex: (opt.option_type === 'color' && colorEl) ? colorEl.value : null })
+    });
+    opt.values = (opt.values || []).concat([body.value]);
+    renderProductOptions();
+    toast(`Added "${value}" to ${opt.option_name}. Create a variant below to make it purchasable.`, 'ok');
+  } catch (err) {
+    toast(err.error || 'Could not add value.', 'err');
+  }
 }
 
 async function addProductOption(){

@@ -231,6 +231,138 @@ scripts/        # create-admin.js, run-migrations.js, test-db-connection.js,
 test/           # unit.test.js — tests against the REAL application modules, see "Round 4" below
 ```
 
+## Round 14c — A Third Audit Found the Worst Bug Yet
+
+Pushed the audit further rather than re-asserting the work was fine. It found a
+defect that would have cost real sales:
+
+**A variant product could be quick-added from the shop grid with no variant
+selected, and checkout would then reject the entire order.**
+
+The guard in `quickAdjust` tested `p.variantOptions` — but that field is only
+populated by the product DETAIL fetch. On the shop grid and in Quick View it is
+always `undefined`, so the guard silently never fired. The item went into the
+cart, the customer proceeded, and only at checkout did the server correctly
+refuse with "Please choose an option" — by which point they have entered an
+address and chosen a payment method. That is exactly the kind of failure that
+gets abandoned rather than retried.
+
+Fixed at the source: the public list endpoint now returns `has_variants`
+(a cheap EXISTS subquery), which is mapped onto every product, so the grid
+knows before the customer taps. Both the quick-add and Quick View paths now
+route to the product page to choose an option, with an explanatory message
+rather than a silent redirect. Quick View also gained the stock check it never
+had.
+
+Also verified during this pass, and confirmed NOT broken: the cart icon still
+opens the drawer (only the automatic open on add was removed); every
+`addToCart` call site remains compatible with the widened signature; `.p-media`
+is `position:relative` so the new absolutely-positioned controls anchor
+correctly. One genuine leftover was corrected — `.list-view .p-desc` styled an
+element removed earlier when the duplicate product name was fixed, so it now
+targets the material line instead.
+
+## Round 14b — Self-Audit Caught Two More Real Bugs
+
+Re-tested the new code from several angles rather than assuming it worked. Two
+genuine defects surfaced, both of which would have shipped silently:
+
+**1. The fly-to-cart chip launched from the page corner.** `quickAdjust` called
+`addToCart` (which triggers `updateCartUI` -> `syncAllQuickAddControls`, and
+that REPLACES the tapped button's DOM node) and only then read the button's
+position for the animation. A detached element reports a zero rect, so every
+chip would have flown from (0,0) instead of the button. Fixed by capturing the
+coordinates *before* the cart update and passing a plain `{x,y}` rather than an
+element — the function signature now makes the constraint explicit.
+
+**2. Every discount tag showed the SAME animation.** The requirement was
+explicitly to vary it. The old `((h<<5)-h)` hash has poor low-bit distribution:
+for similar-length ids the trailing bits repeat, so `hash % 4` kept selecting
+the same bucket. Verified: 8 test products all resolved to one style. Replaced
+with FNV-1a plus an xorshift avalanche, which mixes high bits down into the low
+ones. Now measured across 200 realistic UUIDs: 53/53/50/44 across the four
+styles.
+
+Also removed a helper left orphaned by the sync refactor, and a redundant
+`position:absolute` on `.dt-sweep`.
+
+### Render outage fix — verified from five angles
+
+| Check | Result |
+|---|---|
+| 200 health probes (Render does ~180/window) | 200/200 never throttled |
+| Health probe **with query string** | 10/10 — `req.path` excludes the query |
+| 50 webhook posts | 50/50 — payment confirmations never dropped |
+| Normal endpoint at `max=3` | 3 pass / 7 throttled — protection intact |
+| Admin endpoint | still limited — the exemption is not over-broad |
+
+The query-string case matters specifically: had the skip been written against
+`req.originalUrl` instead of `req.path`, a probe with any query parameter would
+have bypassed the exemption and re-triggered the outage.
+
+## Round 14 — CRITICAL: Rate Limiter Was Taking the Server Down (+ tasks 26-30)
+
+### The outage cause — read this first
+
+The Render logs showed `/api/health` returning **200 then 429**, all from
+`"Render/1.0"`. That is Render's own health probe being blocked by our rate
+limiter.
+
+The arithmetic: Render probes `healthCheckPath` roughly every 5 seconds =
+**180 requests per 15-minute window**, against a `RATE_LIMIT_MAX` of **200**.
+The platform's own monitoring consumed ~90% of the allowance before a single
+customer arrived, so any real traffic pushed it over — at which point
+`/api/health` returned 429, **Render saw a failing health check, marked the
+service unhealthy and cycled it.** The "server keeps going down" was the rate
+limiter throttling the platform's monitor, not a crash or a resource limit.
+
+Fixed by exempting machine endpoints from rate limiting entirely (verified
+against a live Express instance: 20/20 health checks pass while a normal
+endpoint still throttles correctly at its limit), and raising the default
+ceiling to 600. The webhook is exempt for a related but distinct reason: a
+throttled Razorpay webhook means a captured payment is never recorded, and its
+authenticity is already enforced by HMAC signature verification — a far
+stronger control than an IP rate limit.
+
+### Tasks 26-30
+
+**#27 — checkout overflow (root cause found).** `overflow-x:hidden` was on
+`<body>` only. On mobile that does not stop `<html>` scrolling sideways, so any
+over-wide child shifted the page and left the header and footer rendering
+narrower than the content — exactly what the screenshot showed. The guard is
+now on both `html` and `body` with an explicit width ceiling, plus a
+defensive `#page-checkout *{ max-width:100% }` so inline styles and future
+markup are covered without listing each one.
+
+**#28 — quick-add and discount tags.** The hover-revealed "Add to Cart" bar is
+replaced by an always-visible quick-add control (the hover bar was effectively
+unreachable on touch, which is most traffic). One tap adds; it then becomes a
+−/count/+ stepper. The count is read from the cart itself rather than held as
+separate UI state, so a card can never disagree with the cart — and every cart
+change anywhere re-syncs the visible steppers. Stock is re-checked on each
+increment using the same message format as checkout. A `+1` chip arcs into the
+cart icon, which shakes; both are decorative, wrapped in try/catch and disabled
+under `prefers-reduced-motion`, so they can never interfere with the cart
+update that has already completed. Discount tags derive the percentage from
+MRP vs price (never stored, so it cannot drift) and rotate through four
+animation styles keyed off the product id, so a grid does not repeat one effect.
+
+**#29 — Buy Now.** Adds to the cart then goes to checkout. Deliberately NOT a
+separate express path: routing it through the normal cart means stock
+reservation, coupon rules, variant handling and server-side price
+recalculation are the identical code a normal checkout uses. A parallel
+checkout path would be a second place for stock bugs to live, which is exactly
+where overselling comes from.
+
+**#30 — cart no longer auto-opens.** With quick-add on every card, opening the
+drawer on each tap interrupted browsing. The icon animation acknowledges the
+add instead.
+
+**#26 — option values are now editable.** A new size or colour can be added to
+an existing option inline, without deleting and rebuilding the option (which
+would orphan every variant built on it). Duplicate values are caught
+case-insensitively before the request, mirroring the server's UNIQUE constraint.
+
 ## Round 13b — #21 Gaps Closed and #25 Mobile Fixes
 
 **#21 — two gaps found on re-check.** Badges are now stored lowercase

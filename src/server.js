@@ -53,9 +53,24 @@ app.use(cookieParser());
 
 const limiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000', 10),
-  max: parseInt(process.env.RATE_LIMIT_MAX || '200', 10),
+  max: parseInt(process.env.RATE_LIMIT_MAX || '600', 10),
   standardHeaders: true,
-  legacyHeaders: false
+  legacyHeaders: false,
+  // CRITICAL — never rate-limit machine endpoints.
+  //
+  // Render probes `healthCheckPath` (/api/health) roughly every 5 seconds:
+  // 180 requests per 15-minute window, against a 200-request budget. That
+  // consumed ~90% of the allowance before a single customer arrived, so real
+  // traffic tipped it over and /api/health began returning 429 — at which
+  // point RENDER'S OWN PROBE saw a failing health check, marked the service
+  // unhealthy and cycled it. The observed "server keeps going down" was the
+  // rate limiter throttling the platform's monitor, not a crash.
+  //
+  // The webhook is exempt for a different but equally serious reason: a
+  // throttled Razorpay webhook means a captured payment never gets recorded.
+  // Its authenticity is already enforced by HMAC signature verification, which
+  // is a far stronger control than an IP rate limit.
+  skip: (req) => req.path === '/health' || req.path.startsWith('/payments/webhook')
 });
 app.use('/api/', limiter);
 

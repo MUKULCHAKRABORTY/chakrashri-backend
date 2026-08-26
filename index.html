@@ -71,6 +71,13 @@
    ============================================================ */
 *,*::before,*::after{ box-sizing: border-box; margin:0; padding:0; }
 html{ scroll-behavior:smooth; -webkit-text-size-adjust:100%; }
+/* #27 — overflow-x:hidden was on <body> only. On mobile browsers that does
+   NOT stop the viewport from scrolling sideways: if any child is wider than
+   the screen, <html> still scrolls, the page shifts, and fixed/full-width
+   elements like the header and footer end up rendering narrower than the
+   scrollable content — which is exactly the reported symptom. The guard has
+   to be on BOTH html and body, with an explicit width ceiling. */
+html{ overflow-x:hidden; max-width:100%; }
 body{
   font-family: var(--f-body);
   color: var(--text);
@@ -78,6 +85,8 @@ body{
   line-height:1.6;
   font-size:16px;
   overflow-x:hidden;
+  max-width:100%;
+  position:relative;
   -webkit-font-smoothing:antialiased;
 }
 img,svg{ display:block; max-width:100%; }
@@ -566,6 +575,86 @@ p{ color: var(--text-soft); }
 .p-card:hover .p-atc{ transform:translateY(0); }
 .p-atc button{ width:100%; padding:13px; background:var(--ink); color:var(--gold-lt); font-size:.8rem; font-weight:600; letter-spacing:.04em; text-transform:uppercase; display:flex; align-items:center; justify-content:center; gap:8px; transition:background var(--dur); }
 .p-atc button:hover{ background:var(--oxblood-dk); }
+
+/* ============================================================
+   #28 — Quick-add stepper, discount tag, fly-to-cart
+   The stepper is deliberately ALWAYS visible (not hover-revealed): the old
+   hover bar was unreachable on touch, which is most of the traffic.
+============================================================ */
+.p-quickadd{ position:absolute; right:10px; bottom:10px; z-index:4; }
+.qa-add{ width:42px; height:42px; border-radius:50%; background:#fff; color:var(--oxblood);
+  border:1.5px solid var(--oxblood); font-size:1.5rem; font-weight:400; line-height:1;
+  display:flex; align-items:center; justify-content:center; box-shadow:0 3px 10px rgba(43,10,18,.16);
+  transition:transform .18s var(--ease), background .18s, color .18s; }
+.qa-add:hover{ background:var(--oxblood); color:#fff; transform:scale(1.09); }
+.qa-add:active{ transform:scale(.92); }
+
+.qa-stepper{ display:flex; align-items:center; background:#fff; border:1.5px solid var(--oxblood);
+  border-radius:var(--radius-full); box-shadow:0 3px 10px rgba(43,10,18,.16); overflow:hidden; }
+.qa-btn{ width:34px; height:40px; color:var(--oxblood); font-size:1.25rem; line-height:1;
+  display:flex; align-items:center; justify-content:center; transition:background .15s; }
+.qa-btn:hover{ background:var(--parchment); }
+.qa-btn:active{ background:var(--gold-lt); }
+.qa-count{ min-width:26px; text-align:center; font-weight:700; font-size:.95rem; color:var(--ink); }
+.qa-notify{ padding:9px 15px; border-radius:var(--radius-full); background:var(--ink); color:var(--gold-lt);
+  font-size:.72rem; font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
+
+/* Discount tag — mirrored to the left of the stepper */
+.p-discount{ position:absolute; left:10px; bottom:10px; z-index:4; display:inline-flex; align-items:center; gap:3px;
+  padding:6px 11px 6px 8px; border-radius:var(--radius-full); font-size:.8rem; font-weight:800; color:#fff;
+  background:linear-gradient(135deg, #2e9e5b, #1f7d45); box-shadow:0 3px 10px rgba(31,125,69,.4); }
+.p-discount svg{ width:13px; height:13px; }
+
+/* Four distinct treatments, chosen per product, so a grid doesn't repeat one
+   effect down the whole page. */
+.dt-pulse{ animation:dtPulse 2.2s ease-in-out infinite; }
+@keyframes dtPulse{ 0%,100%{ transform:scale(1);} 50%{ transform:scale(1.08);} }
+
+.dt-glow{ animation:dtGlow 2.6s ease-in-out infinite; }
+@keyframes dtGlow{
+  0%,100%{ box-shadow:0 3px 10px rgba(31,125,69,.4); }
+  50%{ box-shadow:0 3px 20px rgba(46,158,91,.85); }
+}
+
+/* Sweep: a light band travels across the tag */
+.dt-sweep{ overflow:hidden; } /* clips the ::after sweep band to the tag */
+.dt-sweep::after{ content:''; position:absolute; top:0; left:-60%; width:45%; height:100%;
+  background:linear-gradient(90deg, transparent, rgba(255,255,255,.55), transparent);
+  transform:skewX(-20deg); animation:dtSweep 3s ease-in-out infinite; }
+@keyframes dtSweep{ 0%{ left:-60%; } 55%,100%{ left:130%; } }
+
+.dt-bounce{ animation:dtBounce 2.4s ease-in-out infinite; }
+@keyframes dtBounce{ 0%,100%{ transform:translateY(0);} 45%{ transform:translateY(-4px);} 60%{ transform:translateY(0);} }
+
+/* The count chip that flies into the cart icon */
+.fly-chip{ position:fixed; z-index:300; pointer-events:none; transform:translate(-50%,-50%);
+  background:var(--oxblood); color:#fff; font-size:.78rem; font-weight:700; padding:4px 10px;
+  border-radius:var(--radius-full); box-shadow:0 4px 14px rgba(43,10,18,.35);
+  transition:transform .6s cubic-bezier(.35,-0.25,.6,1.1), opacity .6s ease-in; }
+
+.cart-shake{ animation:cartShake .6s cubic-bezier(.36,.07,.19,.97); }
+@keyframes cartShake{
+  0%,100%{ transform:translateX(0) rotate(0); }
+  15%{ transform:translateX(-4px) rotate(-9deg); }
+  30%{ transform:translateX(4px) rotate(9deg); }
+  45%{ transform:translateX(-3px) rotate(-6deg); }
+  60%{ transform:translateX(3px) rotate(6deg); }
+  80%{ transform:translateX(-1px) rotate(-2deg); }
+}
+
+@media (max-width:560px){
+  .p-quickadd{ right:7px; bottom:7px; }
+  .qa-add{ width:36px; height:36px; font-size:1.3rem; }
+  .qa-btn{ width:29px; height:34px; font-size:1.1rem; }
+  .qa-count{ min-width:20px; font-size:.85rem; }
+  .p-discount{ left:7px; bottom:7px; padding:4px 8px 4px 6px; font-size:.7rem; }
+  .p-discount svg{ width:11px; height:11px; }
+}
+@media (prefers-reduced-motion: reduce){
+  .dt-pulse,.dt-glow,.dt-bounce{ animation:none; }
+  .dt-sweep::after{ animation:none; display:none; }
+  .cart-shake{ animation:none; }
+}
 .p-atc button svg{ width:15px; height:15px; }
 .p-body{ padding:18px 18px 20px; flex:1; display:flex; flex-direction:column; }
 .p-cat{ font-size:.68rem; color:var(--text-mute); text-transform:uppercase; letter-spacing:.08em; margin-bottom:6px; }
@@ -584,7 +673,9 @@ p{ color: var(--text-soft); }
 .product-grid.list-view .p-card{ flex-direction:row; }
 .product-grid.list-view .p-media{ width:220px; flex-shrink:0; aspect-ratio:auto; }
 .product-grid.list-view .p-body{ padding:22px 26px; }
-.product-grid.list-view .p-desc{ display:block; font-size:.85rem; color:var(--text-soft); margin:8px 0 12px; }
+/* .p-desc was removed when the duplicate product name was fixed; list view
+   now gives the material line more room instead. */
+.product-grid.list-view .p-material{ font-size:.85rem; color:var(--text-soft); margin:8px 0 12px; }
 .product-grid.list-view .p-atc{ position:static; transform:none; margin-top:14px; }
 .product-grid.list-view .p-atc button{ border-radius:var(--radius-full); width:auto; padding:12px 26px; }
 
@@ -1198,6 +1289,12 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
    separators and the payment-logo rows all fought for space and pushed the
    layout wider than the viewport. */
 @media (max-width:640px){
+  /* Belt-and-braces: every descendant of the checkout is capped at the
+     container width. Inline styles like max-width:320px on the UPI field and
+     any future markup are covered without needing to be listed individually. */
+  #page-checkout, #page-checkout *{ max-width:100%; }
+  #page-checkout .container{ padding-left:14px; padding-right:14px; }
+  .checkout-layout{ gap:14px; }
   .checkout-card{ padding:16px 14px; margin-bottom:14px; border-radius:var(--radius-sm); }
   .checkout-card h3{ font-size:1rem; margin-bottom:12px; }
 
@@ -3720,6 +3817,10 @@ async function loadCatalog(){
           reviews: p.review_count || 0,
           badge: p.badge,
           stock: (p.stock_qty || 0) > 0,
+          // The real quantity, not just the in/out boolean — the quick-add
+          // stepper needs it to stop a customer clicking past what's available.
+          stockQty: Number(p.stock_qty || 0),
+          hasVariants: !!p.has_variants,
           sku: p.sku || '',
           shortDesc: p.short_desc || p.name,
           longDesc: p.long_desc || p.short_desc || p.name,
@@ -3854,6 +3955,167 @@ function openProductTab(tabName){
   }
 }
 
+/* ============================================================
+   #28 — Quick-add stepper, discount tag, fly-to-cart animation
+   ============================================================ */
+
+/* Renders either a single "+" (nothing in cart yet) or a −/count/+ stepper.
+   The count shown is the quantity of this product ALREADY in the cart, so the
+   card and the cart can never disagree — it is read from the cart, not held
+   as separate UI state. */
+function quickAddHTML(p){
+  if(!p.stock) {
+    return '<div class="p-quickadd"><button class="qa-notify" onclick="event.stopPropagation(); notifyStock(\'' + p.id + '\')">Notify Me</button></div>';
+  }
+  const qty = cartQtyForProduct(p.id);
+  if(qty > 0){
+    return '<div class="p-quickadd" data-qa="' + p.id + '">' +
+      '<div class="qa-stepper">' +
+        '<button class="qa-btn qa-minus" aria-label="Remove one" onclick="event.stopPropagation(); quickAdjust(\'' + p.id + '\',-1,this)">−</button>' +
+        '<span class="qa-count">' + qty + '</span>' +
+        '<button class="qa-btn qa-plus" aria-label="Add one" onclick="event.stopPropagation(); quickAdjust(\'' + p.id + '\',1,this)">+</button>' +
+      '</div></div>';
+  }
+  return '<div class="p-quickadd" data-qa="' + p.id + '">' +
+    '<button class="qa-add" aria-label="Add to cart" onclick="event.stopPropagation(); quickAdjust(\'' + p.id + '\',1,this)">+</button></div>';
+}
+
+/* Total quantity of a product in the cart, summed across variants — the card
+   represents the product, so it must reflect every line for it. */
+function cartQtyForProduct(productId){
+  return cart.filter(function(l){ return l.id === productId; })
+             .reduce(function(sum, l){ return sum + l.qty; }, 0);
+}
+
+/* Discount tag: only rendered when there is a real saving. The percentage is
+   derived from MRP vs selling price rather than stored, so it can never drift
+   out of step with a price change. */
+function discountTagHTML(p){
+  if(!(p.mrp > p.price)) return '';
+  const pct = Math.round((1 - p.price / p.mrp) * 100);
+  if(pct < 1) return '';
+  // Rotate through animation styles by product id so a grid doesn't show the
+  // same effect repeated down the page.
+  const styles = ['dt-pulse','dt-glow','dt-sweep','dt-bounce'];
+  const idx = Math.abs(hashCode(String(p.id))) % styles.length;
+  return '<div class="p-discount ' + styles[idx] + '">' +
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>' +
+    '<span>' + pct + '%</span></div>';
+}
+
+/* A plain 31-multiplier hash has poor LOW-BIT distribution: for similar-length
+   strings the last bits repeat, so `hash % 4` kept selecting the same bucket
+   and every product showed an identical animation. The xorshift finisher below
+   avalanches the high bits down into the low ones, which is what makes a small
+   modulo actually spread. */
+function hashCode(str){
+  let h = 2166136261; // FNV-1a offset basis
+  for(let i = 0; i < str.length; i++){
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  // Final avalanche so the low bits depend on the whole hash
+  h ^= h >>> 15; h = Math.imul(h, 2246822507);
+  h ^= h >>> 13; h = Math.imul(h, 3266489909);
+  h ^= h >>> 16;
+  return h >>> 0;
+}
+
+/* Adjusts quantity straight from the card. Stock is re-checked here so a
+   customer cannot click past the available quantity, and the same message
+   format used at checkout is reused for consistency. */
+function quickAdjust(productId, delta, btnEl){
+  const p = getProduct(productId);
+  if(!p) return;
+
+  // A product with variants cannot be quick-added: which variant would it be?
+  // Send them to the product page to choose, rather than guessing.
+  //
+  // hasVariants comes from the LIST endpoint. variantOptions is only populated
+  // once the detail page has loaded, so relying on it alone meant the grid had
+  // no idea — and a variant product could be added with no variant selected,
+  // failing only later at checkout with a confusing error.
+  if(p.hasVariants || (Array.isArray(p.variantOptions) && p.variantOptions.length)){
+    toast('Please choose an option for "' + p.name + '".');
+    openProduct(productId);
+    return;
+  }
+
+  const current = cartQtyForProduct(productId);
+  if(delta > 0){
+    const available = typeof p.stockQty === 'number' ? p.stockQty : null;
+    if(available !== null && current + delta > available){
+      toast('Stock available for "' + p.name + '": ' + available + '. Kindly remove ' + ((current + delta) - available) + ' to buy it.', 'err');
+      return;
+    }
+    // Capture the button's position BEFORE adding to cart. addToCart triggers
+    // updateCartUI -> syncAllQuickAddControls, which replaces this button's
+    // DOM node — a detached element reports a zero rect, so reading it
+    // afterwards would launch the chip from the page corner instead of the
+    // button the customer actually tapped.
+    let origin = null;
+    if(btnEl){
+      const r = btnEl.getBoundingClientRect();
+      origin = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    }
+    addToCart(productId, 1, '', null, null);
+    if(origin) flyToCart(origin);
+  } else {
+    const line = cart.find(function(l){ return l.id === productId; });
+    if(!line) return;
+    if(line.qty > 1){ line.qty -= 1; }
+    else { cart = cart.filter(function(l){ return l !== line; }); }
+    saveCart();
+    updateCartUI();
+  }
+  // No explicit refresh needed: addToCart/saveCart both run updateCartUI,
+  // which calls syncAllQuickAddControls for every visible card.
+}
+
+
+/* The flying-count animation: a small badge leaves the plus button and arcs
+   into the cart icon, which then shakes. Purely decorative — it is wrapped in
+   try/catch and gated on prefers-reduced-motion so it can never interfere
+   with the actual cart update, which has already happened by this point. */
+/* Takes a captured {x,y} origin rather than an element, precisely because the
+   source button is destroyed by the cart re-render before this runs. */
+function flyToCart(origin){
+  try{
+    if(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches){
+      animateCartIcon();
+      return;
+    }
+    const cartBtn = qs('#cartBtn');
+    if(!cartBtn || !origin) { animateCartIcon(); return; }
+
+    const to = cartBtn.getBoundingClientRect();
+    const chip = document.createElement('div');
+    chip.className = 'fly-chip';
+    chip.textContent = '+1';
+    chip.style.left = origin.x + 'px';
+    chip.style.top = origin.y + 'px';
+    document.body.appendChild(chip);
+
+    const dx = (to.left + to.width / 2) - origin.x;
+    const dy = (to.top + to.height / 2) - origin.y;
+
+    requestAnimationFrame(function(){
+      chip.style.transform = 'translate(' + dx + 'px,' + dy + 'px) scale(.35)';
+      chip.style.opacity = '0.15';
+    });
+    setTimeout(function(){ chip.remove(); animateCartIcon(); }, 620);
+  }catch(e){ animateCartIcon(); }
+}
+
+function animateCartIcon(){
+  const el = qs('#cartBtn');
+  if(!el) return;
+  el.classList.remove('cart-shake');
+  void el.offsetWidth; // force reflow so the class re-triggers on rapid clicks
+  el.classList.add('cart-shake');
+  setTimeout(function(){ el.classList.remove('cart-shake'); }, 620);
+}
+
 function productCardHTML(p, idx){
   const wished = wishlist.indexOf(p.id) > -1;
   const badgeHTML = p.badge ? ('<span class="badge ' + badgeInfo(p.badge).cssClass + '">' + escapeHtml(badgeInfo(p.badge).text) + '</span>') : '';
@@ -3864,11 +4126,12 @@ function productCardHTML(p, idx){
     '<div class="p-media" style="' + mediaStyle(p.cat, idx) + '" onclick="openProduct(\'' + p.id + '\')">' +
       productThumbInnerHTML(p) +
       '<div class="p-badges">' + badgeHTML + '</div>' +
+      discountTagHTML(p) +
       '<div class="p-quick">' +
         '<button class="' + (wished?'active':'') + '" onclick="event.stopPropagation(); toggleWishlist(\'' + p.id + '\')" aria-label="Add to wishlist" title="Wishlist"><svg viewBox="0 0 24 24" fill="' + (wished?'currentColor':'none') + '" stroke="currentColor" stroke-width="1.8"><path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.6l-1-1a5.5 5.5 0 10-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 000-7.8z"/></svg></button>' +
         '<button onclick="event.stopPropagation(); openQuickView(\'' + p.id + '\')" aria-label="Quick view" title="Quick view"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg></button>' +
       '</div>' +
-      '<div class="p-atc"><button ' + (!p.stock?'disabled':'') + ' onclick="event.stopPropagation(); ' + (p.stock ? ("addToCart('" + p.id + "',1)") : "notifyStock('" + p.id + "')") + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 01-8 0"/></svg>' + (p.stock ? 'Add to Cart' : 'Notify Me') + '</button></div>' +
+      quickAddHTML(p) +
     '</div>' +
     '<div class="p-body">' +
       '<div class="p-cat">' + catLabel(p.cat) + '</div>' +
@@ -3936,11 +4199,12 @@ function addToCart(id, qty, variant, variantId, variantImage){
   }
   saveCart();
   updateCartUI();
+  // #30 — The drawer no longer opens on every add. With quick-add plus buttons
+  // on the cards, auto-opening interrupted browsing on every single tap. The
+  // cart icon animates instead (see animateCartIcon) so the add is still
+  // clearly acknowledged, and the customer opens the drawer when they choose.
+  animateCartIcon();
   toast(p.name + ' added to cart');
-  // Open the cart drawer automatically so the customer immediately sees what
-  // they added and can move to checkout — standard behaviour on most modern
-  // storefronts, and requested here.
-  openCartDrawer();
 }
 function removeFromCart(id, variant){
   cart = cart.filter(function(l){ return !(l.id === id && (l.variant||'') === (variant||'')); });
@@ -3975,6 +4239,18 @@ function updateCartUI(){
   qsa('#cartCount').forEach(function(el){ el.textContent = getCartCount(); });
   renderMiniCart();
   if(qs('#page-cart').classList.contains('active')) renderCartPage();
+  syncAllQuickAddControls();
+}
+
+/* Re-renders every visible card stepper from the cart. Called on ANY cart
+   change so a card can never show a stale count after an item is removed in
+   the drawer, on the cart page, or at checkout. */
+function syncAllQuickAddControls(){
+  qsa('[data-qa]').forEach(function(holder){
+    const id = holder.getAttribute('data-qa');
+    const p = getProduct(id);
+    if(p) holder.outerHTML = quickAddHTML(p);
+  });
 }
 function updateWishUI(){
   qsa('#wishCount').forEach(function(el){ el.textContent = wishlist.length; });
@@ -4056,6 +4332,26 @@ function closeModal(id){
 }
 
 /* ---------- Quick view ---------- */
+/* Quick View add-to-cart. Same variant guard as the grid: adding a variant
+   product without a chosen variant would only fail later, at checkout. */
+function qvAddToCart(id){
+  const p = getProduct(id);
+  if(!p) return;
+  if(p.hasVariants || (Array.isArray(p.variantOptions) && p.variantOptions.length)){
+    closeModal('qvModal');
+    toast('Please choose an option for "' + p.name + '".');
+    openProduct(id);
+    return;
+  }
+  const qty = qvGetQty();
+  if(typeof p.stockQty === 'number' && p.stockQty > 0 && qty > p.stockQty){
+    toast('Stock available for "' + p.name + '": ' + p.stockQty + '. Kindly remove ' + (qty - p.stockQty) + ' to buy it.', 'err');
+    return;
+  }
+  addToCart(id, qty, '', null, null);
+  closeModal('qvModal');
+}
+
 function openQuickView(id){
   const p = getProduct(id);
   if(!p) return;
@@ -4072,7 +4368,7 @@ function openQuickView(id){
       '<p style="margin-bottom:18px;" id="qvShortDesc">' + escapeHtml(p.shortDesc) + '</p>' +
       '<div class="pd-buy-row">' +
         '<div class="qty-stepper"><button onclick="qvChangeQty(-1)">−</button><span id="qvQty">1</span><button onclick="qvChangeQty(1)">+</button></div>' +
-        '<button class="btn btn-primary" ' + (!p.stock?'disabled':'') + ' onclick="addToCart(\'' + p.id + '\', qvGetQty()); closeModal(\'qvModal\')">' + (p.stock?'Add to Cart':'Out of Stock') + '</button>' +
+        '<button class="btn btn-primary" ' + (!p.stock?'disabled':'') + ' onclick="qvAddToCart(\'' + p.id + '\')">' + (p.stock?'Add to Cart':'Out of Stock') + '</button>' +
         '<button class="pd-wish-btn ' + (wished?'active':'') + '" onclick="toggleWishlist(\'' + p.id + '\')" aria-label="Wishlist"><svg viewBox="0 0 24 24" fill="' + (wished?'currentColor':'none') + '" stroke="currentColor" stroke-width="1.8"><path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.6l-1-1a5.5 5.5 0 10-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 000-7.8z"/></svg></button>' +
       '</div>' +
       '<button class="btn btn-ghost btn-sm" onclick="closeModal(\'qvModal\'); openProduct(\'' + p.id + '\')">View Full Details →</button>' +
@@ -4351,6 +4647,7 @@ async function renderProductDetail(id){
     '<div class="pd-buy-row">' +
       '<div class="qty-stepper"><button onclick="pdChangeQty(-1)" aria-label="Decrease">−</button><span id="pdQtyDisplay">1</span><button onclick="pdChangeQty(1)" aria-label="Increase">+</button></div>' +
       '<button class="btn btn-primary" id="pdAtcBtn" ' + (!p.stock?'disabled':'') + ' onclick="pdAddToCart(\'' + p.id + '\')">' + (p.stock ? 'Add to Cart' : 'Out of Stock') + '</button>' +
+      '<button class="btn btn-gold" id="pdBuyNowBtn" ' + (!p.stock?'disabled':'') + ' onclick="pdBuyNow(\'' + p.id + '\')">Buy Now</button>' +
       '<button class="pd-wish-btn ' + (wished?'active':'') + '" onclick="toggleWishlist(\'' + p.id + '\')" aria-label="Wishlist"><svg viewBox="0 0 24 24" fill="' + (wished?'currentColor':'none') + '" stroke="currentColor" stroke-width="1.8"><path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.6l-1-1a5.5 5.5 0 10-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 000-7.8z"/></svg></button>' +
     '</div>' +
     '<div class="pd-trust">' +
@@ -4669,6 +4966,41 @@ function updateVariantUI(p){
     }
     if(noteEl){ noteEl.textContent = ''; }
   }
+}
+
+/* #29 — Buy Now: adds to the cart, then goes straight to checkout.
+   Deliberately NOT a separate express-checkout path. Routing it through the
+   normal cart means stock reservation, coupon rules, variant handling and the
+   server-side price recalculation are all the exact same code that a normal
+   checkout uses — a parallel path would be a second place for stock bugs to
+   live, which is precisely where overselling comes from. */
+function pdBuyNow(id){
+  const p = getProduct(id);
+  if(!p || !p.stock){ toast('This product is currently out of stock.', 'err'); return; }
+
+  const hasOptions = (p.variantOptions || []).length > 0;
+  if(hasOptions && !pdSelectedVariant){
+    toast('Please select all options before buying.', 'err');
+    return;
+  }
+  if(pdSelectedVariant && pdSelectedVariant.stock_qty < pdQty){
+    toast('Stock available: ' + pdSelectedVariant.stock_qty + '. Kindly reduce the quantity to buy it.', 'err');
+    return;
+  }
+  if(!pdSelectedVariant && typeof p.stockQty === 'number' && p.stockQty < pdQty){
+    toast('Stock available for "' + p.name + '": ' + p.stockQty + '. Kindly remove ' + (pdQty - p.stockQty) + ' to buy it.', 'err');
+    return;
+  }
+
+  const label = pdSelectedVariant
+    ? (pdSelectedVariant.option_values || []).map(function(x){ return x.option + ': ' + x.value; }).join(' / ')
+    : '';
+  addToCart(id, pdQty, label, pdSelectedVariant ? pdSelectedVariant.id : null,
+            pdSelectedVariant ? pdSelectedVariant.image_url : null);
+  pdQty = 1;
+  const disp = qs('#pdQtyDisplay');
+  if(disp) disp.textContent = 1;
+  navigateTo('checkout');
 }
 
 function pdAddToCart(id){
