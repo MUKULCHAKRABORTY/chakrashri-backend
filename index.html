@@ -77,7 +77,16 @@ html{ scroll-behavior:smooth; -webkit-text-size-adjust:100%; }
    elements like the header and footer end up rendering narrower than the
    scrollable content — which is exactly the reported symptom. The guard has
    to be on BOTH html and body, with an explicit width ceiling. */
-html{ overflow-x:hidden; max-width:100%; }
+/* #31 FIX — `overflow-x:hidden` here was silently disabling `position:sticky`
+   on the header. Any ancestor with overflow other than `visible` becomes the
+   sticky element's scroll container, so the header stopped sticking to the
+   viewport and scrolled away — exactly the reported symptom.
+
+   `overflow-x: clip` prevents sideways scrolling WITHOUT creating a scroll
+   container, so sticky keeps working. It is also only a safety net now: the
+   real overflow cause was fixed with `min-width:0` on the layout containers
+   (see #32), so nothing should be overflowing in the first place. */
+html{ overflow-x:clip; max-width:100%; }
 
 /* #32 — The single most common cause of mobile horizontal overflow: grid and
    flex children default to `min-width:auto`, so they will not shrink below
@@ -94,7 +103,7 @@ body{
   background: var(--ivory);
   line-height:1.6;
   font-size:16px;
-  overflow-x:hidden;
+  overflow-x:clip;      /* clip, not hidden — see the note on <html> above */
   max-width:100%;
   position:relative;
   -webkit-font-smoothing:antialiased;
@@ -655,11 +664,15 @@ p{ color: var(--text-soft); }
 /* #33 — Slower and gentler. The previous 0.6s with an overshoot curve read as
    a rocket; 1.15s with an ease-out arc lets the eye actually follow the count
    from the button to the cart, which is the whole point of the effect. */
-.fly-chip{ position:fixed; z-index:300; pointer-events:none;
-  background:var(--oxblood); color:var(--gold-lt); font-size:.86rem; font-weight:800; padding:6px 13px;
-  border-radius:var(--radius-full); box-shadow:0 6px 18px rgba(43,10,18,.4);
-  will-change:transform, opacity;
-  transition:transform 1.15s cubic-bezier(.34,.64,.35,1), opacity 1.15s cubic-bezier(.6,0,.9,.4); }
+.fly-chip{ position:fixed; left:0; top:0; z-index:300; pointer-events:none;
+  background:var(--oxblood); color:var(--gold-lt); font-size:.88rem; font-weight:800;
+  padding:6px 13px; border-radius:var(--radius-full);
+  box-shadow:0 6px 20px rgba(43,10,18,.42);
+  /* No CSS transition: the arc is driven frame-by-frame in flyToCart(), and a
+     transition here would fight it and flatten the curve back to a straight
+     line. will-change keeps it on its own compositor layer so the motion
+     stays smooth on a phone. */
+  will-change:transform, opacity; }
 
 .cart-shake{ animation:cartShake .6s cubic-bezier(.36,.07,.19,.97); }
 @keyframes cartShake{
@@ -4158,29 +4171,53 @@ function flyToCart(origin){
     if(!cartBtn || !origin) { animateCartIcon(); return; }
 
     const to = cartBtn.getBoundingClientRect();
+    const endX = to.left + to.width / 2;
+    const endY = to.top + to.height / 2;
+
     const chip = document.createElement('div');
     chip.className = 'fly-chip';
     chip.textContent = '+1';
-    chip.style.left = origin.x + 'px';
-    chip.style.top = origin.y + 'px';
     document.body.appendChild(chip);
 
-    const dx = (to.left + to.width / 2) - origin.x;
-    const dy = (to.top + to.height / 2) - origin.y;
+    /* A straight CSS transition looked mechanical. This traces a quadratic
+       Bézier instead: the control point sits above and between the two ends,
+       so the chip lifts away from the button, arcs across, and settles into
+       the cart — the way a thrown object actually moves. Driven by
+       requestAnimationFrame so the curve, scale and fade can be shaped
+       independently over the flight. */
+    const DURATION = 1500; // slow enough for the eye to follow comfortably
+    const ctrlX = (origin.x + endX) / 2;
+    // Lift proportional to the distance, capped so it never flies off-screen.
+    const lift = Math.min(190, Math.max(90, Math.abs(endX - origin.x) * 0.45));
+    const ctrlY = Math.min(origin.y, endY) - lift;
 
-    // The chip is centred on the button via its own transform, so the travel
-    // transform must preserve that -50%/-50% or it would jump on the first frame.
-    chip.style.transform = 'translate(-50%,-50%) scale(1)';
-    requestAnimationFrame(function(){
-      requestAnimationFrame(function(){
-        chip.style.transform = 'translate(calc(-50% + ' + dx + 'px), calc(-50% + ' + dy + 'px)) scale(.4)';
-        chip.style.opacity = '0.1';
-      });
-    });
-    // Matches the 1.15s CSS transition; the cart shakes as the chip lands
-    // rather than while it is still travelling.
-    setTimeout(function(){ chip.remove(); animateCartIcon(); }, 1150);
-  }catch(e){ animateCartIcon(); }
+    const started = performance.now();
+    function frame(now){
+      const raw = Math.min(1, (now - started) / DURATION);
+      // easeInOutCubic: gentle departure, gentle arrival, no rocket effect.
+      const t = raw < 0.5 ? 4*raw*raw*raw : 1 - Math.pow(-2*raw + 2, 3) / 2;
+      const inv = 1 - t;
+
+      // Quadratic Bézier: (1-t)^2*P0 + 2(1-t)t*P1 + t^2*P2
+      const x = inv*inv*origin.x + 2*inv*t*ctrlX + t*t*endX;
+      const y = inv*inv*origin.y + 2*inv*t*ctrlY + t*t*endY;
+
+      // Shrinks as it travels, and only fades near the very end so it stays
+      // readable for most of the flight.
+      const scale = 1 - 0.55 * t;
+      const opacity = raw < 0.75 ? 1 : 1 - ((raw - 0.75) / 0.25);
+
+      chip.style.transform = 'translate(' + (x - 18) + 'px,' + (y - 14) + 'px) scale(' + scale + ')';
+      chip.style.opacity = String(opacity);
+
+      if(raw < 1){ requestAnimationFrame(frame); }
+      else { chip.remove(); animateCartIcon(); }
+    }
+    requestAnimationFrame(frame);
+  }catch(e){
+    // Decorative only — the cart update already happened before this ran.
+    animateCartIcon();
+  }
 }
 
 function animateCartIcon(){
@@ -4764,7 +4801,11 @@ async function renderProductDetail(id){
 
   renderReviewsTab(p, reviewsBody.reviews || [], eligibility);
 
-  if(detail){
+  // Guard on detail.product, not just detail: an error body, a 404 payload or
+  // any unexpected shape is still a truthy object, and reading .short_desc off
+  // an undefined product threw a TypeError that killed the whole product page
+  // render — including the parts that had already loaded fine.
+  if(detail && detail.product){
     const full = detail.product;
     const images = Array.isArray(detail.images) ? detail.images : [];
     if(full.short_desc){ const el = qs('#pdShortDesc'); if(el) el.textContent = full.short_desc; }

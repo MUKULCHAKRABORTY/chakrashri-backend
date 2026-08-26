@@ -231,6 +231,48 @@ scripts/        # create-admin.js, run-migrations.js, test-db-connection.js,
 test/           # unit.test.js — tests against the REAL application modules, see "Round 4" below
 ```
 
+## Round 16 — I Broke position:sticky While Fixing the Checkout Overflow
+
+**Root cause of #31 not working, and it was my own regression.**
+
+The Round 15 checkout fix put `overflow-x:hidden` on `<html>` and `<body>`.
+That is a well-known CSS trap: **any ancestor with `overflow` other than
+`visible` becomes the scroll container for `position:sticky` descendants**, so
+sticky elements stop sticking to the viewport and scroll away with the page.
+
+The #31 code (the mobile guard in `handleHeaderScroll` and the CSS override)
+was present and correct the whole time. It could never work, because the
+header's `position:sticky` had already been disabled by a rule added several
+hundred lines earlier for an unrelated reason.
+
+This affected **six** sticky elements, not just the header: `.site-header`,
+`.shop-sidebar`, `.cart-summary`, `.bk-summary`, `.policy-nav` and
+`.admin-nav`. All of them silently stopped sticking.
+
+Fixed by switching to `overflow-x: clip`, which prevents sideways scrolling
+**without** creating a scroll container, so sticky keeps working. It is only a
+safety net now in any case — the actual overflow cause was removed in Round 15
+with `min-width:0` on the layout containers.
+
+**Lesson recorded here deliberately:** a CSS rule added for one page can
+silently disable a layout behaviour used on every page. The checkout fix was
+verified against the checkout and nowhere else, which is exactly why this got
+through.
+
+### #33 — the flight animation, properly this time
+
+Changing the CSS transition duration was not enough: the motion was still a
+straight line, which reads as mechanical however slow it is. Replaced with a
+frame-by-frame **quadratic Bézier arc** driven by `requestAnimationFrame` — the
+chip lifts away from the button, arcs across, and settles into the cart, the
+way a thrown object moves. 1.5s with `easeInOutCubic` for a gentle departure
+and arrival, shrinking to 45%, and holding full opacity for the first 75% of
+the flight so it stays readable. The competing CSS transition was removed,
+since it would have flattened the curve back to a straight line.
+
+Verified by simulating the path frame by frame: it arcs above both endpoints,
+lands exactly on the cart, and the easing curve is correct.
+
 ## Round 15 — Tasks 31-36, and admitting the #27 fix was wrong
 
 ### #32 — the previous checkout "fix" made things worse
