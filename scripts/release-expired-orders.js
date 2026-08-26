@@ -17,7 +17,10 @@ require('dotenv').config();
 const db = require('../src/config/db');
 const { restoreOrderStock } = require('../src/utils/stock');
 
-const EXPIRY_MINUTES = parseInt(process.env.ORDER_RESERVATION_EXPIRY_MINUTES || '30', 10);
+// Guarded: a malformed env var would otherwise produce `interval 'NaN minutes'`
+// and fail the sweep silently every run, quietly leaking reserved stock.
+const RAW_EXPIRY = parseInt(process.env.ORDER_RESERVATION_EXPIRY_MINUTES || '30', 10);
+const EXPIRY_MINUTES = Number.isFinite(RAW_EXPIRY) && RAW_EXPIRY > 0 ? RAW_EXPIRY : 30;
 
 async function main() {
   const { rows: expired } = await db.query(

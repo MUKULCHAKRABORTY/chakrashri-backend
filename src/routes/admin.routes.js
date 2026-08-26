@@ -96,7 +96,16 @@ router.patch('/orders/:id/status', async (req, res) => {
     );
     if (!existingRows.length) return res.status(404).json({ error: 'Order not found.' });
     const existingOrder = existingRows[0];
-    const moneyWasCollected = ['paid', 'processing', 'shipped', 'delivered'].includes(existingOrder.status);
+    // #34 — "Money was collected" must mean money ACTUALLY captured through the
+    // gateway, not merely that the order reached a fulfilment status. A COD
+    // order sitting at 'processing' has had nothing captured: the cash is
+    // collected at the door. Blocking 'cancelled' for it was wrong — there is
+    // nothing to refund, and it left staff with no way to cancel a COD order
+    // the customer had called to cancel. The gate is now the presence of a real
+    // Razorpay payment id, which is the only thing that can actually be refunded.
+    const hasCapturedPayment = !!existingOrder.razorpay_payment_id;
+    const reachedFulfilment = ['paid', 'processing', 'shipped', 'delivered'].includes(existingOrder.status);
+    const moneyWasCollected = hasCapturedPayment && reachedFulfilment;
 
     // A paid order can no longer be silently "cancelled" — that would restore
     // stock and hide the order from active fulfillment while Razorpay still
@@ -105,7 +114,7 @@ router.patch('/orders/:id/status', async (req, res) => {
     // 'refunded', which actually returns it via the Razorpay Refunds API below.
     if (status === 'cancelled' && moneyWasCollected) {
       return res.status(409).json({
-        error: 'This order has already been paid. Use "refunded" instead of "cancelled" so the customer actually gets their money back.'
+        error: 'This order has a captured online payment. Use "refunded" instead of "cancelled" so the customer actually gets their money back.'
       });
     }
 

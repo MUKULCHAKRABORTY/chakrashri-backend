@@ -78,6 +78,16 @@ html{ scroll-behavior:smooth; -webkit-text-size-adjust:100%; }
    scrollable content — which is exactly the reported symptom. The guard has
    to be on BOTH html and body, with an explicit width ceiling. */
 html{ overflow-x:hidden; max-width:100%; }
+
+/* #32 — The single most common cause of mobile horizontal overflow: grid and
+   flex children default to `min-width:auto`, so they will not shrink below
+   their content's intrinsic width and instead push their container past the
+   screen. Applying min-width:0 to the layout containers used across the site
+   removes the cause, rather than clipping the symptom with overflow:hidden
+   (which cuts content off, as the checkout form did). Individual elements can
+   still opt back in where a minimum genuinely matters. */
+.container > *, .checkout-layout > *, .cart-layout > *, .product-grid > *,
+.pd-layout > *, .booking-flow > *, .field-row > *, .field-row-3 > *{ min-width:0; }
 body{
   font-family: var(--f-body);
   color: var(--text);
@@ -268,6 +278,12 @@ p{ color: var(--text-soft); }
    ============================================================ */
 .site-header{ background: var(--ink); position:sticky; top:0; z-index:59; transition: box-shadow var(--dur), transform .35s var(--ease); box-shadow:0 1px 0 rgba(201,162,39,.28); }
 .site-header.is-hidden{ transform:translateY(-100%); }
+/* #31 — Belt-and-braces: even if is-hidden were applied by some other path,
+   the mobile header must remain visible. */
+@media (max-width:900px){
+  .site-header{ position:sticky; top:0; }
+  .site-header.is-hidden{ transform:none; }
+}
 .site-header.is-scrolled{ box-shadow: 0 6px 24px rgba(0,0,0,.28); }
 .header-main{ padding: 18px 0; }
 .header-main .container{ display:flex; align-items:center; gap:var(--sp-6); }
@@ -581,26 +597,35 @@ p{ color: var(--text-soft); }
    The stepper is deliberately ALWAYS visible (not hover-revealed): the old
    hover bar was unreachable on touch, which is most of the traffic.
 ============================================================ */
-.p-quickadd{ position:absolute; right:10px; bottom:10px; z-index:4; }
-.qa-add{ width:42px; height:42px; border-radius:50%; background:#fff; color:var(--oxblood);
-  border:1.5px solid var(--oxblood); font-size:1.5rem; font-weight:400; line-height:1;
-  display:flex; align-items:center; justify-content:center; box-shadow:0 3px 10px rgba(43,10,18,.16);
-  transition:transform .18s var(--ease), background .18s, color .18s; }
-.qa-add:hover{ background:var(--oxblood); color:#fff; transform:scale(1.09); }
-.qa-add:active{ transform:scale(.92); }
+/* #33 — Both controls sit lower on the image so they read as a pair anchored
+   to the bottom edge rather than floating in the middle of the artwork. */
+.p-quickadd{ position:absolute; right:12px; bottom:-4px; z-index:4; }
+.qa-add{ width:52px; height:52px; border-radius:50%; background:#fff; color:var(--oxblood);
+  border:2px solid var(--oxblood); font-size:1.9rem; font-weight:700; line-height:1;
+  display:flex; align-items:center; justify-content:center; box-shadow:0 4px 14px rgba(43,10,18,.2);
+  position:relative; overflow:hidden; isolation:isolate;
+  transition:transform .2s var(--ease), color .25s ease, border-color .25s ease; }
+/* The gold fill slides in from the bottom rather than simply fading — a
+   directional wipe reads as more deliberate than an opacity change. */
+.qa-add::before{ content:''; position:absolute; inset:0; z-index:-1;
+  background:linear-gradient(180deg, var(--gold-lt), var(--gold));
+  transform:translateY(100%); transition:transform .32s cubic-bezier(.22,.61,.36,1); }
+.qa-add:hover::before, .qa-add:focus-visible::before{ transform:translateY(0); }
+.qa-add:hover, .qa-add:focus-visible{ color:var(--ink); border-color:var(--gold); transform:scale(1.08); }
+.qa-add:active{ transform:scale(.93); }
 
 .qa-stepper{ display:flex; align-items:center; background:#fff; border:1.5px solid var(--oxblood);
   border-radius:var(--radius-full); box-shadow:0 3px 10px rgba(43,10,18,.16); overflow:hidden; }
-.qa-btn{ width:34px; height:40px; color:var(--oxblood); font-size:1.25rem; line-height:1;
+.qa-btn{ width:38px; height:46px; color:var(--oxblood); font-size:1.45rem; font-weight:700; line-height:1;
   display:flex; align-items:center; justify-content:center; transition:background .15s; }
 .qa-btn:hover{ background:var(--parchment); }
 .qa-btn:active{ background:var(--gold-lt); }
-.qa-count{ min-width:26px; text-align:center; font-weight:700; font-size:.95rem; color:var(--ink); }
+.qa-count{ min-width:30px; text-align:center; font-weight:700; font-size:1.02rem; color:var(--ink); }
 .qa-notify{ padding:9px 15px; border-radius:var(--radius-full); background:var(--ink); color:var(--gold-lt);
   font-size:.72rem; font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
 
 /* Discount tag — mirrored to the left of the stepper */
-.p-discount{ position:absolute; left:10px; bottom:10px; z-index:4; display:inline-flex; align-items:center; gap:3px;
+.p-discount{ position:absolute; left:12px; bottom:6px; z-index:4; display:inline-flex; align-items:center; gap:3px;
   padding:6px 11px 6px 8px; border-radius:var(--radius-full); font-size:.8rem; font-weight:800; color:#fff;
   background:linear-gradient(135deg, #2e9e5b, #1f7d45); box-shadow:0 3px 10px rgba(31,125,69,.4); }
 .p-discount svg{ width:13px; height:13px; }
@@ -627,10 +652,14 @@ p{ color: var(--text-soft); }
 @keyframes dtBounce{ 0%,100%{ transform:translateY(0);} 45%{ transform:translateY(-4px);} 60%{ transform:translateY(0);} }
 
 /* The count chip that flies into the cart icon */
-.fly-chip{ position:fixed; z-index:300; pointer-events:none; transform:translate(-50%,-50%);
-  background:var(--oxblood); color:#fff; font-size:.78rem; font-weight:700; padding:4px 10px;
-  border-radius:var(--radius-full); box-shadow:0 4px 14px rgba(43,10,18,.35);
-  transition:transform .6s cubic-bezier(.35,-0.25,.6,1.1), opacity .6s ease-in; }
+/* #33 — Slower and gentler. The previous 0.6s with an overshoot curve read as
+   a rocket; 1.15s with an ease-out arc lets the eye actually follow the count
+   from the button to the cart, which is the whole point of the effect. */
+.fly-chip{ position:fixed; z-index:300; pointer-events:none;
+  background:var(--oxblood); color:var(--gold-lt); font-size:.86rem; font-weight:800; padding:6px 13px;
+  border-radius:var(--radius-full); box-shadow:0 6px 18px rgba(43,10,18,.4);
+  will-change:transform, opacity;
+  transition:transform 1.15s cubic-bezier(.34,.64,.35,1), opacity 1.15s cubic-bezier(.6,0,.9,.4); }
 
 .cart-shake{ animation:cartShake .6s cubic-bezier(.36,.07,.19,.97); }
 @keyframes cartShake{
@@ -643,11 +672,11 @@ p{ color: var(--text-soft); }
 }
 
 @media (max-width:560px){
-  .p-quickadd{ right:7px; bottom:7px; }
-  .qa-add{ width:36px; height:36px; font-size:1.3rem; }
-  .qa-btn{ width:29px; height:34px; font-size:1.1rem; }
-  .qa-count{ min-width:20px; font-size:.85rem; }
-  .p-discount{ left:7px; bottom:7px; padding:4px 8px 4px 6px; font-size:.7rem; }
+  .p-quickadd{ right:8px; bottom:-2px; }
+  .qa-add{ width:44px; height:44px; font-size:1.6rem; border-width:2px; }
+  .qa-btn{ width:32px; height:38px; font-size:1.25rem; }
+  .qa-count{ min-width:24px; font-size:.9rem; }
+  .p-discount{ left:8px; bottom:5px; padding:4px 9px 4px 6px; font-size:.72rem; }
   .p-discount svg{ width:11px; height:11px; }
 }
 @media (prefers-reduced-motion: reduce){
@@ -839,7 +868,27 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
   .vl-price{ font-size:.95rem; }
 }
 
-.pd-buy-row{ display:flex; align-items:center; gap:14px; margin-bottom:22px; flex-wrap:wrap; }
+/* #35 — Add to Cart and Buy Now are equal-weight choices, so they get equal
+   width. `flex:1` with `min-width:0` (not a fixed width) keeps them matched at
+   any container size, and `flex-basis:0` stops the longer label from claiming
+   more room than the shorter one. */
+.pd-buy-row{ display:flex; align-items:center; gap:12px; margin-bottom:22px; flex-wrap:wrap; }
+.pd-buy-row #pdAtcBtn, .pd-buy-row #pdBuyNowBtn{ flex:1 1 0; min-width:0; justify-content:center;
+  padding:15px 18px; white-space:nowrap; }
+.pd-buy-row .qty-stepper{ flex:none; }
+.pd-buy-row .pd-wish-btn{ flex:none; }
+
+/* Mobile: quantity stepper and wishlist share the first row, the two actions
+   sit full-width beneath so neither label is cramped. */
+@media (max-width:640px){
+  .pd-buy-row{ gap:10px; }
+  .pd-buy-row .qty-stepper{ order:1; }
+  .pd-buy-row .pd-wish-btn{ order:2; margin-left:auto; }
+  .pd-buy-row #pdAtcBtn{ order:3; flex:1 1 100%; }
+  .pd-buy-row #pdBuyNowBtn{ order:4; flex:1 1 100%; }
+  .pd-buy-row #pdAtcBtn, .pd-buy-row #pdBuyNowBtn{ padding:14px 16px; font-size:.9rem; }
+  .pd-wish-btn{ width:46px; height:46px; }
+}
 .qty-stepper{ display:flex; align-items:center; border:1.5px solid var(--line); border-radius:var(--radius-full); overflow:hidden; flex-shrink:0; }
 .qty-stepper button{ width:44px; height:50px; display:flex; align-items:center; justify-content:center; font-size:1.1rem; color:var(--oxblood); transition:background var(--dur); }
 .qty-stepper button:hover{ background:var(--parchment); }
@@ -1095,20 +1144,27 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
 /* ============================================================
    AI CHAT WIDGET
    ============================================================ */
-.chat-fab{ position:fixed; bottom:26px; right:26px; width:64px; height:64px; border-radius:50%; background:var(--oxblood); color:#fff; display:flex; align-items:center; justify-content:center; box-shadow:var(--shadow-lg); z-index:100; transition:transform var(--dur), background var(--dur); }
+.chat-fab{ position:fixed; bottom:26px; right:26px; width:56px; height:56px; border-radius:50%; background:var(--oxblood); color:#fff; display:flex; align-items:center; justify-content:center; box-shadow:var(--shadow-lg); z-index:100; transition:transform var(--dur), background var(--dur); }
 .chat-fab:hover{ transform:scale(1.07); background:var(--oxblood-dk); }
 /* WhatsApp quick-contact, stacked directly above the Chakra AI button so the
    two read as one contact cluster rather than competing corner buttons. */
-.wa-fab{ position:fixed; right:26px; bottom:100px; width:54px; height:54px; border-radius:50%;
+/* #36 — Same 56px as the chat button, stacked with an even 14px gap
+   (26 + 56 + 14 = 96) so the two read as one deliberate cluster. */
+.wa-fab{ position:fixed; right:26px; bottom:96px; width:56px; height:56px; border-radius:50%;
   background:#25D366; color:#fff; display:flex; align-items:center; justify-content:center;
   box-shadow:var(--shadow-lg); z-index:100; transition:transform var(--dur), box-shadow var(--dur); }
 .wa-fab:hover{ transform:scale(1.09); box-shadow:0 12px 30px rgba(37,211,102,.45); }
-.wa-fab svg{ width:29px; height:29px; }
+.wa-fab svg{ width:28px; height:28px; }
 .wa-fab::after{ content:''; position:absolute; inset:0; border-radius:50%; box-shadow:0 0 0 0 rgba(37,211,102,.55); animation:waPulse 2.4s ease-out infinite; }
 @keyframes waPulse{ 0%{ box-shadow:0 0 0 0 rgba(37,211,102,.5);} 70%{ box-shadow:0 0 0 14px rgba(37,211,102,0);} 100%{ box-shadow:0 0 0 0 rgba(37,211,102,0);} }
-@media (max-width:640px){ .wa-fab{ right:18px; bottom:88px; width:48px; height:48px; } .wa-fab svg{ width:25px; height:25px; } }
+@media (max-width:640px){
+  .chat-fab{ right:18px; bottom:18px; width:50px; height:50px; }
+  .chat-fab svg{ width:23px; height:23px; }
+  .wa-fab{ right:18px; bottom:80px; width:50px; height:50px; }  /* 18 + 50 + 12 gap */
+  .wa-fab svg{ width:25px; height:25px; }
+}
 @media (prefers-reduced-motion: reduce){ .wa-fab::after{ animation:none; } }
-.chat-fab svg{ width:27px; height:27px; }
+.chat-fab svg{ width:26px; height:26px; }
 .chat-fab .ping{ position:absolute; inset:0; border-radius:50%; border:2px solid var(--gold-lt); animation:ping 2.4s ease-out infinite; }
 @keyframes ping{ 0%{ transform:scale(1); opacity:.8; } 100%{ transform:scale(1.5); opacity:0; } }
 @media (prefers-reduced-motion:reduce){ .chat-fab .ping{ animation:none; display:none; } }
@@ -1289,10 +1345,23 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
    separators and the payment-logo rows all fought for space and pushed the
    layout wider than the viewport. */
 @media (max-width:640px){
-  /* Belt-and-braces: every descendant of the checkout is capped at the
-     container width. Inline styles like max-width:320px on the UPI field and
-     any future markup are covered without needing to be listed individually. */
-  #page-checkout, #page-checkout *{ max-width:100%; }
+  /* THE ACTUAL FIX (#32).
+     `max-width:100%` on every descendant was WRONG and is removed: once a
+     parent is already wider than the screen, capping children at 100% of that
+     parent just clips them — which is why the form boxes appeared cut off on
+     the right.
+
+     The real cause is that grid and flex children default to `min-width:auto`,
+     meaning they refuse to shrink below their content's intrinsic width and
+     push the track past the container. `min-width:0` is what actually permits
+     them to shrink, so nothing overflows in the first place and nothing needs
+     clipping. */
+  .checkout-layout, .checkout-layout > *{ min-width:0; }
+  .checkout-card, .checkout-card > *{ min-width:0; }
+  .field-row, .field-row-3, .field-row > *, .field-row-3 > *{ min-width:0; }
+  /* Inputs are width:100% inside a border-box layout, so they now fit exactly
+     rather than being trimmed. */
+  #page-checkout input, #page-checkout select, #page-checkout textarea{ width:100%; min-width:0; }
   #page-checkout .container{ padding-left:14px; padding-right:14px; }
   .checkout-layout{ gap:14px; }
   .checkout-card{ padding:16px 14px; margin-bottom:14px; border-radius:var(--radius-sm); }
@@ -1312,7 +1381,7 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
   .pay-method .tags{ gap:4px; flex-wrap:wrap; }
   .pay-method .tags span{ font-size:.6rem; padding:2px 5px; }
   .pay-method .pay-method-body{ padding-top:10px; }
-  .pay-method .pay-method-body .field{ max-width:100% !important; }
+  .pay-method .pay-method-body .field{ max-width:none !important; width:100%; }
 
   .summary-line{ font-size:.86rem; }
   .summary-line.total{ font-size:1rem; }
@@ -4099,11 +4168,18 @@ function flyToCart(origin){
     const dx = (to.left + to.width / 2) - origin.x;
     const dy = (to.top + to.height / 2) - origin.y;
 
+    // The chip is centred on the button via its own transform, so the travel
+    // transform must preserve that -50%/-50% or it would jump on the first frame.
+    chip.style.transform = 'translate(-50%,-50%) scale(1)';
     requestAnimationFrame(function(){
-      chip.style.transform = 'translate(' + dx + 'px,' + dy + 'px) scale(.35)';
-      chip.style.opacity = '0.15';
+      requestAnimationFrame(function(){
+        chip.style.transform = 'translate(calc(-50% + ' + dx + 'px), calc(-50% + ' + dy + 'px)) scale(.4)';
+        chip.style.opacity = '0.1';
+      });
     });
-    setTimeout(function(){ chip.remove(); animateCartIcon(); }, 620);
+    // Matches the 1.15s CSS transition; the cart shakes as the chip lands
+    // rather than while it is still travelling.
+    setTimeout(function(){ chip.remove(); animateCartIcon(); }, 1150);
   }catch(e){ animateCartIcon(); }
 }
 
@@ -4261,7 +4337,7 @@ function miniCartRowHTML(x){
   return '<div class="mc-row">' +
     '<div class="mc-thumb" style="' + mediaStyle(p.cat,0) + 'display:flex;align-items:center;justify-content:center;">' + productThumbInnerHTML(p, l) + '</div>' +
     '<div class="mc-info">' +
-      '<span class="n">' + p.name + '</span>' +
+      '<span class="n">' + escapeHtml(p.name) + '</span>' +
       '<span class="meta">' + (l.variant ? l.variant + ' &middot; ' : '') + formatINR(p.price) + '</span>' +
       '<div class="price-row">' +
         '<div class="mc-qty">' +
@@ -4362,7 +4438,7 @@ function openQuickView(id){
     '<div class="qv-media" style="' + mediaStyle(p.cat,0) + '">' + productThumbInnerHTML(p) + '</div>' +
     '<div class="qv-info">' +
       '<div class="p-cat">' + catLabel(p.cat) + '</div>' +
-      '<h3 style="margin-bottom:10px;">' + p.name + '</h3>' +
+      '<h3 style="margin-bottom:10px;">' + escapeHtml(p.name) + '</h3>' +
       '<div class="p-rating" style="margin-bottom:14px;">' + starsHTML(p.rating) + '<span class="cnt">(' + p.reviews + ' reviews)</span></div>' +
       '<div class="pd-price" style="margin-bottom:14px;"><span class="now" style="font-size:1.5rem;">' + formatINR(p.price) + '</span>' + wasHTML + '</div>' +
       '<p style="margin-bottom:18px;" id="qvShortDesc">' + escapeHtml(p.shortDesc) + '</p>' +
@@ -4586,7 +4662,7 @@ function handleSearchInput(val){
     suggestEl.innerHTML = matches.map(function(p){
       return '<div class="search-suggest-item" onclick="selectSearchSuggestion(\'' + p.id + '\')">' +
         '<div class="ic">' + productMediaSVG(p.cat) + '</div>' +
-        '<div class="info"><div class="n">' + p.name + '</div><div class="p">' + formatINR(p.price) + '</div></div>' +
+        '<div class="info"><div class="n">' + escapeHtml(p.name) + '</div><div class="p">' + formatINR(p.price) + '</div></div>' +
       '</div>';
     }).join('');
   }
@@ -4638,8 +4714,8 @@ async function renderProductDetail(id){
 
   qs('#pdInfo').innerHTML =
     '<div class="p-cat">' + catLabel(p.cat) + '</div>' +
-    '<h1>' + p.name + '</h1>' +
-    '<div class="pd-rating-row"><span onclick="openProductTab(\'reviews\')" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px;" title="Read all reviews">' + starsHTML(p.rating) + '<span class="cnt">' + p.rating + ' (' + p.reviews + ' reviews)</span></span><span class="sku">SKU: ' + p.sku + '</span></div>' +
+    '<h1>' + escapeHtml(p.name) + '</h1>' +
+    '<div class="pd-rating-row"><span onclick="openProductTab(\'reviews\')" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px;" title="Read all reviews">' + starsHTML(p.rating) + '<span class="cnt">' + p.rating + ' (' + p.reviews + ' reviews)</span></span><span class="sku">SKU: ' + escapeHtml(p.sku) + '</span></div>' +
     '<div class="pd-price">' + '<span class="now" id="pdPriceNow">' + formatINR(p.price) + '</span>' + wasHTML + '</div>' +
     '<p class="pd-desc" id="pdShortDesc">' + escapeHtml(p.shortDesc) + '</p>' +
     optionsHTML +
@@ -5058,28 +5134,11 @@ function seededPick(arr, seedStr, offset){
   for(let i=0;i<seedStr.length;i++) seed += seedStr.charCodeAt(i);
   return arr[(seed + offset) % arr.length];
 }
-function reviewsHTML(p){
-  const texts = REVIEW_TEXT[p.cat] || REVIEW_TEXT.idols;
-  const revs = [0,1,2].map(function(i){
-    return { name: seededPick(REVIEW_NAMES, p.id, i*3), text: seededPick(texts, p.id, i), rating: Math.max(3, Math.min(5, Math.round(p.rating) - (i===2?1:0))) };
-  });
-  const dist = [5,4,3,2,1].map(function(star){
-    let pct;
-    const rounded = Math.round(p.rating);
-    if(star === rounded) pct = 62;
-    else if(star === rounded-1) pct = 22;
-    else pct = Math.max(2, 10 - Math.abs(star-p.rating)*8);
-    return { star:star, pct: Math.round(pct) };
-  });
-  let html = '<div class="review-summary">' +
-    '<div class="review-avg"><div class="num">' + p.rating + '</div>' + starsHTML(p.rating) + '<div style="font-size:.78rem;color:var(--text-mute);margin-top:6px;">' + p.reviews + ' reviews</div></div>' +
-    '<div class="review-bars">' + dist.map(function(d){ return '<div class="review-bar-row"><span>' + d.star + '★</span><div class="track"><div class="fill" style="width:' + d.pct + '%;"></div></div><span>' + d.pct + '%</span></div>'; }).join('') + '</div>' +
-  '</div>';
-  html += revs.map(function(r){
-    return '<div class="review-item"><div class="top"><div class="who">' + r.name + '<span class="v">Verified Purchase</span></div><div class="date">' + starsHTML(r.rating) + '</div></div><p>' + r.text + '</p></div>';
-  }).join('');
-  return html;
-}
+/* The old fake-review generator was removed: it fabricated reviews with
+   invented names and labelled every one "Verified Purchase", which is
+   misleading to customers. Real reviews are rendered by renderReviewsTab()
+   from the product_reviews table, gated to genuine delivered purchases. */
+
 function renderRelatedProducts(p){
   const related = PRODUCTS.filter(function(x){ return x.cat === p.cat && x.id !== p.id; }).slice(0,4);
   renderGridInto('relatedGrid', related);
@@ -5102,7 +5161,7 @@ function renderCartPage(){
     return '<div class="cart-row">' +
       '<div class="cart-prod" data-label="Product">' +
         '<div class="cart-thumb" style="' + mediaStyle(p.cat,0) + 'display:flex;align-items:center;justify-content:center;">' + productThumbInnerHTML(p, l) + '</div>' +
-        '<div><div class="n">' + p.name + '</div><div class="meta">' + (l.variant ? l.variant : catLabel(p.cat)) + '</div>' +
+        '<div><div class="n">' + escapeHtml(p.name) + '</div><div class="meta">' + escapeHtml(l.variant ? l.variant : catLabel(p.cat)) + '</div>' +
           '<span class="cart-remove-x" onclick="removeFromCart(\'' + p.id + '\',\'' + l.variant + '\')"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg> Remove</span>' +
         '</div>' +
       '</div>' +
@@ -5238,7 +5297,7 @@ function renderCheckoutPage(){
   if(emptyEl) emptyEl.style.display = 'none';
   qs('#checkoutOrderItems').innerHTML = items.map(function(x){
     const p = x.product, l = x.line;
-    return '<div class="order-review-item"><div class="thumb" style="' + mediaStyle(p.cat,0) + 'display:flex;align-items:center;justify-content:center;">' + productThumbInnerHTML(p, l) + '</div><div class="n"><b>' + p.name + '</b>' + (l.variant?l.variant+' &middot; ':'') + 'Qty ' + l.qty + '</div><div class="amt">' + formatINR(p.price*l.qty) + '</div></div>';
+    return '<div class="order-review-item"><div class="thumb" style="' + mediaStyle(p.cat,0) + 'display:flex;align-items:center;justify-content:center;">' + productThumbInnerHTML(p, l) + '</div><div class="n"><b>' + escapeHtml(p.name) + '</b>' + (l.variant?escapeHtml(l.variant)+' &middot; ':'') + 'Qty ' + l.qty + '</div><div class="amt">' + formatINR(p.price*l.qty) + '</div></div>';
   }).join('');
   updateCheckoutTotals();
 }
@@ -5452,8 +5511,8 @@ function renderPujaPage(){
   qs('#pujaSvcGrid').innerHTML = PUJA_SERVICES.map(function(s){
     return '<div class="svc-card ' + (selectedPuja===s.id?'selected':'') + '" onclick="selectPujaService(\'' + s.id + '\')">' +
       '<div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">' + s.icon + '</svg></div>' +
-      '<h4>' + s.name + '</h4><p>' + s.desc + '</p>' +
-      '<div class="meta-row"><span class="price">' + formatINR(s.price) + '</span><span class="dur"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>' + s.duration + '</span></div>' +
+      '<h4>' + escapeHtml(s.name) + '</h4><p>' + escapeHtml(s.desc) + '</p>' +
+      '<div class="meta-row"><span class="price">' + formatINR(s.price) + '</span><span class="dur"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>' + escapeHtml(s.duration) + '</span></div>' +
     '</div>';
   }).join('');
   const dateEl = qs('#pujaDate');
@@ -5506,7 +5565,7 @@ function renderPujaSummary(){
   const dateDisplay = dateVal ? new Date(dateVal + 'T00:00:00').toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' }) : 'Not selected';
   const modeLabel = pujaMode === 'home' ? 'Home Visit' : pujaMode === 'online' ? 'Online Sankalp' : 'At Temple';
   el.innerHTML = '<h4>Your Booking</h4>' +
-    '<div class="row"><span>Puja</span><strong>' + svc.name + '</strong></div>' +
+    '<div class="row"><span>Puja</span><strong>' + escapeHtml(svc.name) + '</strong></div>' +
     '<div class="row"><span>Mode</span><strong>' + modeLabel + '</strong></div>' +
     '<div class="row"><span>Date</span><strong>' + dateDisplay + '</strong></div>' +
     '<div class="row"><span>Time Slot</span><strong>' + pujaSlot + '</strong></div>' +
@@ -5662,8 +5721,8 @@ function renderAstroPage(){
   qs('#astroSvcGrid').innerHTML = ASTRO_SERVICES.map(function(s){
     return '<div class="svc-card ' + (selectedAstro===s.id?'selected':'') + '" onclick="selectAstroService(\'' + s.id + '\')">' +
       '<div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">' + s.icon + '</svg></div>' +
-      '<h4>' + s.name + '</h4><p>' + s.desc + '</p>' +
-      '<div class="meta-row"><span class="price">' + formatINR(s.price) + '</span><span class="dur">' + s.duration + '</span></div>' +
+      '<h4>' + escapeHtml(s.name) + '</h4><p>' + escapeHtml(s.desc) + '</p>' +
+      '<div class="meta-row"><span class="price">' + formatINR(s.price) + '</span><span class="dur">' + escapeHtml(s.duration) + '</span></div>' +
     '</div>';
   }).join('');
   const dateEl = qs('#astroDate');
@@ -5713,7 +5772,7 @@ function renderAstroSummary(){
   const dateDisplay = dateVal ? new Date(dateVal+'T00:00:00').toLocaleDateString('en-IN',{ day:'numeric', month:'short', year:'numeric' }) : 'Not selected';
   const modeLabel = astroMode === 'call' ? 'Phone Call' : astroMode === 'video' ? 'Video Call' : 'Written Report';
   el.innerHTML = '<h4>Your Consultation</h4>' +
-    '<div class="row"><span>Service</span><strong>' + svc.name + '</strong></div>' +
+    '<div class="row"><span>Service</span><strong>' + escapeHtml(svc.name) + '</strong></div>' +
     '<div class="row"><span>Delivery</span><strong>' + modeLabel + '</strong></div>' +
     '<div class="row"><span>Date</span><strong>' + dateDisplay + '</strong></div>' +
     '<div class="row"><span>Time Slot</span><strong>' + astroSlot + '</strong></div>' +
@@ -5914,7 +5973,12 @@ function handleHeaderScroll(){
   const header = qs('#siteHeader');
   const y = window.scrollY;
   header.classList.toggle('is-scrolled', y > 40);
-  if(y > lastScrollY && y > 240) header.classList.add('is-hidden');
+  // #31 — On mobile the header stays pinned. The hide-on-scroll-down pattern
+  // reclaims vertical space on a large screen, but on a phone it removes the
+  // menu, search and cart from reach at exactly the moment someone is
+  // browsing, and reappears unpredictably. Desktop behaviour is unchanged.
+  const isMobile = window.matchMedia('(max-width: 900px)').matches;
+  if(!isMobile && y > lastScrollY && y > 240) header.classList.add('is-hidden');
   else header.classList.remove('is-hidden');
   lastScrollY = y;
   qs('#toTopBtn').classList.toggle('show', y > 500);

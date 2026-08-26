@@ -66,6 +66,7 @@ h1,h2,h3{ font-family:var(--f-display); font-weight:600; color:var(--ink); }
 }
 .login-mark{ width:52px; height:52px; margin:0 auto 14px; }
 .login-card h1{ font-size:1.5rem; letter-spacing:.02em; }
+.font-display{ font-family:var(--f-display); }
 .login-card .sub{ color:var(--oxblood); opacity:.75; font-size:.85rem; margin-top:4px; margin-bottom:26px; }
 .field{ text-align:left; margin-bottom:16px; }
 .field label{ display:block; font-size:.72rem; font-weight:600; letter-spacing:.08em; text-transform:uppercase; color:var(--oxblood); margin-bottom:6px; }
@@ -1895,7 +1896,10 @@ async function openOrderDetail(id){
 
 function renderOrderDetail(o, items){
   qs('#orderDrawerTitle').textContent = o.order_number;
-  const moneyCollected = ['paid','processing','shipped','delivered'].includes(o.status);
+  // Mirrors the server rule (#34): only a real captured Razorpay payment blocks
+  // "cancelled". A COD order has nothing to refund, so it stays cancellable.
+  const hasCapturedPayment = !!o.razorpay_payment_id;
+  const moneyCollected = hasCapturedPayment && ['paid','processing','shipped','delivered'].includes(o.status);
   const terminal = ['cancelled','refunded','payment_failed'].includes(o.status);
 
   const itemsHtml = items.map((i) => `
@@ -1913,7 +1917,10 @@ function renderOrderDetail(o, items){
   `).join('');
 
   const statusOptions = ['processing','shipped','delivered','cancelled','refunded']
-    .filter((s) => !(s === 'cancelled' && moneyCollected)) // matches server rule: paid orders can't be silently cancelled
+    .filter((s) => !(s === 'cancelled' && moneyCollected))
+    // "Refunded" is meaningless without a captured gateway payment — offering
+    // it for a COD order would just produce a server error.
+    .filter((s) => !(s === 'refunded' && !hasCapturedPayment))
     .map((s) => `<option value="${s}" ${o.status===s?'selected':''}>${s}</option>`).join('');
 
   qs('#orderDrawerBody').innerHTML = `
@@ -1925,6 +1932,10 @@ function renderOrderDetail(o, items){
     <dl class="kv">
       <dt>Customer</dt><dd>${esc(o.customer_name||'—')} (${esc(o.customer_email||'—')})</dd>
       <dt>Payment</dt><dd style="text-transform:uppercase;">${esc(o.payment_method)}</dd>
+      ${o.razorpay_order_id ? `<dt>Razorpay Order ID</dt><dd><code class="mono">${esc(o.razorpay_order_id)}</code></dd>` : ''}
+      ${o.razorpay_payment_id ? `<dt>Razorpay Payment ID</dt><dd><code class="mono">${esc(o.razorpay_payment_id)}</code></dd>` : ''}
+      ${o.refund_id ? `<dt>Razorpay Refund ID</dt><dd><code class="mono">${esc(o.refund_id)}</code></dd>` : ''}
+      ${o.coupon_code ? `<dt>Coupon Used</dt><dd>${esc(o.coupon_code)}</dd>` : ''}
       <dt>Subtotal</dt><dd>${paise(o.subtotal_paise)}</dd>
       <dt>Shipping</dt><dd>${paise(o.shipping_paise)}</dd>
       <dt>GST</dt><dd>${paise(o.gst_paise)}</dd>

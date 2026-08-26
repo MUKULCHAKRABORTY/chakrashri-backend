@@ -231,6 +231,69 @@ scripts/        # create-admin.js, run-migrations.js, test-db-connection.js,
 test/           # unit.test.js — tests against the REAL application modules, see "Round 4" below
 ```
 
+## Round 15 — Tasks 31-36, and admitting the #27 fix was wrong
+
+### #32 — the previous checkout "fix" made things worse
+
+The earlier attempt added `overflow-x:hidden` to `<html>` plus
+`#page-checkout *{ max-width:100% }`. Both were wrong, and together they caused
+the new symptom of form boxes cut off on the right:
+
+* `overflow-x:hidden` does not remove an overflow, it **clips** it. Content that
+  was previously reachable by scrolling simply disappeared.
+* `max-width:100%` on every descendant is measured against a parent that was
+  *already* too wide, so it trimmed children instead of fitting them.
+
+The actual cause was never addressed: grid and flex children default to
+`min-width:auto`, which means **they refuse to shrink below their content's
+intrinsic width** and push the track past the container. `.checkout-layout` is
+a grid, so its children forced the page wider than the phone.
+
+`min-width:0` on the layout containers is the real fix — it permits the shrink,
+so nothing overflows and nothing needs clipping. Applied to the checkout and to
+the other grid/flex containers site-wide, since the same trap applies to all of
+them.
+
+### Other tasks
+
+**#31** — the header hid on scroll-down. That reclaims space on a desktop, but
+on a phone it removes menu, search and cart from reach mid-browse. Now pinned
+below 900px, with the desktop behaviour untouched.
+
+**#33** — plus button enlarged (42→52px) with a bold glyph and a gold fill that
+wipes upward on hover rather than fading. Both controls dropped toward the
+image edge so they read as an anchored pair. The flight was 0.6s with an
+overshoot curve, which looked like a rocket; it is now 1.15s on an ease-out arc
+so the eye can actually follow the count to the cart. The JS timing and the
+transform centring were updated to match, otherwise the chip would have jumped
+on its first frame.
+
+**#34** — Razorpay Order ID, Payment ID and Refund ID now appear in the admin
+order view for dispute evidence. More importantly, a genuine logic bug was
+fixed: "money was collected" was inferred from the order *status*, so a COD
+order at 'processing' was treated as paid and could not be cancelled — even
+though nothing has been captured and there is nothing to refund. The gate is
+now the presence of a real `razorpay_payment_id`. "Refunded" is likewise hidden
+when there is no captured payment, since it could only ever error.
+
+**#35** — Add to Cart and Buy Now are equal-weight actions and now render at
+equal width via `flex:1 1 0`, so the longer label cannot claim more space. On
+mobile the quantity stepper and wishlist share a row with the two actions
+full-width beneath.
+
+**#36** — the two floating buttons were different sizes (64px vs 54px). Both
+are now 56px with an even 14px gap, and 50px with a 12px gap on mobile.
+
+### Full re-audit performed
+
+Systematic rather than spot-checked: syntax across all files; structure
+unchanged (24 sections, 14 pages, 4 modals, 2 drawers); every onclick handler
+resolves; no duplicate IDs or function declarations; tags balanced; **73
+backend routes cross-checked against 43 frontend calls with no mismatch**; 174
+SQL statements checked against the 21-table schema with no unknown column; and
+the cart, discount, rate-limiter and COD-cancel logic executed against real
+edge cases. 60/60 tests pass.
+
 ## Round 14c — A Third Audit Found the Worst Bug Yet
 
 Pushed the audit further rather than re-asserting the work was fine. It found a
