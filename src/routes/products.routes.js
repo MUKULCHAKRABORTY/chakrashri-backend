@@ -2,6 +2,7 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const db = require('../config/db');
 const { requireAuth, requireRole } = require('../middleware/auth');
+const { normaliseTerm } = require('../utils/text');
 
 const router = express.Router();
 
@@ -147,8 +148,8 @@ router.post(
            badge, stock_qty, hsn_code, gst_rate)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
          RETURNING *`,
-        [sku, name, slug, category, price_paise, mrp_paise, material, short_desc, long_desc,
-          badge, stock_qty, hsn_code, gst_rate]
+        [sku, name, slug, normaliseTerm(category), price_paise, mrp_paise, material, short_desc, long_desc,
+          normaliseTerm(badge), stock_qty, hsn_code, gst_rate]
       );
       await db.query(
         `INSERT INTO admin_audit_log (admin_user_id, action, entity_type, entity_id)
@@ -169,6 +170,25 @@ router.put('/:id', requireAuth, requireRole('admin', 'staff'), async (req, res) 
     'name', 'category', 'price_paise', 'mrp_paise', 'material', 'short_desc',
     'long_desc', 'badge', 'stock_qty', 'is_active', 'hsn_code', 'gst_rate'
   ];
+
+  // #19 — For a product with variants, stock_qty is DERIVED (a DB trigger keeps
+  // it equal to the sum of its active variants). The product form still posts a
+  // stock_qty field, so without this guard clicking "Save Product" would write
+  // the stale number from that field straight over the freshly-calculated
+  // total — which is exactly the "variant edits don't update the total" symptom.
+  // Silently dropping it is right here: the value isn't the admin's to set, and
+  // failing the whole save would block legitimate edits to name/price/etc.
+  let stockOverrideIgnored = false;
+  if (req.body.stock_qty !== undefined) {
+    const { rows: vc } = await db.query(
+      'SELECT COUNT(*)::int AS cnt FROM product_variants WHERE product_id = $1',
+      [req.params.id]
+    );
+    if (vc[0].cnt > 0) {
+      delete req.body.stock_qty;
+      stockOverrideIgnored = true;
+    }
+  }
   // The POST route validates types via express-validator; this route
   // previously had no equivalent check, so a malformed or malicious request
   // could set a negative price, negative stock, or an absurd GST rate.
@@ -186,6 +206,11 @@ router.put('/:id', requireAuth, requireRole('admin', 'staff'), async (req, res) 
 
   const updates = [];
   const params = [];
+  // #21 — canonical lowercase storage so "Malas"/"malas"/" MALAS " can never
+  // become three separate categories in the shop filter.
+  if (req.body.category !== undefined) req.body.category = normaliseTerm(req.body.category);
+  if (req.body.badge !== undefined) req.body.badge = normaliseTerm(req.body.badge);
+
   allowedFields.forEach((field) => {
     if (req.body[field] !== undefined) {
       params.push(req.body[field]);
@@ -206,7 +231,7 @@ router.put('/:id', requireAuth, requireRole('admin', 'staff'), async (req, res) 
        VALUES ($1, 'update_product', 'product', $2)`,
       [req.user.id, req.params.id]
     );
-    res.json({ product: result.rows[0] });
+    res.json({ product: result.rows[0], stockOverrideIgnored });
   } catch (err) {
     res.status(500).json({ error: 'Could not update product.' });
   }

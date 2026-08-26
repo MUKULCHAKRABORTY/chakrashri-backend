@@ -1,0 +1,33 @@
+# Keeps the Render free-tier API warm (#20).
+#
+# GitHub Actions runs this on GitHub's infrastructure, so it works even when
+# your own machine is off — unlike running scripts/keep-alive.js locally.
+#
+# Caveat worth knowing: GitHub throttles scheduled workflows on busy runners,
+# so the real interval can drift to 10-20 minutes. That is usually enough to
+# keep the instance warm, but it is best-effort, not a guarantee. A dedicated
+# uptime monitor (UptimeRobot / cron-job.org) is more reliable and also alerts
+# you when the site is actually down. A paid Render instance removes the need
+# for any of this.
+name: Keep API Warm
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'   # every 10 minutes
+  workflow_dispatch:          # lets you trigger it by hand to test
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping health endpoint
+        run: |
+          echo "Pinging at $(date -u)"
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 90 \
+            https://chakrashri-api.onrender.com/api/health)
+          echo "HTTP $code"
+          # A cold start can legitimately take ~50s, so only a hard failure fails the job.
+          if [ "$code" != "200" ]; then
+            echo "Health check did not return 200"
+            exit 1
+          fi

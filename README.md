@@ -231,6 +231,99 @@ scripts/        # create-admin.js, run-migrations.js, test-db-connection.js,
 test/           # unit.test.js — tests against the REAL application modules, see "Round 4" below
 ```
 
+## Round 13b — #21 Gaps Closed and #25 Mobile Fixes
+
+**#21 — two gaps found on re-check.** Badges are now stored lowercase
+(migration 012), but the storefront rendered custom badges verbatim, so a badge
+saved as "certified" displayed as *certified* rather than *Certified*. The
+storefront now title-cases badges and categories using the same rule as the
+backend's `displayTerm()`, so a value reads identically everywhere it appears.
+The admin category/badge fields also gained `datalist` suggestions listing what
+is already in use — normalisation already prevents duplicates, but showing the
+existing values prevents the confusion at the point it occurs.
+
+**#25 — checkout on small screens.** The only mobile rule was a single
+`grid-template-columns:1fr` at 900px; nothing below that. On a phone the 32px
+card padding, the fixed 40px step-indicator separators and the payment provider
+tag rows (GPay/PhonePe/Paytm, Visa/Mastercard/RuPay) all competed for space and
+pushed the layout past the viewport. Added proper 640px and 400px breakpoints
+covering padding, the step indicator, payment blocks, summary lines and field
+rows — including `min-width:0` on the flex/grid children, which is what
+actually allows them to shrink below their content width instead of overflowing.
+
+One detail worth noting: at 400px the step labels ("Cart", "Details & Payment")
+need to disappear, but they are bare text nodes rather than elements, so
+`display:none` on a child could never have worked. Collapsing them with
+`font-size:0` on the step and restoring the size on the `.num` child is the
+correct approach for unwrapped text.
+
+**#25 — admin topbar.** It had no mobile rules at all, and adding the Clear
+Site Cache button in the previous round made an existing squeeze into a genuine
+overflow: menu toggle + title + subtitle + two labelled buttons on one
+non-wrapping row. The buttons are now grouped in a wrapper that wraps as a
+unit, collapse to icon-only below 700px, and the subtitle is dropped to give
+the title room.
+
+Verified additive-only: sections 24, pages 14, modals 4 (unchanged), functions
+198 -> 199 (+1). 60/60 tests pass.
+
+## Round 13 — Tasks 19-24
+
+**#19 — variant edits not updating product total.** Two real causes, both fixed:
+
+1. `stock_qty` was in the product PUT's allowed fields. The product form always
+   posts that field, so clicking **Save Product** wrote the stale number from
+   the form straight over the freshly-calculated total — which is exactly the
+   reported symptom. The server now ignores `stock_qty` for any product that
+   has variants (silently, because the value isn't the admin's to set and
+   failing the whole save would block legitimate edits to name/price).
+2. The trigger only recalculated while the product still had variant rows, so a
+   HARD delete of the last variant left the old total frozen in place — stale
+   stock that could still be sold. It is now unconditional, and resets to 0
+   when the last variant goes.
+
+The admin form now also shows that stock field as read-only with an explanation
+when variants exist, and refreshes the derived total immediately after any
+variant is added, edited or removed — so the rule is visible rather than
+surprising.
+
+**#20 — Render free-tier sleeping.** Being straight about this: the only way to
+genuinely guarantee no cold starts is a paid instance (~$7/month). Everything
+else is a workaround. Two are provided — `.github/workflows/keep-alive.yml`
+(runs on GitHub's infrastructure, so it works with your machine off) and
+`npm run keep-alive`. **The free tier allows 750 instance-hours/month against a
+~730-hour month, so keeping ONE service awake fits — just barely, and only if
+you run exactly one free service.** A dedicated uptime monitor (UptimeRobot,
+cron-job.org) is the most reliable free option and alerts you on real downtime.
+
+**#21 — duplicate categories/badges.** These were free text, so "Malas",
+"malas" and " MALAS " became three separate filter entries. They are now stored
+canonically (trimmed, whitespace-collapsed, lowercased) and title-cased for
+display. Migration 012 merges existing duplicates, and empty-string badges
+collapse to NULL.
+
+**#22 — booking order.** The two booking arrays were concatenated, so every
+puja appeared above every astrology booking regardless of date — a consultation
+booked this morning sat below a puja from months ago. Now merged into one list
+sorted by booking time, newest first.
+
+**#23/#24 — "Could not reach the server".** Not a connection problem on the
+admin's end: both API wrappers did a single fetch with no retry and no timeout,
+so the first request after the API had been idle failed outright and the
+message wrongly blamed their network. Both now retry with backoff and a 30s
+ceiling, with an honest message about the server starting up.
+
+The retry policy is deliberately **asymmetric**, which is the important part:
+GET and login retry automatically (safe to repeat), but other writes do **not**.
+A network error never tells you whether the request reached the server, so
+blindly retrying a POST could create a second order, a second refund or a
+duplicate coupon. Those surface a message telling the admin to check before
+retrying, keeping that decision explicit rather than silently risking a double
+charge.
+
+Verified additive-only: sections 24, pages 14, modals 4, drawers 2 (unchanged),
+functions 197 -> 198 (+1). 60/60 tests pass.
+
 ## Round 12b — Word-by-Word Re-Read Caught Three Skipped Requirements
 
 Re-read every task text literally rather than trusting a summary. Three specific

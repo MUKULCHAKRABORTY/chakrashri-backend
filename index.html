@@ -1193,6 +1193,49 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
 
 @media (max-width:900px){ .checkout-layout{ grid-template-columns:1fr; } .field-row{ grid-template-columns:1fr; } }
 
+/* #25 — Checkout on small screens. Only the 900px single-column rule existed
+   before, so on a phone the 32px card padding, the fixed-width step
+   separators and the payment-logo rows all fought for space and pushed the
+   layout wider than the viewport. */
+@media (max-width:640px){
+  .checkout-card{ padding:16px 14px; margin-bottom:14px; border-radius:var(--radius-sm); }
+  .checkout-card h3{ font-size:1rem; margin-bottom:12px; }
+
+  /* The step indicator is the main overflow culprit: three labels plus two
+     fixed 40px rules never fit. Shrink the rules and let it wrap cleanly. */
+  .checkout-steps{ gap:6px; margin-bottom:var(--sp-6); }
+  .checkout-steps .step{ font-size:.72rem; gap:6px; }
+  .checkout-steps .step .num{ width:24px; height:24px; font-size:.75rem; }
+  .checkout-steps .sep{ width:16px; }
+
+  .pay-method{ padding:12px 13px; }
+  .pay-method .pay-method-head{ gap:8px; flex-wrap:wrap; }
+  /* The provider tags (GPay/PhonePe/Paytm, Visa/Mastercard/RuPay) are what
+     actually push this row past the viewport on a narrow phone. */
+  .pay-method .tags{ gap:4px; flex-wrap:wrap; }
+  .pay-method .tags span{ font-size:.6rem; padding:2px 5px; }
+  .pay-method .pay-method-body{ padding-top:10px; }
+  .pay-method .pay-method-body .field{ max-width:100% !important; }
+
+  .summary-line{ font-size:.86rem; }
+  .summary-line.total{ font-size:1rem; }
+
+  /* Anything laid out in columns collapses; min-width:0 is what actually lets
+     grid/flex children shrink below their content width instead of overflowing. */
+  .field-row, .field-row-3{ grid-template-columns:1fr; gap:0; }
+  .checkout-card .field, .checkout-card input, .checkout-card select, .checkout-card textarea{ min-width:0; max-width:100%; }
+}
+@media (max-width:400px){
+  .checkout-card{ padding:14px 12px; }
+  /* The step labels are bare text nodes, not elements, so they can't be
+     hidden with display:none on a child. font-size:0 on the step collapses
+     the text while the .num child is restored to a readable size — the
+     standard way to drop an unwrapped text node responsively. */
+  .checkout-steps .step{ font-size:0; gap:0; }
+  .checkout-steps .step .num{ width:26px; height:26px; font-size:.75rem; }
+  .checkout-steps .sep{ width:12px; }
+}
+
 /* ============================================================
    BOOKING (PUJA / ASTROLOGY)
    ============================================================ */
@@ -2876,7 +2919,9 @@ const CAT_LABELS = { lingam:'Sphatik Lingams', yantra:'Sri Yantras', idols:'Idol
 function catLabel(key){
   if(!key) return 'Uncategorized';
   if(CAT_LABELS[key]) return CAT_LABELS[key];
-  return String(key).replace(/[-_]+/g,' ').replace(/\s+/g,' ').trim().replace(/\b\w/g, function(c){ return c.toUpperCase(); });
+  // Same title-casing rule as the backend's displayTerm(), so an
+  // admin-created category reads identically everywhere it appears.
+  return titleCaseTerm(String(key).replace(/[-_]+/g,' '));
 }
 
 // Returns { cssClass, text } for a badge value. 'bestseller' and 'new' get
@@ -2886,10 +2931,26 @@ function catLabel(key){
 // silently replaced with the hardcoded text "Sale", discarding whatever the
 // admin actually typed.
 function badgeInfo(badge){
-  if(badge === 'bestseller') return { cssClass:'badge-best', text:'Bestseller' };
-  if(badge === 'new') return { cssClass:'badge-new', text:'New' };
-  if(badge === 'sale') return { cssClass:'badge-sale', text:'Sale' };
-  return { cssClass:'badge-custom', text: badge };
+  const key = String(badge || '').trim().toLowerCase();
+  if(key === 'bestseller') return { cssClass:'badge-best', text:'Bestseller' };
+  if(key === 'new') return { cssClass:'badge-new', text:'New' };
+  if(key === 'sale') return { cssClass:'badge-sale', text:'Sale' };
+  // Badges are stored lowercase (see migration 012), so anything custom must
+  // be title-cased here or "certified" shows where "Certified" is intended.
+  return { cssClass:'badge-custom', text: titleCaseTerm(key) };
+}
+
+/* Mirrors displayTerm() in src/utils/text.js — the storefront must title-case
+   the canonical lowercase values the same way the backend does, or the two
+   would disagree about how the same category reads. */
+const MINOR_WORDS = ['and','or','of','the','a','an','for','in','on','with','to'];
+function titleCaseTerm(value){
+  const cleaned = String(value || '').replace(/\s+/g,' ').trim().toLowerCase();
+  if(!cleaned) return '';
+  return cleaned.split(' ').map(function(w,i){
+    if(i > 0 && MINOR_WORDS.indexOf(w) > -1) return w;
+    return w.charAt(0).toUpperCase() + w.slice(1);
+  }).join(' ');
 }
 
 // Returns the inner HTML for a product's thumbnail: a real photo if one
@@ -2922,13 +2983,51 @@ const API_BASE = window.__API_BASE__ || (location.protocol === 'file:' ? 'http:/
 
 function getAuthToken(){ try{ return localStorage.getItem('authToken'); }catch(e){return null;} }
 function setAuthToken(t){ try{ if(t) localStorage.setItem('authToken', t); else localStorage.removeItem('authToken'); }catch(e){} }
+/* #23/#24 — Same hardening as the admin wrapper. A single un-retried fetch
+   meant the first request after the API had been idle failed outright, which
+   on the storefront shows up as products not loading or a checkout appearing
+   to break for no reason.
+
+   Retry policy is asymmetric on purpose: GET (and login) are safe to repeat,
+   but a POST that creates an order must never be retried blind — a network
+   error doesn't tell us whether it reached the server, and a duplicate order
+   costs the customer real money. Those surface an honest message instead. */
+function isRetryableRequest(path, method){
+  if(method === 'GET' || method === 'HEAD') return true;
+  return /\/api\/auth\/(login|register)$/.test(path);
+}
+
 async function apiFetch(path, opts){
   opts = opts || {};
   const headers = Object.assign({}, opts.headers || {});
   if(!headers['Content-Type'] && !(opts.body instanceof FormData)) headers['Content-Type'] = 'application/json';
   const token = getAuthToken();
   if(token) headers['Authorization'] = 'Bearer ' + token;
-  const res = await fetch(API_BASE + path, Object.assign({}, opts, { headers, credentials: 'include' }));
+
+  const method = (opts.method || 'GET').toUpperCase();
+  const attempts = isRetryableRequest(path, method) ? 3 : 1;
+
+  let res = null, networkError = null;
+  for(let i = 0; i < attempts; i++){
+    networkError = null;
+    try{
+      const controller = new AbortController();
+      const timer = setTimeout(function(){ controller.abort(); }, 30000);
+      try{
+        res = await fetch(API_BASE + path, Object.assign({}, opts, { headers, credentials: 'include', signal: controller.signal }));
+      } finally { clearTimeout(timer); }
+      break;
+    }catch(e){
+      networkError = e;
+      if(i < attempts - 1) await new Promise(function(r){ setTimeout(r, 2000 * (i + 1)); });
+    }
+  }
+  if(networkError){
+    throw { error: attempts > 1
+      ? 'Could not reach the server — it may be starting up. Please try again in a moment.'
+      : 'The server did not respond, so this may not have gone through. Please check before trying again.' };
+  }
+
   const text = await res.text();
   let body = null;
   try{ body = text ? JSON.parse(text) : null; }catch(e){ body = text; }
@@ -3050,8 +3149,18 @@ async function renderOrdersPage(){
   // service_name comes from the booking_services catalog — previously the
   // astrology row showed only the consultation mode ("call"), which made a
   // real, paid booking look like it hadn't registered at all.
+  // #22 — Merge both booking types into ONE list sorted by when they were
+  // booked, newest first. Previously the two arrays were simply concatenated,
+  // so every puja appeared above every astrology booking regardless of date —
+  // meaning a consultation booked this morning sat below a puja from months
+  // ago, and the customer's most recent action was the hardest thing to find.
   const allBookings = (pujaBookings || []).map(function(b){ return Object.assign({ _kind:'Puja', _label: b.service_name || b.puja_type }, b); })
-    .concat((astroBookings || []).map(function(b){ return Object.assign({ _kind:'Astrology', _label: b.service_name || b.consultation_mode }, b); }));
+    .concat((astroBookings || []).map(function(b){ return Object.assign({ _kind:'Astrology', _label: b.service_name || b.consultation_mode }, b); }))
+    .sort(function(a, b){
+      // created_at is when it was booked (not the scheduled date) — that's what
+      // "recent" means to someone checking whether their booking registered.
+      return new Date(b.created_at || 0) - new Date(a.created_at || 0);
+    });
 
   if(allBookings.length){
     const bRows = allBookings.map(function(b){

@@ -526,6 +526,40 @@ section('[4c] variant stock architecture — the guard that keeps derived produc
   });
 }
 
+section('[4d] category/badge normalisation — the REAL functions used on product write');
+{
+  const { normaliseTerm, displayTerm } = require('../src/utils/text');
+
+  test('different casings of the same category collapse to ONE stored value', () => {
+    const forms = ['Malas', 'malas', 'MALAS', '  Malas  ', 'mAlAs'];
+    const stored = new Set(forms.map(normaliseTerm));
+    assert.strictEqual(stored.size, 1, 'all casings must store identically or they become separate categories');
+    assert.strictEqual([...stored][0], 'malas');
+  });
+  test('internal whitespace is collapsed, so "Puja  Samagri" == "Puja Samagri"', () => {
+    assert.strictEqual(normaliseTerm('Puja   Samagri  Kits'), normaliseTerm('Puja Samagri Kits'));
+  });
+  test('empty / whitespace-only becomes null, not an empty string', () => {
+    // '' and NULL look the same to a human but filter and sort differently.
+    assert.strictEqual(normaliseTerm(''), null);
+    assert.strictEqual(normaliseTerm('   '), null);
+    assert.strictEqual(normaliseTerm(null), null);
+  });
+  test('display form is title-cased for the customer', () => {
+    assert.strictEqual(displayTerm('malas'), 'Malas');
+    assert.strictEqual(displayTerm('puja samagri kits'), 'Puja Samagri Kits');
+  });
+  test('minor words stay lowercase unless they lead', () => {
+    assert.strictEqual(displayTerm('idols and murtis'), 'Idols and Murtis');
+    assert.strictEqual(displayTerm('and more'), 'And More');
+  });
+  test('round-trip: whatever the admin types, the customer sees one consistent label', () => {
+    ['Sri Yantras', 'sri yantras', 'SRI YANTRAS', ' sri  Yantras '].forEach((typed) => {
+      assert.strictEqual(displayTerm(normaliseTerm(typed)), 'Sri Yantras');
+    });
+  });
+}
+
 section('[5] normalizeOrigin — the REAL function server.js uses for CLIENT_URL (the exact bug hit during deployment)');
 {
   const { normalizeOrigin } = require('../src/utils/cors');

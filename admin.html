@@ -166,6 +166,25 @@ h1,h2,h3{ font-family:var(--f-display); font-weight:600; color:var(--ink); }
    200px tracks), which stacked all four stats into one tall strip. Forcing
    two columns with tighter padding makes the dashboard scannable at a
    glance on mobile, which is the whole point of these boxes. */
+.topbar-actions{ display:flex; align-items:center; gap:8px; flex:none; }
+
+/* #25 — Admin topbar on small screens. It had no mobile rules at all: the
+   menu toggle, the page title/subtitle and TWO action buttons were laid out
+   on one row with no wrapping, so the row pushed past the viewport width.
+   The buttons now collapse to icon-only and the subtitle is dropped, which
+   frees enough room for the title to breathe. */
+@media (max-width:700px){
+  .topbar{ padding:10px 14px; gap:10px; flex-wrap:wrap; }
+  .topbar h2{ font-size:1.05rem; line-height:1.25; }
+  .topbar .sub{ display:none; }
+  .topbar-actions{ margin-left:auto; }
+  /* Icon-only buttons: the labels are the width problem, and the icons plus
+     the title attribute still convey what each one does. */
+  .topbar-actions .btn{ padding:8px; min-width:36px; justify-content:center; }
+  .topbar-actions .btn svg{ margin:0; }
+  .topbar-actions .btn{ font-size:0; }
+  .topbar-actions .btn svg{ width:16px; height:16px; }
+}
 @media (max-width:700px){
   .stat-grid{ grid-template-columns:repeat(2,1fr); gap:10px; }
   .stat-card{ padding:12px 13px; }
@@ -402,6 +421,7 @@ code.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.78rem; 
           <div class="sub" id="pageSub">Live overview of your store</div>
         </div>
       </div>
+      <div class="topbar-actions">
       <button class="btn btn-ghost btn-sm" onclick="clearSiteCache()" title="Force every visitor's browser to load the latest version">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>
         Clear Site Cache
@@ -410,6 +430,7 @@ code.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.78rem; 
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
         Refresh
       </button>
+      </div>
     </div>
 
     <div class="content">
@@ -590,13 +611,21 @@ code.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.78rem; 
         <div class="field"><label>Name *</label><input id="pfName"><div class="err" id="pfNameErr">Name is required.</div></div>
         <div class="field"><label>SKU *</label><input id="pfSku"><div class="err" id="pfSkuErr">SKU is required.</div></div>
         <div class="field"><label>Slug *</label><input id="pfSlug" placeholder="rudraksha-mala-5-mukhi"><div class="hint">URL-safe, lowercase, hyphens only.</div><div class="err" id="pfSlugErr">Valid slug required.</div></div>
-        <div class="field"><label>Category *</label><input id="pfCategory" placeholder="rudraksha, idols, gemstones…"></div>
+        <div class="field"><label>Category *</label>
+          <input id="pfCategory" list="pfCategoryList" placeholder="rudraksha, idols, gemstones…" autocomplete="off">
+          <datalist id="pfCategoryList"></datalist>
+          <div class="hint">Pick an existing one from the list, or type a new name. Casing doesn't matter — "Malas" and "malas" are treated as the same category.</div>
+        </div>
         <div class="field"><label>Price (₹) *</label><input id="pfPrice" type="number" min="1" step="0.01"><div class="err" id="pfPriceErr">Valid price required.</div></div>
         <div class="field"><label>MRP (₹)</label><input id="pfMrp" type="number" min="1" step="0.01"></div>
         <div class="field"><label>Stock Quantity *</label><input id="pfStock" type="number" min="0" step="1"></div>
         <div class="field"><label>GST Rate (%)</label><input id="pfGst" type="number" min="0" max="28" step="0.01" value="3"></div>
         <div class="field"><label>HSN Code</label><input id="pfHsn"></div>
-        <div class="field"><label>Badge</label><input id="pfBadge" placeholder="Bestseller, New, Certified…"></div>
+        <div class="field"><label>Badge</label>
+          <input id="pfBadge" list="pfBadgeList" placeholder="Bestseller, New, Certified…" autocomplete="off">
+          <datalist id="pfBadgeList"></datalist>
+          <div class="hint">Leave blank for no badge. Casing doesn't matter.</div>
+        </div>
         <div class="field"><label>Material</label><input id="pfMaterial"></div>
         <div class="field checkbox"><input type="checkbox" id="pfActive" checked><label style="margin:0;text-transform:none;letter-spacing:0;font-weight:500;">Active (visible in store)</label></div>
         <div class="field full"><label>Short Description</label><textarea id="pfShortDesc" style="min-height:50px;"></textarea></div>
@@ -835,18 +864,67 @@ function toast(msg, type){
   setTimeout(() => el.remove(), 3800);
 }
 
-/* ---------- auth-aware fetch wrapper ---------- */
+/* ---------- auth-aware fetch wrapper ----------
+   #23/#24 — This previously did a single fetch with no retry and no timeout,
+   so the FIRST request after the API had been idle failed outright and showed
+   "Check your connection", blaming the admin's network for what is actually a
+   server cold start (see the hosting note in the README).
+
+   Retry policy is deliberately asymmetric, because retrying is not always safe:
+   • GET and login are retried automatically — a GET has no side effects, and
+     re-submitting the same credentials cannot create anything.
+   • Other writes (POST/PUT/PATCH/DELETE) are NOT auto-retried. A network error
+     does not tell us whether the request reached the server, so a blind retry
+     could create a second coupon, a second refund, a duplicate variant. The
+     admin is told to retry instead, which keeps that decision explicit. */
+const RETRYABLE_METHODS = new Set(['GET', 'HEAD']);
+
+function isSafeToRetry(path, method){
+  if (RETRYABLE_METHODS.has(method)) return true;
+  // Re-posting identical login credentials is side-effect free.
+  return /\/api\/auth\/(admin\/)?login$/.test(path);
+}
+
 async function api(path, opts){
   opts = opts || {};
   const headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
   const token = sessionStorage.getItem(TOKEN_KEY);
   if (token) headers.Authorization = 'Bearer ' + token;
 
-  let res;
-  try {
-    res = await fetch(API_BASE + path, Object.assign({}, opts, { headers }));
-  } catch (e) {
-    throw { error: 'Could not reach the server. Check your connection and try again.' };
+  const method = (opts.method || 'GET').toUpperCase();
+  const canRetry = isSafeToRetry(path, method);
+  const attempts = canRetry ? 3 : 1;
+
+  let res, lastNetworkError = null;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      // AbortController gives a definite ceiling. A cold start can take ~60s,
+      // so the timeout is generous — the goal is to avoid hanging forever, not
+      // to fail fast.
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 30000);
+      try {
+        res = await fetch(API_BASE + path, Object.assign({}, opts, { headers, signal: controller.signal }));
+      } finally {
+        clearTimeout(timer);
+      }
+      lastNetworkError = null;
+      break;
+    } catch (e) {
+      lastNetworkError = e;
+      if (i < attempts - 1) {
+        if (i === 0) toast('Server is waking up, retrying…');
+        await new Promise((r) => setTimeout(r, 2500 * (i + 1)));
+      }
+    }
+  }
+
+  if (lastNetworkError) {
+    throw {
+      error: canRetry
+        ? 'The server did not respond. It may be starting up after being idle — please try again in a moment.'
+        : 'The server did not respond, so this action was not completed. Please check whether it went through before retrying.'
+    };
   }
 
   if (res.status === 401) {
@@ -1159,6 +1237,7 @@ async function loadProducts(page){
     });
     refreshCategoryFilterOptions();
     refreshBadgeFilterOptions();
+    refreshTermDatalists();
 
     if (!products.length) {
       tbody.innerHTML = '<tr><td colspan="9"><div class="empty">No products found.' + (search || category || badge ? ' Try clearing filters.' : ' Add your first product to get started.') + '</div></td></tr>';
@@ -1193,11 +1272,36 @@ async function loadProducts(page){
   }
 }
 
+/* #21 — Surfaces the categories/badges already in use so an admin picks an
+   existing one instead of typing a near-duplicate. Normalisation on the server
+   already prevents duplicates, but showing what exists prevents the confusion
+   at the point it happens. Values are title-cased for readability; whatever is
+   typed gets normalised again server-side. */
+function refreshTermDatalists(){
+  const catList = qs('#pfCategoryList');
+  if (catList) {
+    catList.innerHTML = Array.from(productsState.categories).filter(Boolean).sort()
+      .map((v) => `<option value="${esc(titleCaseTerm(v))}"></option>`).join('');
+  }
+  const badgeList = qs('#pfBadgeList');
+  if (badgeList) {
+    badgeList.innerHTML = Array.from(productsState.badges).filter(Boolean).sort()
+      .map((v) => `<option value="${esc(titleCaseTerm(v))}"></option>`).join('');
+  }
+}
+
+const DL_MINOR = ['and','or','of','the','a','an','for','in','on','with','to'];
+function titleCaseTerm(value){
+  const cleaned = String(value || '').replace(/\s+/g,' ').trim().toLowerCase();
+  if (!cleaned) return '';
+  return cleaned.split(' ').map((w, i) => (i > 0 && DL_MINOR.includes(w)) ? w : w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+
 function refreshCategoryFilterOptions(){
   const sel = qs('#productCategoryFilter');
   const current = sel.value;
   sel.innerHTML = '<option value="">All categories</option>' +
-    Array.from(productsState.categories).sort().map((c) => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+    Array.from(productsState.categories).sort().map((c) => `<option value="${esc(c)}">${esc(titleCaseTerm(c))}</option>`).join('');
   sel.value = current;
 }
 
@@ -1206,7 +1310,7 @@ function refreshBadgeFilterOptions(){
   if (!sel) return;
   const current = sel.value;
   sel.innerHTML = '<option value="">All badges</option>' +
-    Array.from(productsState.badges).sort().map((b) => `<option value="${esc(b)}">${esc(b)}</option>`).join('');
+    Array.from(productsState.badges).sort().map((b) => `<option value="${esc(b)}">${esc(titleCaseTerm(b))}</option>`).join('');
   sel.value = current;
 }
 
@@ -1255,6 +1359,7 @@ async function openProductForm(id){
       editingProductOptions = body.options || [];
       editingProductVariants = body.variants || [];
       renderProductOptions();
+      applyVariantStockLock();
     } catch (err) {
       toast(err.error || 'Could not load product details.', 'err');
       closeModal('productModal');
@@ -1379,6 +1484,41 @@ async function removeProductOption(optionId){
   } catch (err) { toast(err.error || 'Could not remove option.', 'err'); }
 }
 
+/* #19 — When a product has variants its stock is DERIVED (a DB trigger keeps
+   it equal to the sum of active variants), so the stock field must not look
+   editable. Leaving it editable is what made it seem like variant edits
+   "didn't save": the admin would change variants, then click Save Product and
+   the stale number in this field would appear to win. The server ignores it
+   either way; this makes the rule visible instead of surprising. */
+function applyVariantStockLock(){
+  const input = qs('#pfStock');
+  if (!input) return;
+  const hasVariants = (editingProductVariants || []).length > 0;
+  const holder = input.closest('.field');
+  const existingNote = holder ? holder.querySelector('.stock-derived-note') : null;
+
+  if (hasVariants) {
+    const total = editingProductVariants
+      .filter((v) => v.is_active !== false)
+      .reduce((sum, v) => sum + Number(v.stock_qty || 0), 0);
+    input.value = total;
+    input.readOnly = true;
+    input.style.background = 'var(--parchment)';
+    input.style.cursor = 'not-allowed';
+    if (holder && !existingNote) {
+      const note = document.createElement('div');
+      note.className = 'hint stock-derived-note';
+      note.textContent = 'Managed automatically — this is the sum of all active variant stocks. Edit stock on the individual variants below.';
+      holder.appendChild(note);
+    }
+  } else {
+    input.readOnly = false;
+    input.style.background = '';
+    input.style.cursor = '';
+    if (existingNote) existingNote.remove();
+  }
+}
+
 function renderProductVariants(){
   const wrap = qs('#pfVariantsList');
   if (!wrap) return;
@@ -1482,6 +1622,7 @@ async function saveVariantEdit(){
     const idx = editingProductVariants.findIndex((x) => x.id === variantId);
     if (idx > -1) editingProductVariants[idx] = body.variant;
     renderProductVariants();
+    applyVariantStockLock(); // reflect the new derived total immediately
     closeModal('variantEditModal');
     // The product's total stock is derived from its variants by a DB trigger,
     // so refresh the list to show the recalculated figure.
@@ -1525,6 +1666,7 @@ async function addProductVariant(){
     });
     editingProductVariants.push(body.variant);
     renderProductVariants();
+    applyVariantStockLock();
     qs('#vbStock').value = '0'; qs('#vbPrice').value = ''; qs('#vbImage').value = '';
     toast('Variant added.', 'ok');
   } catch (err) { toast(err.error || 'Could not add variant.', 'err'); }
@@ -1535,6 +1677,7 @@ async function removeProductVariant(variantId){
     await api('/api/products/' + editingProductId + '/variants/' + variantId, { method: 'DELETE' });
     editingProductVariants = editingProductVariants.filter((v) => v.id !== variantId);
     renderProductVariants();
+    applyVariantStockLock();
   } catch (err) { toast(err.error || 'Could not remove variant.', 'err'); }
 }
 

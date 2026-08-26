@@ -12,7 +12,8 @@
     "test:db": "node scripts/test-db-connection.js",
     "test:razorpay": "node scripts/test-razorpay-connection.js",
     "verify": "npm run test:unit && npm run test:db && npm run test:razorpay",
-    "reconcile": "node scripts/reconcile-payments.js"
+    "reconcile": "node scripts/reconcile-payments.js",
+    "keep-alive": "node scripts/keep-alive.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
