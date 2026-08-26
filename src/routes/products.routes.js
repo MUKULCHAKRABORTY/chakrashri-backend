@@ -42,6 +42,38 @@ router.get('/', async (req, res) => {
   }
 });
 
+// ---------- Public: categories ranked by real sales ----------
+// Powers the homepage "Shop By Category" strip. Ranking is by units actually
+// sold (paid orders only — pending/failed carts must not influence it), with
+// product count as the tie-breaker so a brand-new category with no sales yet
+// still surfaces above an empty one.
+router.get('/meta/top-categories', async (req, res) => {
+  const limit = Math.min(20, Math.max(1, parseInt(req.query.limit, 10) || 7));
+  try {
+    const { rows } = await db.query(
+      `SELECT p.category,
+              COUNT(DISTINCT p.id)::int AS product_count,
+              COALESCE(SUM(oi.quantity), 0)::int AS units_sold
+       FROM products p
+       LEFT JOIN order_items oi ON oi.product_id = p.id
+       -- The status filter lives in the JOIN, not WHERE: in a WHERE clause it
+       -- would turn this LEFT JOIN into an INNER JOIN and silently drop every
+       -- category that has never sold anything.
+       LEFT JOIN orders o ON o.id = oi.order_id
+              AND o.status IN ('paid','processing','shipped','delivered')
+       WHERE p.is_active = true AND p.category IS NOT NULL AND p.category <> ''
+       GROUP BY p.category
+       ORDER BY units_sold DESC, product_count DESC, p.category ASC
+       LIMIT $1`,
+      [limit]
+    );
+    res.json({ categories: rows });
+  } catch (err) {
+    console.error('[products] top-categories failed:', err.message, err.code || '');
+    res.status(500).json({ error: 'Could not load categories.' });
+  }
+});
+
 // ---------- Public: single product by slug ----------
 router.get('/:slug', async (req, res) => {
   try {

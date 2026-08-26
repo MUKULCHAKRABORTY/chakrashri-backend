@@ -17,7 +17,8 @@ const EXPECTED_TABLES = [
   'product_reviews',         // 005
   'coupons', 'coupon_redemptions',                              // 006
   'product_properties',                                          // 007
-  'product_options', 'product_option_values', 'product_variants' // 008
+  'product_options', 'product_option_values', 'product_variants', // 008
+  'site_settings' // 011
 ];
 
 // A subset of columns the application code actually queries/inserts by name.
@@ -53,7 +54,8 @@ const EXPECTED_COLUMNS = {
   product_properties: ['id', 'product_id', 'property_name', 'property_value', 'color_hex'],
   product_options: ['id', 'product_id', 'option_name', 'option_type'],
   product_option_values: ['id', 'option_id', 'value', 'color_hex'],
-  product_variants: ['id', 'product_id', 'option_values', 'price_paise', 'stock_qty', 'image_url', 'is_active']
+  product_variants: ['id', 'product_id', 'option_values', 'price_paise', 'stock_qty', 'image_url', 'is_active'],
+  site_settings: ['key', 'value', 'updated_at']
 };
 
 let failures = 0;

@@ -220,8 +220,18 @@ router.get('/products', async (req, res) => {
   const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
   params.push(limit, offset);
   try {
+    // variant_count tells the admin UI whether this product's stock is a
+    // derived figure (sum of its variants, maintained by a DB trigger) or a
+    // directly-managed number — the two are edited in completely different
+    // places, so showing a bare number without that context is misleading.
+    // The WHERE columns need no `p.` prefix: `products p` is the only table in
+    // this scope, and the subquery has its own alias, so there's no ambiguity.
     const { rows } = await db.query(
-      `SELECT * FROM products ${where} ORDER BY created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      `SELECT p.*,
+              (SELECT COUNT(*)::int FROM product_variants v
+                WHERE v.product_id = p.id AND v.is_active = true) AS variant_count
+       FROM products p ${where}
+       ORDER BY p.created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params
     );
     res.json({ products: rows });

@@ -402,6 +402,10 @@ code.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.78rem; 
           <div class="sub" id="pageSub">Live overview of your store</div>
         </div>
       </div>
+      <button class="btn btn-ghost btn-sm" onclick="clearSiteCache()" title="Force every visitor's browser to load the latest version">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>
+        Clear Site Cache
+      </button>
       <button class="btn btn-ghost btn-sm" onclick="refreshCurrentView()">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
         Refresh
@@ -656,6 +660,37 @@ code.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.78rem; 
     <div class="modal-foot">
       <button class="btn btn-ghost" onclick="closeModal('productModal')">Cancel</button>
       <button class="btn btn-primary" id="pfSaveBtn" onclick="saveProduct()">Save Product</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== VARIANT EDIT MODAL ===================== -->
+<div class="overlay" id="variantEditModal">
+  <div class="modal">
+    <div class="modal-head">
+      <h3>Edit Variant</h3>
+      <div class="close-x" onclick="closeModal('variantEditModal')">✕</div>
+    </div>
+    <div class="modal-body">
+      <div style="background:var(--ivory);border-radius:9px;padding:10px 12px;margin-bottom:16px;">
+        <div style="font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;color:#8a7768;margin-bottom:3px;">Combination</div>
+        <strong id="veLabel" style="font-size:.92rem;"></strong>
+        <div class="hint" style="margin-top:6px;">The option combination can't be changed here — editing it would rewrite what past orders appear to contain. Remove and re-create the variant instead.</div>
+      </div>
+      <div class="form-grid">
+        <div class="field"><label>Stock *</label><input id="veStock" type="number" min="0" step="1"></div>
+        <div class="field"><label>Price (₹)</label><input id="vePrice" type="number" min="1" step="0.01" placeholder="Leave blank = base price"></div>
+        <div class="field full"><label>Variant Image URL</label>
+          <div style="display:flex;gap:10px;align-items:flex-start;">
+            <input id="veImage" placeholder="https://…" oninput="previewVariantEditImage()" style="flex:1;min-width:0;">
+            <div id="veImagePreview" style="width:52px;height:52px;border-radius:8px;border:1.5px dashed var(--parchment-2);flex:none;display:flex;align-items:center;justify-content:center;font-size:.62rem;color:#8a7768;text-align:center;overflow:hidden;">no image</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal('variantEditModal')">Cancel</button>
+      <button class="btn btn-primary" id="veSaveBtn" onclick="saveVariantEdit()">Save Variant</button>
     </div>
   </div>
 </div>
@@ -926,6 +961,20 @@ function refreshCurrentView(){
   else if (currentView === 'auditlog') loadAuditLog();
 }
 
+/* #18 — bumps a shared content version. Every visitor's browser compares it
+   on next load, clears its caches and reloads once. Used after updating
+   products/prices so nobody is served a stale page. */
+function clearSiteCache(){
+  confirmAction('Clear Site Cache',
+    'This makes every visitor\'s browser reload the latest version of the site on their next visit. Use it after updating products, prices or content.',
+    async () => {
+      try {
+        const body = await api('/api/site/clear-cache', { method: 'POST' });
+        toast('Cache cleared — visitors will get version ' + body.version + '.', 'ok');
+      } catch (err) { toast(err.error || 'Could not clear cache.', 'err'); }
+    });
+}
+
 function toggleSidebar(force){
   const open = force !== undefined ? force : !qs('#sidebar').classList.contains('open');
   qs('#sidebar').classList.toggle('open', open);
@@ -1123,7 +1172,9 @@ async function loadProducts(page){
       <td class="muted">${esc(p.category)}</td>
       <td>${p.badge ? '<span class="pill pill-warn">' + esc(p.badge) + '</span>' : '<span class="muted">—</span>'}</td>
       <td>${paise(p.price_paise)}</td>
-      <td>${p.stock_qty > 0 ? p.stock_qty : '<span class="pill pill-danger">Out of stock</span>'}</td>
+      <td>${p.variant_count > 0
+        ? `<span class="pill ${p.stock_qty === 0 ? 'pill-danger' : 'pill-success'}">${p.stock_qty}</span><div class="muted" style="font-size:.68rem;margin-top:3px;">sum of ${p.variant_count} variant${p.variant_count === 1 ? '' : 's'}</div>`
+        : (p.stock_qty > 0 ? p.stock_qty : '<span class="pill pill-danger">Out of stock</span>')}</td>
       <td><span class="pill ${p.is_active !== false ? 'pill-success' : 'pill-neutral'}">${p.is_active !== false ? 'Active' : 'Hidden'}</span></td>
       <td>
         <div style="display:flex;gap:6px;">
@@ -1340,7 +1391,10 @@ function renderProductVariants(){
       <span class="muted" style="font-size:.8rem;">Stock: ${v.stock_qty}</span>
       <span class="muted" style="font-size:.8rem;">${v.price_paise != null ? paise(v.price_paise) : 'base price'}</span>
       ${v.image_url ? '<span class="muted" style="font-size:.8rem;">has image</span>' : ''}
-      <button class="btn btn-ghost btn-sm" style="margin-left:auto;color:var(--danger);" onclick="removeProductVariant('${v.id}')">Remove</button>
+      <div style="margin-left:auto;display:flex;gap:6px;">
+        <button class="btn btn-ghost btn-sm" onclick="openVariantEdit('${v.id}')">Edit</button>
+        <button class="btn btn-ghost btn-sm" style="color:var(--danger);" onclick="removeProductVariant('${v.id}')">Remove</button>
+      </div>
     </div>`;
   }).join('');
 }
@@ -1360,10 +1414,84 @@ function renderVariantBuilder(){
         </div>`).join('') +
       '<div class="field" style="margin:0;"><label>Stock *</label><input id="vbStock" type="number" min="0" step="1" value="0"></div>' +
       '<div class="field" style="margin:0;"><label>Price (₹)</label><input id="vbPrice" type="number" min="1" step="0.01" placeholder="Leave blank = base price"></div>' +
-      '<div class="field full" style="margin:0;"><label>Variant Image URL</label><input id="vbImage" placeholder="https://… shown when this variant is selected"></div>' +
+      '<div class="field full" style="margin:0;"><label>Variant Image URL</label>' +
+        '<div style="display:flex;gap:10px;align-items:flex-start;">' +
+          '<input id="vbImage" placeholder="https://… shown when this variant is selected" oninput="previewVariantImage()" style="flex:1;min-width:0;">' +
+          '<div id="vbImagePreview" style="width:52px;height:52px;border-radius:8px;border:1.5px dashed var(--parchment-2);flex:none;display:flex;align-items:center;justify-content:center;font-size:.62rem;color:#8a7768;text-align:center;overflow:hidden;">no image</div>' +
+        '</div></div>' +
       '<div class="field full" style="margin:0;"><button class="btn btn-primary btn-sm" style="width:100%;" onclick="addProductVariant()">Add This Combination</button></div>' +
     '</div>';
   renderProductVariants();
+}
+
+/* Live thumbnail as the admin types/pastes a variant image URL, so a broken
+   or wrong link is obvious before the variant is saved rather than after. */
+function previewVariantImage(){
+  const input = qs('#vbImage');
+  const box = qs('#vbImagePreview');
+  if (!input || !box) return;
+  const url = input.value.trim();
+  if (!/^https?:\/\//.test(url)) { box.innerHTML = 'no image'; return; }
+  box.innerHTML = `<img src="${esc(url)}" alt="" style="width:100%;height:100%;object-fit:cover;" onerror="this.parentElement.innerHTML='bad URL';">`;
+}
+
+/* Editing an existing variant: stock, price and image only. The option
+   combination itself is intentionally NOT editable — changing "Red" to "Blue"
+   on a variant that customers have already ordered would silently rewrite what
+   those historical orders appear to contain. Remove and re-create instead. */
+function openVariantEdit(variantId){
+  const v = editingProductVariants.find((x) => x.id === variantId);
+  if (!v) { toast('Variant not found — try reopening the product.', 'err'); return; }
+  const label = (v.option_values || []).map((x) => x.option + ': ' + x.value).join(' / ');
+  qs('#veLabel').textContent = label;
+  qs('#veStock').value = v.stock_qty;
+  qs('#vePrice').value = v.price_paise != null ? (Number(v.price_paise) / 100).toFixed(2) : '';
+  qs('#veImage').value = v.image_url || '';
+  qs('#veSaveBtn').setAttribute('data-variant-id', variantId);
+  previewVariantEditImage();
+  openModalEl('variantEditModal');
+}
+
+function previewVariantEditImage(){
+  const input = qs('#veImage');
+  const box = qs('#veImagePreview');
+  if (!input || !box) return;
+  const url = input.value.trim();
+  if (!/^https?:\/\//.test(url)) { box.innerHTML = 'no image'; return; }
+  box.innerHTML = `<img src="${esc(url)}" alt="" style="width:100%;height:100%;object-fit:cover;" onerror="this.parentElement.innerHTML='bad URL';">`;
+}
+
+async function saveVariantEdit(){
+  const btn = qs('#veSaveBtn');
+  const variantId = btn.getAttribute('data-variant-id');
+  const stock = parseInt(qs('#veStock').value, 10);
+  const price = parseFloat(qs('#vePrice').value);
+  const image = qs('#veImage').value.trim();
+  if (!(stock >= 0)) { toast('Enter a valid stock quantity.', 'err'); return; }
+
+  btn.disabled = true;
+  try {
+    const body = await api('/api/products/' + editingProductId + '/variants/' + variantId, {
+      method: 'PUT',
+      body: JSON.stringify({
+        stock_qty: stock,
+        price_paise: price > 0 ? Math.round(price * 100) : null,
+        image_url: image || null
+      })
+    });
+    const idx = editingProductVariants.findIndex((x) => x.id === variantId);
+    if (idx > -1) editingProductVariants[idx] = body.variant;
+    renderProductVariants();
+    closeModal('variantEditModal');
+    // The product's total stock is derived from its variants by a DB trigger,
+    // so refresh the list to show the recalculated figure.
+    toast('Variant updated — product stock recalculated.', 'ok');
+    loadProducts(productsState.page);
+  } catch (err) {
+    toast(err.error || 'Could not update variant.', 'err');
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 async function addProductVariant(){

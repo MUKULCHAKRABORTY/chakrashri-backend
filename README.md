@@ -231,6 +231,148 @@ scripts/        # create-admin.js, run-migrations.js, test-db-connection.js,
 test/           # unit.test.js — tests against the REAL application modules, see "Round 4" below
 ```
 
+## Round 12b — Word-by-Word Re-Read Caught Three Skipped Requirements
+
+Re-read every task text literally rather than trusting a summary. Three specific
+sentences had been passed over:
+
+**"If varient select and mind change then they can deselect by tapping again"** —
+not implemented. Tapping an already-selected swatch simply re-selected it, so a
+customer who changed their mind had no way to clear the choice short of
+reloading. Tapping the active value now clears it, and clearing the selection
+restores the product's own images (previously a variant photo would linger on
+screen after its selection was gone).
+
+**"In product view of customer side, add 'Varients' to see then all varient
+details"** — only a selector existed, not a details view. There is now a
+**Variants** tab on the product page listing every combination with its own
+photo, options (with colour dots), price and live stock, so a customer can
+compare them all at once. The tab hides itself for products without variants.
+
+**"that is how stock status should be seen in the admin dashboard products
+section"** — the admin products table showed a bare number with no indication
+it was derived. It now shows the total plus "sum of N variants" for
+variant-backed products, because the derived figure and a directly-managed one
+are edited in completely different places and confusing the two would lead an
+admin to try editing a number that is recomputed by a trigger.
+
+Verified additive-only afterwards: sections 24, pages 14, modals 4, drawers 2
+(all unchanged), functions 196 → 197 (+1, the new renderer). All 18 major
+homepage/site sections re-confirmed present, all onclick handlers resolve, all
+tags balanced, 54/54 tests pass.
+
+## Round 12 — Tasks 6 and 8 Completed (all 18 now done)
+
+**#8 — mobile layout.** On small screens the animated chakra now sits at the
+top, directly under the navbar, with the hero copy beneath it. Implemented with
+flex `order` rather than moving markup, so the desktop layout and the DOM are
+byte-for-byte unchanged — the reorder exists only inside the mobile media
+query. The chakra is also scaled down on mobile so it doesn't push the
+headline and CTAs below the fold.
+
+The mobile **Shop** menu previously only expanded/collapsed — there was no way
+to reach the full catalogue from it at all. It is now a split tap target
+(industry standard for mobile nav): tapping the "Shop" label goes straight to
+all products, tapping the chevron expands the category list. `aria-expanded`
+is kept in sync for screen readers.
+
+**#6 — homepage puja showcase and product-section polish.** A new Puja
+Services section sits between Featured Products and the existing promo band,
+populated from the **same `booking_services` catalog** the booking page uses —
+so a price edited in the admin appears here immediately and the two can never
+disagree. Each card deep-links into the booking flow with that puja already
+selected and the detail steps open, removing a step rather than dropping the
+visitor on a generic page. The section hides itself entirely when no services
+are configured rather than rendering an empty band.
+
+Commercial polish: cards lift and reveal a gold accent bar on hover, icons
+rotate subtly, the primary CTA carries a slow attention pulse, and product
+images zoom gently within their frame. All hover motion is disabled on touch
+devices (where it causes sticky states) and all animation is disabled under
+`prefers-reduced-motion`.
+
+**Integrity check.** Verified purely additive against the pre-edit baseline:
+sections 23 → 24 (+1, the new one), functions 194 → 196 (+2, the new ones),
+element IDs 228 → 230 (+2). Page sections (14), modals (4) and drawers (2) all
+unchanged. Every major section re-confirmed present, all onclick handlers
+resolve, all tags balanced, 54/54 tests pass.
+
+## Round 11b — Pre-Push Integrity Audit (and a real bug it caught)
+
+Before pushing, the working copy was diffed against the **actually-live**
+Netlify build rather than trusting an internal claim. All 15 page sections,
+23 `<section>` blocks, 4 modals, 194 functions and 228 element IDs verified
+present — nothing lost in the earlier faulty edit that had to be rolled back.
+
+The audit caught a genuine, pre-existing bug: **the wishlist never persisted on
+the live site.** `loadWishlist`/`saveWishlist` used only `window.storage` — the
+Claude-artifact preview API, which does not exist on a real website — with no
+fallback. Every read threw (caught, leaving the wishlist empty) and every save
+silently vanished. The cart was fine because it already had a `localStorage`
+fallback; the wishlist never got one. Now mirrors the cart's working pattern.
+
+Also confirmed during the audit: the obsolete in-page demo admin panel
+(with "Demo password: chakrashri2026" visible in the markup) is **already
+unreachable** — `admin` is not in `VALID_PAGES`, so any attempt to reach
+`#admin` redirects to the homepage. It is inert dead markup, deliberately left
+alone rather than risking further surgery on a working file. The real admin is
+`admin.html`.
+
+## Round 11 — Remaining Items Completed (1–18)
+
+**Variant stock architecture (#15)** — enforced with a database TRIGGER, not
+application code: `products.stock_qty` is now always the sum of its active
+variants' stock. A trigger makes that invariant impossible to violate from any
+code path, present or future. Building it exposed a hole that had to be closed
+in the same change: if a variant product could be bought *without* choosing a
+variant, that decrement would land on `products.stock_qty` and be overwritten
+by the trigger on the next variant change — silently erasing the sale from
+inventory and giving stock away. There is now a hard guard plus a test named
+for exactly that scenario. Also added: variant **Edit** (stock/price/image),
+live image **preview** while typing a URL, and the cart/checkout now shows the
+selected variant's own photo rather than the generic product shot. The option
+combination is deliberately NOT editable — changing it would rewrite what past
+orders appear to contain.
+
+**Payment reliability (#13)** — the likely cause of intermittent
+"verification failed" is environmental, not a logic bug: on Render's free plan
+the service sleeps after inactivity, so both the browser's `/verify` call and
+Razorpay's webhook can hit a cold start and time out. Three things address it:
+`/verify` now retries with backoff (permanent failures like a signature
+mismatch are never retried, only transient ones); and `npm run reconcile`
+(`scripts/reconcile-payments.js`) asks Razorpay directly what actually
+happened and repairs any order or booking whose payment was captured but never
+recorded. It refuses to auto-confirm when the captured amount doesn't match the
+order total, flagging it for manual review instead. **Schedule it every ~15
+minutes** — it is the last line of defence against a customer being charged
+while their order sits at "pending". Note the customer-facing wording also
+changed: after Razorpay captures payment, a confirmation failure is never
+reported as a failed payment, which previously caused duplicate attempts.
+
+**Cache clearing (#18)** — a **Clear Site Cache** button in the admin header
+bumps a shared content version; each visitor's browser notices on next load,
+clears caches and reloads exactly once (guarded against reload loops, which
+would be worse than a stale page).
+
+**Homepage & contact (#5, #7, #10)** — "Shop By Category" is now real data:
+true product counts, ranked by units actually sold from paid orders only, top
+7, with a fallback so it never renders empty. Real contact details replaced the
+Nashik placeholders. A WhatsApp button sits above the Chakra AI launcher.
+
+**Also:** login prompt before checkout/booking (#11), admin booking "Manage"
+rebuilt as a grouped question→answer view with real Razorpay refunds (#9, #12),
+stock shortfall wording (#14), footer developer credit with a live status dot
+(#16), and a pulsing chakra bindu (#17).
+
+### Still open, deliberately
+
+**#6** (homepage showcase redesign / dedicated Puja Services section) and **#8**
+(mobile-only chakra reordering, restyled mobile Shop menu) are visual redesign
+work rather than functional gaps. Everything else in 1–18 is implemented. These
+two are best done against the live site with your eye on it, since "make it
+more attractive" is a judgement call that benefits from your feedback rather
+than my guess.
+
 ## Round 10c — The Verification Script Had Gone Stale (False Confidence)
 
 `npm run verify` was reporting **"All expected tables exist — 12/12 found"** and
