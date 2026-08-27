@@ -1,0 +1,24 @@
+# Netlify configuration for the storefront + admin console.
+#
+# index.html and admin.html live at the repository root, so the publish
+# directory is the root itself. _redirects, _headers and robots.txt sit
+# alongside them and remain authoritative for routing, security headers and
+# crawler rules — this file exists so the build step that generates sitemap.xml
+# is version-controlled rather than configured in a dashboard nobody can diff.
+
+[build]
+  publish = "."
+  # SEO-01 — regenerates sitemap.xml from the live product catalog on every
+  # deploy. A sitemap written by hand goes stale the first time a product is
+  # added, which is worse than not having one: it tells Google about URLs that
+  # no longer exist and omits the ones that do.
+  command = "node scripts/generate-sitemap.js"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# Long-cache the fonts and icons; never the HTML (see _headers).
+[[headers]]
+  for = "/*.svg"
+  [headers.values]
+    Cache-Control = "public, max-age=604800"

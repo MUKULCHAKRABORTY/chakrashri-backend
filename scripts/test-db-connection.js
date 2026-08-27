@@ -102,13 +102,19 @@ async function main() {
       // platform-wide (a plaintext connection to Neon is simply refused), and
       // the connection string itself requires sslmode=require. A successful
       // connection under those two facts is strong indirect evidence.
-      const urlRequiresSsl = /sslmode=require/i.test(process.env.DATABASE_URL || '');
+      // Match every mode that MANDATES TLS, not just 'require'. This used to
+      // test for `sslmode=require` alone, which would have started reporting a
+      // false failure the moment the recommended value became verify-full — and
+      // its advice would have told you to undo the stronger setting. A check
+      // that punishes the correct configuration is worse than no check.
+      const mode = (/[?&]sslmode=([a-z-]+)/i.exec(process.env.DATABASE_URL || '') || [])[1];
+      const urlRequiresSsl = ['require', 'verify-ca', 'verify-full'].includes(String(mode).toLowerCase());
       report(
         'Client connection is TLS-encrypted',
         urlRequiresSsl,
         urlRequiresSsl
-          ? 'could not inspect the socket directly (pg internals varied), but DATABASE_URL requires sslmode=require and the connection succeeded — Neon refuses plaintext connections outright'
-          : 'DATABASE_URL does not specify sslmode=require — add it'
+          ? `could not inspect the socket directly (pg internals varied), but DATABASE_URL sets sslmode=${mode} and the connection succeeded — Neon refuses plaintext connections outright`
+          : 'DATABASE_URL does not mandate TLS — set sslmode=verify-full (encrypted AND certificate-verified)'
       );
     } else {
       const isTlsSocket = stream instanceof tls.TLSSocket; // stable, documented Node.js API

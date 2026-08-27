@@ -6,6 +6,62 @@
 <title>Chakrashri — Sacred Objects, Puja Booking &amp; Astrology</title>
 <meta name="description" content="Chakrashri — authentic sphatik lingams, sri yantras, idols, malas, bracelets &amp; spiritual books. Book pujas and astrology consultations online.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%95%89%EF%B8%8F%3C/text%3E%3C/svg%3E">
+
+<!-- ===================================================================
+     SEO-01 — discoverability
+     ===================================================================
+     Before this, the entire catalog resolved to ONE indexable page: routing
+     was fragment-based (#product/slug), and search engines treat a fragment as
+     a position within a document, not as a separate URL. So every product had
+     the same title, the same description and no canonical — and organic search
+     is the primary acquisition channel for devotional goods in India
+     ("sphatik shivling online", "rudraksha mala original", "kundli milan").
+     Links shared on WhatsApp — the dominant channel in this market — also
+     rendered with no title, image or price.
+
+     These tags are the static defaults. updatePageMeta() rewrites them per view
+     (see the SEO block in the script below), and injectProductJsonLd() adds
+     Product/Offer/AggregateRating structured data on product pages so Google
+     can show price and rating in the result itself.
+     =================================================================== -->
+<link rel="canonical" href="https://www.chakrashri.com/">
+<meta name="robots" content="index,follow,max-image-preview:large">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Chakrashri">
+<meta property="og:locale" content="en_IN">
+<meta property="og:title" content="Chakrashri — Sacred Objects, Puja Booking &amp; Astrology">
+<meta property="og:description" content="Authentic sphatik lingams, sri yantras, idols, malas, bracelets &amp; spiritual books. Book pujas and astrology consultations online.">
+<meta property="og:url" content="https://www.chakrashri.com/">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Chakrashri — Sacred Objects, Puja Booking &amp; Astrology">
+<meta name="twitter:description" content="Authentic sphatik lingams, sri yantras, idols, malas, bracelets &amp; spiritual books. Book pujas and astrology consultations online.">
+<script type="application/ld+json" id="ldOrganization">
+{
+  "@context": "https://schema.org",
+  "@type": "Store",
+  "name": "Chakrashri",
+  "description": "Authentic sacred objects, puja booking and Vedic astrology consultations.",
+  "url": "https://www.chakrashri.com/",
+  "areaServed": "IN",
+  "currenciesAccepted": "INR",
+  "paymentAccepted": "Credit Card, Debit Card, UPI, Net Banking, Cash on Delivery"
+}
+</script>
+<script type="application/ld+json" id="ldWebSite">
+{
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  "name": "Chakrashri",
+  "url": "https://www.chakrashri.com/",
+  "potentialAction": {
+    "@type": "SearchAction",
+    "target": { "@type": "EntryPoint", "urlTemplate": "https://www.chakrashri.com/shop?search={search_term_string}" },
+    "query-input": "required name=search_term_string"
+  }
+}
+</script>
+<!-- Rewritten per view by injectProductJsonLd(); empty until a product page renders. -->
+<script type="application/ld+json" id="ldPage"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700;800&amp;family=Poppins:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&amp;display=swap" rel="stylesheet">
@@ -1606,6 +1662,19 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
   input, select, textarea { font-size:16px !important; }
 }
 
+
+/* ------------------------------------------------------------------
+   SEO-01 — .p-media and .p-name became real <a> elements so crawlers
+   can follow them and shoppers can middle-click them. These rules keep
+   them looking and behaving exactly as they did as <div>s.
+   ------------------------------------------------------------------ */
+a.p-media{ display:block; text-decoration:none; color:inherit; }
+a.p-name{ display:block; text-decoration:none; color:inherit; cursor:pointer; }
+a.p-name:hover{ text-decoration:none; }
+a.p-media:focus-visible, a.p-name:focus-visible{ outline:2px solid var(--oxblood); outline-offset:3px; border-radius:4px; }
+
+/* BIZ-04 — the honest empty state, in place of five hollow stars. */
+.no-rating{ font-size:.74rem; color:var(--text-mute); font-style:italic; }
 </style>
 </head>
 <body>
@@ -1628,8 +1697,8 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
     </div>
     <div class="topbar-links">
       <a href="#" onclick="return false;">Track Order</a>
-      <a href="#" onclick="navigateTo('contact')">Store Locator</a>
-      <a href="#" onclick="navigateTo('contact')">Help Center</a>
+      <a href="/contact" onclick="navigateTo('contact')">Store Locator</a>
+      <a href="/contact" onclick="navigateTo('contact')">Help Center</a>
     </div>
   </div>
 </div>
@@ -1641,7 +1710,7 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
       </button>
 
-      <a href="#" class="logo" onclick="navigateTo('home'); return false;">
+      <a href="/" class="logo" onclick="navigateTo('home'); return false;">
         <svg class="mark" viewBox="0 0 48 48" fill="none">
           <circle cx="24" cy="24" r="21.5" stroke="currentColor" stroke-width="1.3" stroke-dasharray="2.4 3.4"/>
           <path d="M24 10c-2 3-4 5-4 8.5a4 4 0 008 0c0-3.5-2-5.5-4-8.5z" fill="currentColor" opacity=".92"/>
@@ -1683,23 +1752,23 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
   <div class="nav-row">
     <div class="container">
       <ul class="main-nav" id="mainNav">
-        <li><a href="#" onclick="navigateTo('home'); return false;">Home</a></li>
+        <li><a href="/" onclick="navigateTo('home'); return false;">Home</a></li>
         <li>
-          <a href="#" onclick="navigateTo('shop'); return false;">Shop <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></a>
+          <a href="/shop" onclick="navigateTo('shop'); return false;">Shop <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></a>
           <div class="mega">
             <div>
               <div class="mega-col-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3l7 6-7 12L5 9z"/></svg>Shop by Category</div>
-              <a class="mega-link" href="#" onclick="openShopWithCategory('lingam'); return false;">Sphatik Lingams</a>
-              <a class="mega-link" href="#" onclick="openShopWithCategory('yantra'); return false;">Sri Yantras</a>
-              <a class="mega-link" href="#" onclick="openShopWithCategory('idols'); return false;">Idols &amp; Murtis</a>
-              <a class="mega-link" href="#" onclick="openShopWithCategory('malas'); return false;">Malas</a>
+              <a class="mega-link" href="/shop?category=lingam" onclick="openShopWithCategory('lingam'); return false;">Sphatik Lingams</a>
+              <a class="mega-link" href="/shop?category=yantra" onclick="openShopWithCategory('yantra'); return false;">Sri Yantras</a>
+              <a class="mega-link" href="/shop?category=idols" onclick="openShopWithCategory('idols'); return false;">Idols &amp; Murtis</a>
+              <a class="mega-link" href="/shop?category=malas" onclick="openShopWithCategory('malas'); return false;">Malas</a>
             </div>
             <div>
               <div class="mega-col-title" style="opacity:0;pointer-events:none;">.</div>
-              <a class="mega-link" href="#" onclick="openShopWithCategory('bracelets'); return false;">Bracelets</a>
-              <a class="mega-link" href="#" onclick="openShopWithCategory('books'); return false;">Spiritual Books</a>
-              <a class="mega-link" href="#" onclick="openShopWithCategory('samagri'); return false;">Puja Samagri Kits</a>
-              <a class="mega-link" href="#" onclick="openShopWithCategory('all'); return false;" style="font-weight:700;color:var(--oxblood);">View All Products →</a>
+              <a class="mega-link" href="/shop?category=bracelets" onclick="openShopWithCategory('bracelets'); return false;">Bracelets</a>
+              <a class="mega-link" href="/shop?category=books" onclick="openShopWithCategory('books'); return false;">Spiritual Books</a>
+              <a class="mega-link" href="/shop?category=samagri" onclick="openShopWithCategory('samagri'); return false;">Puja Samagri Kits</a>
+              <a class="mega-link" href="/shop?category=all" onclick="openShopWithCategory('all'); return false;" style="font-weight:700;color:var(--oxblood);">View All Products →</a>
             </div>
             <div>
               <div class="mega-col-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 17.3L6.2 21l1.5-6.6L2.5 9.8l6.7-.6L12 3l2.8 6.2 6.7.6-5.2 4.6 1.5 6.6z"/></svg>Popular Picks</div>
@@ -1710,15 +1779,15 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
             <div class="mega-promo">
               <strong>Book a Puja Online</strong>
               <p>Verified priests, pan‑India home visits or live online sankalp.</p>
-              <a href="#" onclick="navigateTo('puja'); return false;">Explore Puja Booking →</a>
+              <a href="/puja" onclick="navigateTo('puja'); return false;">Explore Puja Booking →</a>
             </div>
           </div>
         </li>
-        <li><a href="#" onclick="navigateTo('puja'); return false;">Puja Booking</a></li>
-        <li><a href="#" onclick="navigateTo('astrology'); return false;">Astrology <span class="tag-new">Live</span></a></li>
-        <li><a href="#" onclick="navigateTo('blog'); return false;">Journal</a></li>
-        <li><a href="#" onclick="navigateTo('about'); return false;">About</a></li>
-        <li><a href="#" onclick="navigateTo('contact'); return false;">Contact</a></li>
+        <li><a href="/puja" onclick="navigateTo('puja'); return false;">Puja Booking</a></li>
+        <li><a href="/astrology" onclick="navigateTo('astrology'); return false;">Astrology <span class="tag-new">Live</span></a></li>
+        <li><a href="/blog" onclick="navigateTo('blog'); return false;">Journal</a></li>
+        <li><a href="/about" onclick="navigateTo('about'); return false;">About</a></li>
+        <li><a href="/contact" onclick="navigateTo('contact'); return false;">Contact</a></li>
       </ul>
       <div class="trust-mini">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2l8 4v6c0 5-3.4 8.4-8 10-4.6-1.6-8-5-8-10V6z"/><path d="M9 12l2 2 4-4"/></svg>
@@ -1732,7 +1801,7 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
 <div class="overlay" id="drawerOverlay"></div>
 <div class="drawer drawer-left" id="mobileDrawer">
   <div class="drawer-head">
-    <a href="#" class="logo" onclick="navigateTo('home'); closeAllDrawers(); return false;">
+    <a href="/" class="logo" onclick="navigateTo('home'); closeAllDrawers(); return false;">
       <svg class="mark" viewBox="0 0 48 48" fill="none" style="width:34px;height:34px;">
         <circle cx="24" cy="24" r="21.5" stroke="currentColor" stroke-width="1.3" stroke-dasharray="2.4 3.4"/>
         <path d="M24 10c-2 3-4 5-4 8.5a4 4 0 008 0c0-3.5-2-5.5-4-8.5z" fill="currentColor" opacity=".92"/>
@@ -1752,29 +1821,29 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
         <button type="submit" style="width:38px;height:38px;border-radius:50%;background:var(--oxblood);color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;" aria-label="Search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg></button>
       </form>
     </div>
-    <div class="mnav-item"><a href="#" onclick="navigateTo('home'); closeAllDrawers(); return false;">Home</a></div>
+    <div class="mnav-item"><a href="/" onclick="navigateTo('home'); closeAllDrawers(); return false;">Home</a></div>
     <div class="mnav-item" id="mShopToggle">
       <div class="mnav-split">
-        <a href="#" class="mnav-split-label" onclick="openShopWithCategory('all'); closeAllDrawers(); return false;">Shop <span class="mnav-hint">All Products</span></a>
+        <a href="/shop?category=all" class="mnav-split-label" onclick="openShopWithCategory('all'); closeAllDrawers(); return false;">Shop <span class="mnav-hint">All Products</span></a>
         <button class="mnav-toggle" aria-label="Expand shop categories" aria-expanded="false"><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></button>
       </div>
       <div class="mnav-sub">
-        <a href="#" onclick="openShopWithCategory('lingam'); closeAllDrawers(); return false;">Sphatik Lingams</a>
-        <a href="#" onclick="openShopWithCategory('yantra'); closeAllDrawers(); return false;">Sri Yantras</a>
-        <a href="#" onclick="openShopWithCategory('idols'); closeAllDrawers(); return false;">Idols &amp; Murtis</a>
-        <a href="#" onclick="openShopWithCategory('malas'); closeAllDrawers(); return false;">Malas</a>
-        <a href="#" onclick="openShopWithCategory('bracelets'); closeAllDrawers(); return false;">Bracelets</a>
-        <a href="#" onclick="openShopWithCategory('books'); closeAllDrawers(); return false;">Spiritual Books</a>
-        <a href="#" onclick="openShopWithCategory('samagri'); closeAllDrawers(); return false;">Puja Samagri Kits</a>
-        <a href="#" onclick="openShopWithCategory('all'); closeAllDrawers(); return false;">View All</a>
+        <a href="/shop?category=lingam" onclick="openShopWithCategory('lingam'); closeAllDrawers(); return false;">Sphatik Lingams</a>
+        <a href="/shop?category=yantra" onclick="openShopWithCategory('yantra'); closeAllDrawers(); return false;">Sri Yantras</a>
+        <a href="/shop?category=idols" onclick="openShopWithCategory('idols'); closeAllDrawers(); return false;">Idols &amp; Murtis</a>
+        <a href="/shop?category=malas" onclick="openShopWithCategory('malas'); closeAllDrawers(); return false;">Malas</a>
+        <a href="/shop?category=bracelets" onclick="openShopWithCategory('bracelets'); closeAllDrawers(); return false;">Bracelets</a>
+        <a href="/shop?category=books" onclick="openShopWithCategory('books'); closeAllDrawers(); return false;">Spiritual Books</a>
+        <a href="/shop?category=samagri" onclick="openShopWithCategory('samagri'); closeAllDrawers(); return false;">Puja Samagri Kits</a>
+        <a href="/shop?category=all" onclick="openShopWithCategory('all'); closeAllDrawers(); return false;">View All</a>
       </div>
     </div>
-    <div class="mnav-item"><a href="#" onclick="navigateTo('puja'); closeAllDrawers(); return false;">Puja Booking</a></div>
-    <div class="mnav-item"><a href="#" onclick="navigateTo('astrology'); closeAllDrawers(); return false;">Astrology</a></div>
-    <div class="mnav-item"><a href="#" onclick="navigateTo('blog'); closeAllDrawers(); return false;">Journal</a></div>
-    <div class="mnav-item"><a href="#" onclick="navigateTo('wishlist'); closeAllDrawers(); return false;">Wishlist</a></div>
-    <div class="mnav-item"><a href="#" onclick="navigateTo('about'); closeAllDrawers(); return false;">About Us</a></div>
-    <div class="mnav-item"><a href="#" onclick="navigateTo('contact'); closeAllDrawers(); return false;">Contact</a></div>
+    <div class="mnav-item"><a href="/puja" onclick="navigateTo('puja'); closeAllDrawers(); return false;">Puja Booking</a></div>
+    <div class="mnav-item"><a href="/astrology" onclick="navigateTo('astrology'); closeAllDrawers(); return false;">Astrology</a></div>
+    <div class="mnav-item"><a href="/blog" onclick="navigateTo('blog'); closeAllDrawers(); return false;">Journal</a></div>
+    <div class="mnav-item"><a href="/wishlist" onclick="navigateTo('wishlist'); closeAllDrawers(); return false;">Wishlist</a></div>
+    <div class="mnav-item"><a href="/about" onclick="navigateTo('about'); closeAllDrawers(); return false;">About Us</a></div>
+    <div class="mnav-item"><a href="/contact" onclick="navigateTo('contact'); closeAllDrawers(); return false;">Contact</a></div>
   </div>
   <div class="drawer-foot">
     <div class="contact-line">
@@ -2094,7 +2163,7 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
   <div class="breadcrumb-bar">
     <div class="container">
       <div class="breadcrumb">
-        <a href="#" onclick="navigateTo('home'); return false;">Home</a><span class="sep">/</span><span class="current" id="shopCrumb">Shop</span>
+        <a href="/" onclick="navigateTo('home'); return false;">Home</a><span class="sep">/</span><span class="current" id="shopCrumb">Shop</span>
       </div>
     </div>
   </div>
@@ -2116,7 +2185,7 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
           <div class="filter-block">
             <div class="filter-title">Price</div>
             <div class="price-range-display">Up to <span id="priceRangeVal">₹15,000</span></div>
-            <input type="range" id="priceRange" min="0" max="15000" step="100" value="15000">
+            <input type="range" id="priceRange" min="0" max="15000" step="100" value="15000" aria-label="Maximum price">
           </div>
           <div class="filter-block">
             <div class="filter-title">Rating</div>
@@ -2174,8 +2243,8 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
   <div class="breadcrumb-bar">
     <div class="container">
       <div class="breadcrumb">
-        <a href="#" onclick="navigateTo('home'); return false;">Home</a><span class="sep">/</span>
-        <a href="#" onclick="openShopWithCategory('all'); return false;">Shop</a><span class="sep">/</span>
+        <a href="/" onclick="navigateTo('home'); return false;">Home</a><span class="sep">/</span>
+        <a href="/shop?category=all" onclick="openShopWithCategory('all'); return false;">Shop</a><span class="sep">/</span>
         <a href="#" id="pdCatCrumb" onclick="return false;">Category</a><span class="sep">/</span>
         <span class="current" id="pdNameCrumb">Product</span>
       </div>
@@ -2259,18 +2328,18 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
             <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 21a8 8 0 10-16 0"/><circle cx="12" cy="7" r="4"/></svg>Shipping Details</h3>
             <form id="checkoutForm" onsubmit="return false;">
               <div class="field-row">
-                <div class="field"><label>Full Name</label><input type="text" id="ckName" required placeholder="e.g. Anjali Deshpande"></div>
-                <div class="field"><label>Phone Number</label><input type="tel" id="ckPhone" required placeholder="10-digit mobile number"></div>
+                <div class="field"><label for="ckName">Full Name</label><input type="text" id="ckName" required placeholder="e.g. Anjali Deshpande"></div>
+                <div class="field"><label for="ckPhone">Phone Number</label><input type="tel" id="ckPhone" required placeholder="10-digit mobile number"></div>
               </div>
-              <div class="field"><label>Email Address</label><input type="email" id="ckEmail" required placeholder="you@example.com"></div>
-              <div class="field"><label>Full Address</label><textarea id="ckAddress" required placeholder="House no., street, locality"></textarea></div>
+              <div class="field"><label for="ckEmail">Email Address</label><input type="email" id="ckEmail" required placeholder="you@example.com"></div>
+              <div class="field"><label for="ckAddress">Full Address</label><textarea id="ckAddress" required placeholder="House no., street, locality"></textarea></div>
               <div class="field-row">
-                <div class="field"><label>City</label><input type="text" id="ckCity" required></div>
-                <div class="field"><label>State</label><input type="text" id="ckState" required></div>
+                <div class="field"><label for="ckCity">City</label><input type="text" id="ckCity" required></div>
+                <div class="field"><label for="ckState">State</label><input type="text" id="ckState" required></div>
               </div>
               <div class="field-row">
-                <div class="field"><label>PIN Code</label><input type="text" id="ckPin" required maxlength="6" inputmode="numeric"></div>
-                <div class="field"><label>Order Notes <span class="opt">(optional)</span></label><input type="text" id="ckNotes" placeholder="Delivery instructions"></div>
+                <div class="field"><label for="ckPin">PIN Code</label><input type="text" id="ckPin" required maxlength="6" inputmode="numeric"></div>
+                <div class="field"><label for="ckNotes">Order Notes <span class="opt">(optional)</span></label><input type="text" id="ckNotes" placeholder="Delivery instructions"></div>
               </div>
             </form>
           </div>
@@ -2280,45 +2349,45 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
             <div class="pay-methods" id="payMethods">
               <div class="pay-method active" data-method="upi">
                 <div class="pay-method-head">
-                  <input type="radio" name="paym" checked>
+                  <input aria-label="paym" type="radio" name="paym" checked>
                   <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M13 2L3 14h8l-1 8 11-14h-8z"/></svg></div>
                   <strong>UPI</strong>
                   <div class="tags"><span>GPay</span><span>PhonePe</span><span>Paytm</span></div>
                 </div>
                 <div class="pay-method-body">
                   <p>You'll be redirected to complete payment in your UPI app.</p>
-                  <div class="field" style="margin-top:12px;max-width:320px;"><label>UPI ID</label><input type="text" placeholder="yourname@upi"></div>
+                  <div class="field" style="margin-top:12px;max-width:320px;"><label for="f-upi-id">UPI ID</label><input id="f-upi-id" type="text" placeholder="yourname@upi"></div>
                 </div>
               </div>
               <div class="pay-method" data-method="card">
                 <div class="pay-method-head">
-                  <input type="radio" name="paym">
+                  <input aria-label="paym" type="radio" name="paym">
                   <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg></div>
                   <strong>Credit / Debit Card</strong>
                   <div class="tags"><span>Visa</span><span>Mastercard</span><span>RuPay</span></div>
                 </div>
                 <div class="pay-method-body">
-                  <div class="field"><label>Card Number</label><input type="text" placeholder="1234 5678 9012 3456"></div>
+                  <div class="field"><label for="f-card-number">Card Number</label><input id="f-card-number" type="text" placeholder="1234 5678 9012 3456"></div>
                   <div class="field-row">
-                    <div class="field"><label>Expiry</label><input type="text" placeholder="MM/YY"></div>
-                    <div class="field"><label>CVV</label><input type="text" placeholder="•••"></div>
+                    <div class="field"><label for="f-expiry">Expiry</label><input id="f-expiry" type="text" placeholder="MM/YY"></div>
+                    <div class="field"><label for="f-cvv">CVV</label><input id="f-cvv" type="text" placeholder="•••"></div>
                   </div>
                 </div>
               </div>
               <div class="pay-method" data-method="netbanking">
                 <div class="pay-method-head">
-                  <input type="radio" name="paym">
+                  <input aria-label="paym" type="radio" name="paym">
                   <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 21h18M4 21V10l8-6 8 6v11M9 21v-6h6v6"/></svg></div>
                   <strong>Net Banking</strong>
                   <div class="tags"><span>All Banks</span></div>
                 </div>
                 <div class="pay-method-body">
-                  <div class="field select-wrap" style="max-width:320px;"><select><option>Select your bank</option><option>State Bank of India</option><option>HDFC Bank</option><option>ICICI Bank</option><option>Axis Bank</option><option>Punjab National Bank</option></select></div>
+                  <div class="field select-wrap" style="max-width:320px;"><select aria-label="Select your bank"><option>Select your bank</option><option>State Bank of India</option><option>HDFC Bank</option><option>ICICI Bank</option><option>Axis Bank</option><option>Punjab National Bank</option></select></div>
                 </div>
               </div>
               <div class="pay-method" data-method="cod">
                 <div class="pay-method-head">
-                  <input type="radio" name="paym">
+                  <input aria-label="paym" type="radio" name="paym">
                   <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><path d="M3 6h18"/></svg></div>
                   <strong>Cash On Delivery</strong>
                   <div class="tags"><span>+₹40 fee</span></div>
@@ -2415,7 +2484,7 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
                 <button class="mode-pill" data-mode="temple"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2l9 5v13H3V7z"/><path d="M9 20v-7h6v7"/></svg><strong>At Temple</strong><span>Visit our partner temple</span></button>
               </div>
             </div>
-            <div class="field"><label>Preferred Date</label><input type="date" id="pujaDate"></div>
+            <div class="field"><label for="pujaDate">Preferred Date</label><input type="date" id="pujaDate"></div>
             <div class="field"><label>Preferred Time Slot</label>
               <div class="slot-grid" id="pujaSlotGrid">
                 <button class="slot-pill active" data-slot="6-8 AM">6 – 8 AM</button>
@@ -2432,13 +2501,13 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
             <div class="bk-step-title"><div class="n">3</div><h3>Your Details</h3></div>
             <form id="pujaForm" onsubmit="return false;">
               <div class="field-row">
-                <div class="field"><label>Full Name</label><input type="text" id="pjName" required></div>
-                <div class="field"><label>Phone Number</label><input type="tel" id="pjPhone" required></div>
+                <div class="field"><label for="pjName">Full Name</label><input type="text" id="pjName" required></div>
+                <div class="field"><label for="pjPhone">Phone Number</label><input type="tel" id="pjPhone" required></div>
               </div>
-              <div class="field"><label>Email Address</label><input type="email" id="pjEmail" required></div>
-              <div class="field" id="pjAddressField"><label>Address <span class="opt">(for home visit / delivery of prasad)</span></label><textarea id="pjAddress" placeholder="House no., street, locality, city, PIN"></textarea></div>
-              <div class="field"><label>Gotra / Sankalp Details <span class="opt">(optional)</span></label><input type="text" id="pjGotra" placeholder="Name, gotra, nakshatra if known"></div>
-              <div class="field"><label>Special Requirements <span class="opt">(optional)</span></label><textarea id="pjNotes" placeholder="Any specific requests for the priest"></textarea></div>
+              <div class="field"><label for="pjEmail">Email Address</label><input type="email" id="pjEmail" required></div>
+              <div class="field" id="pjAddressField"><label for="pjAddress">Address <span class="opt">(for home visit / delivery of prasad)</span></label><textarea id="pjAddress" placeholder="House no., street, locality, city, PIN"></textarea></div>
+              <div class="field"><label for="pjGotra">Gotra / Sankalp Details <span class="opt">(optional)</span></label><input type="text" id="pjGotra" placeholder="Name, gotra, nakshatra if known"></div>
+              <div class="field"><label for="pjNotes">Special Requirements <span class="opt">(optional)</span></label><textarea id="pjNotes" placeholder="Any specific requests for the priest"></textarea></div>
             </form>
             <button class="btn btn-primary btn-block btn-lg" style="margin-top:8px;" onclick="openBookingReview('puja')">Confirm &amp; Pay</button>
           </div>
@@ -2485,7 +2554,7 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
                 <button class="mode-pill" data-mode="report"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg><strong>Written Report</strong><span>Detailed PDF report</span></button>
               </div>
             </div>
-            <div class="field"><label>Preferred Date</label><input type="date" id="astroDate"></div>
+            <div class="field"><label for="astroDate">Preferred Date</label><input type="date" id="astroDate"></div>
             <div class="field"><label>Preferred Time Slot</label>
               <div class="slot-grid" id="astroSlotGrid">
                 <button class="slot-pill active" data-slot="9-11 AM">9 – 11 AM</button>
@@ -2502,16 +2571,16 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
             <div class="bk-step-title"><div class="n">3</div><h3>Birth &amp; Contact Details</h3></div>
             <form id="astroForm" onsubmit="return false;">
               <div class="field-row">
-                <div class="field"><label>Full Name</label><input type="text" id="asName" required></div>
-                <div class="field"><label>Phone Number</label><input type="tel" id="asPhone" required></div>
+                <div class="field"><label for="asName">Full Name</label><input type="text" id="asName" required></div>
+                <div class="field"><label for="asPhone">Phone Number</label><input type="tel" id="asPhone" required></div>
               </div>
-              <div class="field"><label>Email Address</label><input type="email" id="asEmail" required></div>
+              <div class="field"><label for="asEmail">Email Address</label><input type="email" id="asEmail" required></div>
               <div class="field-row">
-                <div class="field"><label>Date Of Birth</label><input type="date" id="asDob" required></div>
-                <div class="field"><label>Time Of Birth</label><input type="text" id="asTob" placeholder="e.g. 6:45 AM"></div>
+                <div class="field"><label for="asDob">Date Of Birth</label><input type="date" id="asDob" required></div>
+                <div class="field"><label for="asTob">Time Of Birth</label><input type="text" id="asTob" placeholder="e.g. 6:45 AM"></div>
               </div>
-              <div class="field"><label>Place Of Birth</label><input type="text" id="asPob" placeholder="City, State, Country"></div>
-              <div class="field"><label>Your Question Or Concern <span class="opt">(optional)</span></label><textarea id="asNotes" placeholder="Career, marriage, health, muhurat…"></textarea></div>
+              <div class="field"><label for="asPob">Place Of Birth</label><input type="text" id="asPob" placeholder="City, State, Country"></div>
+              <div class="field"><label for="asNotes">Your Question Or Concern <span class="opt">(optional)</span></label><textarea id="asNotes" placeholder="Career, marriage, health, muhurat…"></textarea></div>
             </form>
             <button class="btn btn-primary btn-block btn-lg" style="margin-top:8px;" onclick="openBookingReview('astrology')">Confirm &amp; Pay</button>
           </div>
@@ -2557,7 +2626,7 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
      PAGE: ABOUT
 ============================================================ -->
 <section class="page" id="page-about">
-  <div class="breadcrumb-bar"><div class="container"><div class="breadcrumb"><a href="#" onclick="navigateTo('home'); return false;">Home</a><span class="sep">/</span><span class="current">About Us</span></div></div></div>
+  <div class="breadcrumb-bar"><div class="container"><div class="breadcrumb"><a href="/" onclick="navigateTo('home'); return false;">Home</a><span class="sep">/</span><span class="current">About Us</span></div></div></div>
   <div class="section">
     <div class="container">
       <div class="section-head center reveal">
@@ -2606,7 +2675,7 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
      PAGE: CONTACT
 ============================================================ -->
 <section class="page" id="page-contact">
-  <div class="breadcrumb-bar"><div class="container"><div class="breadcrumb"><a href="#" onclick="navigateTo('home'); return false;">Home</a><span class="sep">/</span><span class="current">Contact</span></div></div></div>
+  <div class="breadcrumb-bar"><div class="container"><div class="breadcrumb"><a href="/" onclick="navigateTo('home'); return false;">Home</a><span class="sep">/</span><span class="current">Contact</span></div></div></div>
   <div class="page-heading"><div class="container"><h1>We're Here To Help</h1><p class="section-sub">Reach us directly, or ask Chakra AI for an instant answer.</p></div></div>
   <div class="section tight" style="padding-top:0;">
     <div class="container">
@@ -2633,11 +2702,11 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
           <h3>Send Us A Message</h3>
           <form id="contactForm" onsubmit="return handleContactSubmit(event)">
             <div class="field-row">
-              <div class="field"><label>Full Name</label><input type="text" required></div>
-              <div class="field"><label>Email Address</label><input type="email" required></div>
+              <div class="field"><label for="f-full-name">Full Name</label><input id="f-full-name" type="text" required></div>
+              <div class="field"><label for="f-email-address">Email Address</label><input id="f-email-address" type="email" required></div>
             </div>
-            <div class="field"><label>Subject</label><input type="text" required></div>
-            <div class="field"><label>Message</label><textarea required style="min-height:140px;"></textarea></div>
+            <div class="field"><label for="f-subject">Subject</label><input id="f-subject" type="text" required></div>
+            <div class="field"><label for="f-message">Message</label><textarea id="f-message" required style="min-height:140px;"></textarea></div>
             <button type="submit" class="btn btn-primary btn-lg">Send Message</button>
           </form>
         </div>
@@ -2650,7 +2719,7 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
      PAGE: POLICIES
 ============================================================ -->
 <section class="page" id="page-policies">
-  <div class="breadcrumb-bar"><div class="container"><div class="breadcrumb"><a href="#" onclick="navigateTo('home'); return false;">Home</a><span class="sep">/</span><span class="current">Policies</span></div></div></div>
+  <div class="breadcrumb-bar"><div class="container"><div class="breadcrumb"><a href="/" onclick="navigateTo('home'); return false;">Home</a><span class="sep">/</span><span class="current">Policies</span></div></div></div>
   <div class="section">
     <div class="container">
       <div class="policy-nav">
@@ -2701,7 +2770,7 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
      PAGE: BLOG
 ============================================================ -->
 <section class="page" id="page-blog">
-  <div class="breadcrumb-bar"><div class="container"><div class="breadcrumb"><a href="#" onclick="navigateTo('home'); return false;">Home</a><span class="sep">/</span><span class="current">Journal</span></div></div></div>
+  <div class="breadcrumb-bar"><div class="container"><div class="breadcrumb"><a href="/" onclick="navigateTo('home'); return false;">Home</a><span class="sep">/</span><span class="current">Journal</span></div></div></div>
   <div class="page-heading">
     <div class="container">
       <h1>The Chakrashri Journal</h1>
@@ -2721,7 +2790,7 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
 <section class="page" id="page-blog-post">
   <div class="section">
     <div class="container">
-      <a href="#" class="blog-back-link" onclick="navigateTo('blog'); return false;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>Back to Journal</a>
+      <a href="/blog" class="blog-back-link" onclick="navigateTo('blog'); return false;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>Back to Journal</a>
       <div class="blog-post-head" id="blogPostHead"></div>
       <div class="blog-post-cover" id="blogPostCover"></div>
       <div class="blog-post-body" id="blogPostBody"></div>
@@ -2749,7 +2818,7 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
           <div><strong>Demo access only — this is not real security.</strong>The password check below runs entirely in your browser and can be bypassed by anyone who views the page source. Do not rely on this for a real store — see the technical report for what real admin authentication needs.</div>
         </div>
         <form onsubmit="return handleAdminLogin(event);">
-          <div class="field"><input type="password" id="adminPasswordInput" placeholder="Admin password" required></div>
+          <div class="field"><input aria-label="Admin password" type="password" id="adminPasswordInput" placeholder="Admin password" required></div>
           <button type="submit" class="btn btn-primary btn-block">Enter Admin Panel</button>
         </form>
         <p class="field-hint" style="margin-top:14px;">Demo password: <strong>chakrashri2026</strong></p>
@@ -2787,26 +2856,26 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
               <div class="admin-form-panel" id="productFormPanel">
                 <h4 id="productFormTitle" style="margin-bottom:18px;">Add New Product</h4>
                 <div class="field-row">
-                  <div class="field"><label>Product Name</label><input type="text" id="pfName"></div>
-                  <div class="field"><label>Category</label><div class="select-wrap"><select id="pfCategory">
+                  <div class="field"><label for="pfName">Product Name</label><input type="text" id="pfName"></div>
+                  <div class="field"><label>Category</label><div class="select-wrap"><select id="pfCategory" aria-label="Category">
                     <option value="lingam">Sphatik Lingams</option><option value="yantra">Sri Yantras</option><option value="idols">Idols &amp; Murtis</option>
                     <option value="malas">Malas</option><option value="bracelets">Bracelets</option><option value="books">Spiritual Books</option><option value="samagri">Puja Samagri Kits</option>
                   </select></div></div>
                 </div>
                 <div class="field-row-3">
-                  <div class="field"><label>Price (₹)</label><input type="number" id="pfPrice" min="0"></div>
-                  <div class="field"><label>MRP (₹) <span class="opt">optional</span></label><input type="number" id="pfMrp" min="0"></div>
-                  <div class="field"><label>Badge</label><div class="select-wrap"><select id="pfBadge"><option value="">None</option><option value="new">New</option><option value="bestseller">Bestseller</option><option value="sale">Sale</option></select></div></div>
+                  <div class="field"><label for="pfPrice">Price (₹)</label><input type="number" id="pfPrice" min="0"></div>
+                  <div class="field"><label for="pfMrp">MRP (₹) <span class="opt">optional</span></label><input type="number" id="pfMrp" min="0"></div>
+                  <div class="field"><label>Badge</label><div class="select-wrap"><select id="pfBadge" aria-label="Badge"><option value="">None</option><option value="new">New</option><option value="bestseller">Bestseller</option><option value="sale">Sale</option></select></div></div>
                 </div>
                 <div class="field-row">
-                  <div class="field"><label>Material</label><input type="text" id="pfMaterial" placeholder="e.g. Natural Sphatik"></div>
-                  <div class="field"><label>SKU <span class="opt">optional — auto-generated if blank</span></label><input type="text" id="pfSku"></div>
+                  <div class="field"><label for="pfMaterial">Material</label><input type="text" id="pfMaterial" placeholder="e.g. Natural Sphatik"></div>
+                  <div class="field"><label for="pfSku">SKU <span class="opt">optional — auto-generated if blank</span></label><input type="text" id="pfSku"></div>
                 </div>
-                <div class="field"><label>Short Description</label><input type="text" id="pfShortDesc" placeholder="Shown on product cards"></div>
-                <div class="field"><label>Full Description</label><textarea id="pfLongDesc" placeholder="Shown on the product page"></textarea></div>
+                <div class="field"><label for="pfShortDesc">Short Description</label><input type="text" id="pfShortDesc" placeholder="Shown on product cards"></div>
+                <div class="field"><label for="pfLongDesc">Full Description</label><textarea id="pfLongDesc" placeholder="Shown on the product page"></textarea></div>
                 <div class="field-row-3">
-                  <div class="field"><label>Rating</label><input type="number" id="pfRating" min="1" max="5" step="0.1" value="4.5"></div>
-                  <div class="field"><label>Review Count</label><input type="number" id="pfReviews" min="0" value="0"></div>
+                  <div class="field"><label for="pfRating">Rating</label><input type="number" id="pfRating" min="1" max="5" step="0.1" value="4.5"></div>
+                  <div class="field"><label for="pfReviews">Review Count</label><input type="number" id="pfReviews" min="0" value="0"></div>
                   <div class="field"><label class="opt" style="display:block;margin-top:14px;"><input type="checkbox" id="pfInStock" checked style="width:auto;margin-right:8px;">In stock</label></div>
                 </div>
                 <div class="admin-form-actions">
@@ -2831,17 +2900,17 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
               </div>
               <div class="admin-form-panel" id="postFormPanel">
                 <h4 id="postFormTitle" style="margin-bottom:18px;">Add New Post</h4>
-                <div class="field"><label>Title</label><input type="text" id="bfTitle"></div>
+                <div class="field"><label for="bfTitle">Title</label><input type="text" id="bfTitle"></div>
                 <div class="field-row">
-                  <div class="field"><label>Category</label><input type="text" id="bfCategory" placeholder="e.g. Puja Guides"></div>
-                  <div class="field"><label>Author</label><input type="text" id="bfAuthor" value="Team Chakrashri"></div>
+                  <div class="field"><label for="bfCategory">Category</label><input type="text" id="bfCategory" placeholder="e.g. Puja Guides"></div>
+                  <div class="field"><label for="bfAuthor">Author</label><input type="text" id="bfAuthor" value="Team Chakrashri"></div>
                 </div>
                 <div class="field-row">
-                  <div class="field"><label>Publish Date</label><input type="date" id="bfDate"></div>
-                  <div class="field"><label>Read Time</label><input type="text" id="bfReadTime" placeholder="e.g. 4 min read"></div>
+                  <div class="field"><label for="bfDate">Publish Date</label><input type="date" id="bfDate"></div>
+                  <div class="field"><label for="bfReadTime">Read Time</label><input type="text" id="bfReadTime" placeholder="e.g. 4 min read"></div>
                 </div>
-                <div class="field"><label>Excerpt <span class="opt">shown on the journal listing</span></label><textarea id="bfExcerpt" style="min-height:70px;"></textarea></div>
-                <div class="field"><label>Content <span class="opt">leave a blank line between paragraphs</span></label><textarea id="bfContent" style="min-height:220px;"></textarea></div>
+                <div class="field"><label for="bfExcerpt">Excerpt <span class="opt">shown on the journal listing</span></label><textarea id="bfExcerpt" style="min-height:70px;"></textarea></div>
+                <div class="field"><label for="bfContent">Content <span class="opt">leave a blank line between paragraphs</span></label><textarea id="bfContent" style="min-height:220px;"></textarea></div>
                 <div class="admin-form-actions">
                   <button class="btn btn-primary" onclick="savePostForm()">Save Post</button>
                   <button class="btn btn-ghost" onclick="closePostForm()">Cancel</button>
@@ -2879,7 +2948,7 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
   <div class="container">
     <div class="footer-grid">
       <div class="footer-about">
-        <a href="#" class="logo" onclick="navigateTo('home'); return false;">
+        <a href="/" class="logo" onclick="navigateTo('home'); return false;">
           <svg class="mark" viewBox="0 0 48 48" fill="none">
             <circle cx="24" cy="24" r="21.5" stroke="currentColor" stroke-width="1.3" stroke-dasharray="2.4 3.4"/>
             <path d="M24 10c-2 3-4 5-4 8.5a4 4 0 008 0c0-3.5-2-5.5-4-8.5z" fill="currentColor" opacity=".92"/>
@@ -2899,24 +2968,24 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
       <div class="footer-col">
         <h4>Shop</h4>
         <ul>
-          <li><a href="#" onclick="openShopWithCategory('lingam'); return false;">Sphatik Lingams</a></li>
-          <li><a href="#" onclick="openShopWithCategory('yantra'); return false;">Sri Yantras</a></li>
-          <li><a href="#" onclick="openShopWithCategory('idols'); return false;">Idols &amp; Murtis</a></li>
-          <li><a href="#" onclick="openShopWithCategory('malas'); return false;">Malas</a></li>
-          <li><a href="#" onclick="openShopWithCategory('bracelets'); return false;">Bracelets</a></li>
-          <li><a href="#" onclick="openShopWithCategory('books'); return false;">Spiritual Books</a></li>
+          <li><a href="/shop?category=lingam" onclick="openShopWithCategory('lingam'); return false;">Sphatik Lingams</a></li>
+          <li><a href="/shop?category=yantra" onclick="openShopWithCategory('yantra'); return false;">Sri Yantras</a></li>
+          <li><a href="/shop?category=idols" onclick="openShopWithCategory('idols'); return false;">Idols &amp; Murtis</a></li>
+          <li><a href="/shop?category=malas" onclick="openShopWithCategory('malas'); return false;">Malas</a></li>
+          <li><a href="/shop?category=bracelets" onclick="openShopWithCategory('bracelets'); return false;">Bracelets</a></li>
+          <li><a href="/shop?category=books" onclick="openShopWithCategory('books'); return false;">Spiritual Books</a></li>
         </ul>
       </div>
       <div class="footer-col">
         <h4>Company</h4>
         <ul>
-          <li><a href="#" onclick="navigateTo('about'); return false;">About Us</a></li>
-          <li><a href="#" onclick="navigateTo('puja'); return false;">Puja Booking</a></li>
-          <li><a href="#" onclick="navigateTo('astrology'); return false;">Astrology</a></li>
-          <li><a href="#" onclick="navigateTo('blog'); return false;">Journal</a></li>
-          <li><a href="#" onclick="navigateTo('contact'); return false;">Contact</a></li>
-          <li><a href="#" onclick="navigateTo('policies'); return false;">Shipping &amp; Returns</a></li>
-          <li><a href="#" onclick="navigateTo('policies'); return false;">Privacy &amp; Terms</a></li>
+          <li><a href="/about" onclick="navigateTo('about'); return false;">About Us</a></li>
+          <li><a href="/puja" onclick="navigateTo('puja'); return false;">Puja Booking</a></li>
+          <li><a href="/astrology" onclick="navigateTo('astrology'); return false;">Astrology</a></li>
+          <li><a href="/blog" onclick="navigateTo('blog'); return false;">Journal</a></li>
+          <li><a href="/contact" onclick="navigateTo('contact'); return false;">Contact</a></li>
+          <li><a href="/policies" onclick="navigateTo('policies'); return false;">Shipping &amp; Returns</a></li>
+          <li><a href="/policies" onclick="navigateTo('policies'); return false;">Privacy &amp; Terms</a></li>
         </ul>
       </div>
       <div class="footer-col">
@@ -2990,8 +3059,8 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
       <div id="authRequiredNote" style="display:none;background:#FBEAE8;color:#B23A2E;border-radius:8px;padding:12px 14px;font-size:.85rem;font-weight:600;margin-bottom:14px;"></div>
       <div class="auth-note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 2"/></svg>Log in to track orders, save addresses, and review your purchases.</div>
       <form onsubmit="return handleDemoAuth(event)">
-        <div class="field"><label>Email Address</label><input type="email" required placeholder="you@example.com" autocomplete="email"></div>
-        <div class="field"><label>Password</label><input type="password" required placeholder="••••••••" autocomplete="current-password"></div>
+        <div class="field"><label for="f-email-address-2">Email Address</label><input id="f-email-address-2" type="email" required placeholder="you@example.com" autocomplete="email"></div>
+        <div class="field"><label for="f-password">Password</label><input id="f-password" type="password" required placeholder="••••••••" autocomplete="current-password"></div>
         <button type="submit" class="btn btn-primary btn-block">Log In</button>
       </form>
       <p style="text-align:center;font-size:.82rem;color:var(--text-mute);margin-top:14px;">
@@ -3001,9 +3070,9 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
     <div class="auth-pane" id="auth-signup">
       <div class="auth-note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 2"/></svg>Create an account to check out faster and keep all your orders in one place.</div>
       <form onsubmit="return handleDemoAuth(event)">
-        <div class="field"><label>Full Name</label><input type="text" required autocomplete="name"></div>
-        <div class="field"><label>Email Address</label><input type="email" required autocomplete="email"></div>
-        <div class="field"><label>Password</label><input type="password" required autocomplete="new-password" minlength="8" placeholder="At least 8 characters"></div>
+        <div class="field"><label for="f-full-name-2">Full Name</label><input id="f-full-name-2" type="text" required autocomplete="name"></div>
+        <div class="field"><label for="f-email-address-3">Email Address</label><input id="f-email-address-3" type="email" required autocomplete="email"></div>
+        <div class="field"><label for="f-password-2">Password</label><input id="f-password-2" type="password" required autocomplete="new-password" minlength="8" placeholder="At least 8 characters"></div>
         <button type="submit" class="btn btn-primary btn-block">Create Account</button>
       </form>
       <p style="text-align:center;font-size:.82rem;color:var(--text-mute);margin-top:14px;">
@@ -3058,7 +3127,7 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
   <div class="chat-body" id="chatBody"></div>
   <div class="chat-foot">
     <div class="chat-input-row">
-      <input type="text" id="chatInput" placeholder="Ask about products, pujas, orders…" autocomplete="off">
+      <input aria-label="Ask about products, pujas, orders…" type="text" id="chatInput" placeholder="Ask about products, pujas, orders…" autocomplete="off">
       <button id="chatSendBtn" aria-label="Send message"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"/></svg></button>
     </div>
     <div class="chat-disclaimer">Chakra is an AI assistant and can make mistakes — please verify important order details.</div>
@@ -3413,7 +3482,7 @@ async function openOrderReviewModal(orderId){
         html += '<div class="star-input" data-product="' + item.product_id + '">' +
           [1,2,3,4,5].map(function(n){ return '<span data-star="' + n + '" onclick="setOrderReviewStars(\'' + item.product_id + '\',' + n + ')">★</span>'; }).join('') +
         '</div>' +
-        '<textarea class="orp-comment" id="orpComment_' + item.product_id + '" placeholder="Optional comment" style="width:100%;min-height:60px;margin:8px 0;padding:8px;border:1px solid var(--line);border-radius:8px;"></textarea>' +
+        '<textarea aria-label="Optional comment" class="orp-comment" id="orpComment_' + item.product_id + '" placeholder="Optional comment" style="width:100%;min-height:60px;margin:8px 0;padding:8px;border:1px solid var(--line);border-radius:8px;"></textarea>' +
         '<button class="btn btn-primary btn-sm" onclick="submitOrderItemReview(\'' + item.product_id + '\', this)">Submit Review</button>';
       }
       html += '</div><div class="divider" style="margin:16px 0;"></div>';
@@ -3818,10 +3887,25 @@ function validateField(id, type){
   return ok;
 }
 
+/* Renders the honest state when a product genuinely has no reviews. Every
+   product used to be created with rating = 4.5 by database default and show
+   those stars beside "0 reviews" — a rating not derived from real customer
+   feedback, which India's CCPA guidance on fake reviews and BIS IS 19000:2022
+   both treat as misleading, and which customers read as fake anyway. */
+function ratingBlockHTML(rating, reviewCount){
+  const count = Number(reviewCount || 0);
+  const value = Number(rating);
+  if(!count || !(value > 0)){
+    return '<span class="no-rating">No reviews yet</span>';
+  }
+  return starsHTML(value) + '<span class="cnt">(' + count + ')</span>';
+}
+
 function starsHTML(rating){
+  const value = Number(rating) || 0;
   let out = '<span class="stars">';
   for(let i=1;i<=5;i++){
-    const filled = rating >= i - 0.25;
+    const filled = value >= i - 0.25;
     out += `<svg viewBox="0 0 24 24" fill="${filled?'currentColor':'none'}" stroke="currentColor" stroke-width="1.5"><polygon points="12,2 15,9 22,9.5 16.5,14.5 18.5,22 12,17.5 5.5,22 7.5,14.5 2,9.5 9,9"/></svg>`;
   }
   out += '</span>';
@@ -3895,7 +3979,11 @@ async function loadCatalog(){
           cat: p.category || 'lingam',
           price: Number(p.price_paise) / 100,
           mrp: Number(p.mrp_paise || p.price_paise) / 100,
-          rating: Number(p.rating) || 4.5,
+          // BIZ-04 — preserve NULL. `Number(p.rating) || 4.5` turned every
+          // unrated product back into 4.5 stars on the client, silently undoing
+          // the whole point of removing the fabricated database default. null
+          // means "no reviews yet" and is rendered as exactly that.
+          rating: (p.rating === null || p.rating === undefined) ? null : Number(p.rating),
           reviews: p.review_count || 0,
           badge: p.badge,
           stock: (p.stock_qty || 0) > 0,
@@ -3947,8 +4035,216 @@ async function saveOrders(){
   try{ await window.storage.set('store_orders', JSON.stringify(ORDERS), true); }catch(e){ /* best effort */ }
 }
 
-/* ---------- Routing ---------- */
+/* ============================================================
+   ROUTING  —  SEO-01
+   ============================================================
+   WHAT CHANGED AND WHY
+
+   Routing used to be fragment-based: history.pushState(null,'','#'+hash), so
+   every page in the site was the URL "/" with a different fragment after it.
+   Search engines treat a fragment as a position WITHIN a document, not as a
+   separate document, so the whole catalog was one indexable page with one
+   title and one description. For a business whose customers search
+   "sphatik shivling online" and "rudraksha mala original", that is the single
+   largest constraint on revenue in the system — every visitor has to be bought.
+
+   It now pushes real paths (/product/sphatik-shivling), which Netlify serves
+   from this same file via the `_redirects` rule shipped alongside it. Each view
+   rewrites <title>, the meta description, the canonical link and the Open Graph
+   tags, and product pages inject Product/Offer/AggregateRating JSON-LD.
+
+   BACKWARD COMPATIBILITY IS NOT OPTIONAL HERE: customers have this site
+   bookmarked, and older order-confirmation emails contain #product/... links.
+   Any URL that still arrives with a fragment is read, honoured, and quietly
+   rewritten to its path equivalent, so no existing link breaks.
+   ============================================================ */
 const VALID_PAGES = ['home','shop','product','cart','checkout','puja','astrology','wishlist','orders','about','contact','policies','blog','blog-post'];
+
+/* Per-view metadata. `title` and `description` are what a search result and a
+   WhatsApp preview actually show, so they are written as sales copy rather than
+   as navigation labels. Product pages override both from the real product. */
+const PAGE_META = {
+  home:      { title: 'Chakrashri — Sacred Objects, Puja Booking & Astrology',
+               description: 'Authentic sphatik lingams, sri yantras, idols, malas, bracelets and spiritual books. Book pujas and astrology consultations online across India.' },
+  shop:      { title: 'Shop Sacred Objects — Malas, Yantras, Idols | Chakrashri',
+               description: 'Browse authentic sphatik lingams, sri yantras, rudraksha malas, brass idols and puja samagri. Free shipping over ₹999, delivered across India.' },
+  product:   { title: 'Chakrashri', description: '' },
+  cart:      { title: 'Your Cart | Chakrashri', description: 'Review the sacred objects in your cart before checkout.', noindex: true },
+  checkout:  { title: 'Checkout | Chakrashri', description: 'Complete your Chakrashri order securely.', noindex: true },
+  puja:      { title: 'Book a Puja Online — Satyanarayan, Griha Pravesh, Rudrabhishek | Chakrashri',
+               description: 'Book an authentic puja performed by an experienced pandit, at home or online. Satyanarayan, Griha Pravesh, Rudrabhishek, Navgraha Shanti and more.' },
+  astrology: { title: 'Vedic Astrology Consultation Online — Kundli, Milan, Gemstones | Chakrashri',
+               description: 'Detailed kundli reports, 36-guna marriage matching, live consultations and gemstone recommendations from practising Vedic astrologers.' },
+  wishlist:  { title: 'Your Wishlist | Chakrashri', description: 'Sacred objects you have saved for later.', noindex: true },
+  orders:    { title: 'Your Orders | Chakrashri', description: 'Track your Chakrashri orders and bookings.', noindex: true },
+  about:     { title: 'About Chakrashri — Authentic Sacred Objects',
+               description: 'Who we are, how we source authentic sacred objects, and the standards every item is held to before it reaches you.' },
+  contact:   { title: 'Contact Chakrashri', description: 'Questions about an order, a puja booking or a product? Reach the Chakrashri team.' },
+  policies:  { title: 'Policies — Shipping, Returns & Privacy | Chakrashri',
+               description: 'Shipping timelines, returns and refunds, and how Chakrashri handles your personal data.' },
+  blog:      { title: 'Journal — Rituals, Meaning & Practice | Chakrashri',
+               description: 'Guides to rituals, the meaning behind sacred objects, and how to use them in daily practice.' },
+  'blog-post': { title: 'Chakrashri Journal', description: '' }
+};
+
+const SITE_ORIGIN = (function(){
+  try {
+    // Falls back to the canonical production origin when opened from file:// so
+    // canonical/OG tags never emit a "null" or "file://" URL.
+    return (location.protocol === 'http:' || location.protocol === 'https:')
+      ? location.origin
+      : 'https://www.chakrashri.com';
+  } catch(e){ return 'https://www.chakrashri.com'; }
+})();
+
+function setMetaTag(selector, attr, value){
+  const el = document.head.querySelector(selector);
+  if(el) el.setAttribute(attr, value);
+}
+
+/* Rewrites title, description, canonical, robots and the social tags for the
+   view being shown. Called by navigateTo on every navigation. */
+function updatePageMeta(pageId, param, overrides){
+  const base = PAGE_META[pageId] || PAGE_META.home;
+  const meta = Object.assign({}, base, overrides || {});
+  const path = pathForRoute(pageId, param);
+  const url = SITE_ORIGIN + path;
+
+  document.title = meta.title;
+  setMetaTag('meta[name="description"]', 'content', meta.description || '');
+  setMetaTag('link[rel="canonical"]', 'href', url);
+  // Cart, checkout, wishlist and order pages are per-customer and have no
+  // search value — indexing them wastes crawl budget on pages that show a
+  // stranger an empty cart.
+  setMetaTag('meta[name="robots"]', 'content', meta.noindex ? 'noindex,follow' : 'index,follow,max-image-preview:large');
+  setMetaTag('meta[property="og:title"]', 'content', meta.title);
+  setMetaTag('meta[property="og:description"]', 'content', meta.description || '');
+  setMetaTag('meta[property="og:url"]', 'content', url);
+  setMetaTag('meta[property="og:type"]', 'content', pageId === 'product' ? 'product' : 'website');
+  setMetaTag('meta[name="twitter:title"]', 'content', meta.title);
+  setMetaTag('meta[name="twitter:description"]', 'content', meta.description || '');
+
+  const ogImage = document.head.querySelector('meta[property="og:image"]');
+  if(meta.image){
+    if(ogImage) ogImage.setAttribute('content', meta.image);
+    else {
+      const m = document.createElement('meta');
+      m.setAttribute('property','og:image'); m.setAttribute('content', meta.image);
+      document.head.appendChild(m);
+    }
+    setMetaTag('meta[name="twitter:card"]', 'content', 'summary_large_image');
+  } else if(ogImage){
+    ogImage.remove();
+  }
+}
+
+/* Product/Offer/AggregateRating structured data — what lets Google show the
+   price and star rating inside the search result itself rather than a plain
+   blue link. Cleared on every other view so a stale product never lingers. */
+function injectProductJsonLd(product, detail){
+  const el = document.getElementById('ldPage');
+  if(!el) return;
+  if(!product){ el.textContent = ''; return; }
+
+  const images = (detail && Array.isArray(detail.images) && detail.images.length)
+    ? detail.images
+    : (product.img ? [product.img] : []);
+
+  const data = {
+    '@context': 'https://schema.org',
+    '@type': 'Product',
+    name: product.name,
+    description: (product.short_desc || product.desc || '').slice(0, 500),
+    sku: product.sku || undefined,
+    category: product.cat ? catLabel(product.cat) : undefined,
+    image: images.filter(function(u){ return typeof u === 'string' && /^https?:\/\//.test(u); }),
+    offers: {
+      '@type': 'Offer',
+      url: SITE_ORIGIN + pathForRoute('product', product.slug),
+      priceCurrency: 'INR',
+      price: (Number(product.price) || 0).toFixed(2),
+      availability: (product.stock_qty === undefined || product.stock_qty === null || product.stock_qty > 0)
+        ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
+      seller: { '@type': 'Organization', name: 'Chakrashri' }
+    }
+  };
+
+  // BIZ-04 — only emit a rating when real reviews exist. Publishing
+  // aggregateRating for a product with zero reviews is precisely the fabricated
+  // rating the audit flagged, and Google's structured-data policy treats it as
+  // a manual-action risk on top of the consumer-law problem.
+  const count = Number(product.review_count || 0);
+  const rating = Number(product.rating);
+  if(count > 0 && rating > 0){
+    data.aggregateRating = {
+      '@type': 'AggregateRating',
+      ratingValue: rating.toFixed(1),
+      reviewCount: count,
+      bestRating: '5',
+      worstRating: '1'
+    };
+  }
+
+  Object.keys(data).forEach(function(k){ if(data[k] === undefined) delete data[k]; });
+  // textContent, never innerHTML: this is a data island, and building it with
+  // innerHTML would make a closing script tag inside a product description an
+  // injection point.
+  //
+  // (That sequence is deliberately described in words rather than written
+  // literally here: the HTML parser ends a script element at the first closing
+  // script tag it sees, even inside a JavaScript string or comment — so writing
+  // it out would truncate this entire file's script block.)
+  el.textContent = JSON.stringify(data);
+}
+
+/* The single place a route becomes a URL, so links, canonical tags, JSON-LD and
+   pushState can never disagree about what a page's address is. */
+function pathForRoute(pageId, param){
+  if(pageId === 'home' || !pageId) return '/';
+  if(param) return '/' + pageId + '/' + String(param).split('/').map(encodeURIComponent).join('/');
+  return '/' + pageId;
+}
+
+/* The id of the view currently on screen, regardless of how the URL happens to
+   express it.
+
+   SEO-01 moved routing from #fragments to real paths. Three places still asked
+   `location.hash` which view was showing, and after that change the hash is
+   empty — so they silently stopped firing. Two of them were user-visible: the
+   cart/checkout totals no longer refreshed after applying a coupon, and logging
+   in while on the Orders page no longer rendered the orders.
+
+   Everything asks this function now, so the next change to how URLs are shaped
+   is one edit rather than a hunt through the file. */
+function currentRouteId(){
+  const parsed = routeFromLocation();
+  return String(parsed.route || 'home').split('/')[0] || 'home';
+}
+
+/* Applies ?category= and ?search= from the URL to the shop filters on a direct
+   landing. Category links are real crawlable URLs now, so the filter they name
+   has to actually be applied when someone arrives at one cold — otherwise six
+   different category URLs all render the same unfiltered grid, which is the
+   textbook duplicate-content signal. */
+function applyQueryFilters(){
+  try {
+    const q = new URLSearchParams(location.search || '');
+    const cat = q.get('category');
+    const search = q.get('search');
+    if(cat) shopFilters.cat = cat;
+    if(search) shopFilters.search = search;
+    if(cat || search) shopFilters.page = 1;
+  } catch(e){ /* URLSearchParams is unavailable only in very old browsers */ }
+}
+
+/* Parses either form of URL. Real paths are the present; fragments are honoured
+   so every bookmark and every link in an already-sent email keeps working. */
+function routeFromLocation(){
+  const hash = (location.hash || '').replace(/^#/, '');
+  if(hash) return { route: hash, fromHash: true };
+  const path = (location.pathname || '/').replace(/^\/+|\/+$/g, '');
+  return { route: path ? decodeURIComponent(path) : 'home', fromHash: false };
+}
 
 function navigateTo(pageId, opts){
   opts = opts || {};
@@ -3963,10 +4259,29 @@ function navigateTo(pageId, opts){
   const target = qs('#page-' + pageId);
   if(target) target.classList.add('active');
   if(!opts.silent) window.scrollTo({ top:0, behavior:'auto' });
-  const newHash = param ? (pageId + '/' + param) : pageId;
-  if(location.hash.replace('#','') !== newHash){
-    history.pushState(null, '', '#' + newHash);
+
+  // SEO-01 — push a REAL path, not a fragment. `replace` is used when we are
+  // rewriting a legacy #hash URL to its path form, so the visitor's Back button
+  // does not bounce them between the two representations of the same page.
+  const newPath = pathForRoute(pageId, param);
+  const currentPath = (location.pathname || '/') + (location.hash || '');
+  if(currentPath !== newPath){
+    try {
+      if(opts.replace) history.replaceState(null, '', newPath);
+      else history.pushState(null, '', newPath);
+    } catch(e){
+      // pushState throws on file:// and in a sandboxed iframe. Routing must
+      // still work in those contexts — the address bar just will not update.
+    }
   }
+
+  // Product pages set their own title/description/JSON-LD once the product is
+  // resolved below, since those come from the product itself.
+  if(pageId !== 'product'){
+    updatePageMeta(pageId, param);
+    injectProductJsonLd(null);
+  }
+
   closeAllDrawers();
   if(pageId === 'shop') renderShopGrid();
   if(pageId === 'wishlist') renderWishlistGrid();
@@ -3985,6 +4300,15 @@ function navigateTo(pageId, opts){
     const p = param ? getProductBySlug(param) : (currentProductId ? getProduct(currentProductId) : null);
     if(p){
       currentProductId = p.id;
+      // Meta first, render second: a crawler that executes JS reads the head,
+      // and a share sheet opened mid-render should never capture the previous
+      // page's title.
+      updatePageMeta('product', p.slug, {
+        title: p.name + ' — Buy Online | Chakrashri',
+        description: (p.short_desc || p.desc || ('Buy ' + p.name + ' from Chakrashri — authentic, carefully sourced, delivered across India.')).slice(0, 300),
+        image: p.img && /^https?:\/\//.test(p.img) ? p.img : undefined
+      });
+      injectProductJsonLd(p);
       renderProductDetail(p.id);
     } else if(param){
       // A slug that doesn't match any product (deleted product, bad/old
@@ -4016,11 +4340,23 @@ function openShopWithCategory(cat){
   shopFilters.search = '';
   shopFilters.page = 1;
   navigateTo('shop');
+  // Reflect the filter in the URL so a copied link reproduces what the visitor
+  // is actually looking at. replaceState, not pushState: navigateTo has already
+  // added the history entry for /shop and a second one would make Back feel
+  // broken.
+  try {
+    const url = '/shop' + (cat && cat !== 'all' ? ('?category=' + encodeURIComponent(cat)) : '');
+    history.replaceState(null, '', url);
+    updatePageMeta('shop', null, cat && cat !== 'all' ? {
+      title: catLabel(cat) + ' — Buy Online | Chakrashri',
+      description: 'Shop authentic ' + catLabel(cat).toLowerCase() + ' at Chakrashri. Carefully sourced, delivered across India, free shipping over ₹999.'
+    } : undefined);
+  } catch(e){ /* file:// and sandboxed iframes */ }
 }
 
 window.addEventListener('popstate', function(){
-  const h = location.hash.replace('#','') || 'home';
-  navigateTo(h, { silent:false });
+  const parsed = routeFromLocation();
+  navigateTo(parsed.route || 'home', { silent:false });
 });
 /* ---------- Product card + grid rendering ---------- */
 /* Switches the product-detail tab programmatically and scrolls it into
@@ -4047,19 +4383,19 @@ function openProductTab(tabName){
    as separate UI state. */
 function quickAddHTML(p){
   if(!p.stock) {
-    return '<div class="p-quickadd"><button class="qa-notify" onclick="event.stopPropagation(); notifyStock(\'' + p.id + '\')">Notify Me</button></div>';
+    return '<div class="p-quickadd"><button class="qa-notify" onclick="event.preventDefault(); event.stopPropagation(); notifyStock(\'' + p.id + '\')">Notify Me</button></div>';
   }
   const qty = cartQtyForProduct(p.id);
   if(qty > 0){
     return '<div class="p-quickadd" data-qa="' + p.id + '">' +
       '<div class="qa-stepper">' +
-        '<button class="qa-btn qa-minus" aria-label="Remove one" onclick="event.stopPropagation(); quickAdjust(\'' + p.id + '\',-1,this)">−</button>' +
+        '<button class="qa-btn qa-minus" aria-label="Remove one" onclick="event.preventDefault(); event.stopPropagation(); quickAdjust(\'' + p.id + '\',-1,this)">−</button>' +
         '<span class="qa-count">' + qty + '</span>' +
-        '<button class="qa-btn qa-plus" aria-label="Add one" onclick="event.stopPropagation(); quickAdjust(\'' + p.id + '\',1,this)">+</button>' +
+        '<button class="qa-btn qa-plus" aria-label="Add one" onclick="event.preventDefault(); event.stopPropagation(); quickAdjust(\'' + p.id + '\',1,this)">+</button>' +
       '</div></div>';
   }
   return '<div class="p-quickadd" data-qa="' + p.id + '">' +
-    '<button class="qa-add" aria-label="Add to cart" onclick="event.stopPropagation(); quickAdjust(\'' + p.id + '\',1,this)">+</button></div>';
+    '<button class="qa-add" aria-label="Add to cart" onclick="event.preventDefault(); event.stopPropagation(); quickAdjust(\'' + p.id + '\',1,this)">+</button></div>';
 }
 
 /* Total quantity of a product in the cart, summed across variants — the card
@@ -4229,6 +4565,12 @@ function animateCartIcon(){
   setTimeout(function(){ el.classList.remove('cart-shake'); }, 620);
 }
 
+/* A real, crawlable, copyable URL for a product. Falls back to the id when a
+   product has no slug, so a card never renders a dead link. */
+function productHref(p){
+  return p && p.slug ? pathForRoute('product', p.slug) : pathForRoute('product', p && p.id);
+}
+
 function productCardHTML(p, idx){
   const wished = wishlist.indexOf(p.id) > -1;
   const badgeHTML = p.badge ? ('<span class="badge ' + badgeInfo(p.badge).cssClass + '">' + escapeHtml(badgeInfo(p.badge).text) + '</span>') : '';
@@ -4236,20 +4578,20 @@ function productCardHTML(p, idx){
   return '' +
   '<div class="p-card" data-id="' + p.id + '">' +
     (!p.stock ? '<div class="p-stock-out"><span>Out of Stock</span></div>' : '') +
-    '<div class="p-media" style="' + mediaStyle(p.cat, idx) + '" onclick="openProduct(\'' + p.id + '\')">' +
+    '<a class="p-media" href="' + productHref(p) + '" style="' + mediaStyle(p.cat, idx) + '" onclick="openProduct(\'' + p.id + '\'); return false;" aria-label="' + escapeHtml(p.name) + '">' +
       productThumbInnerHTML(p) +
       '<div class="p-badges">' + badgeHTML + '</div>' +
       discountTagHTML(p) +
       '<div class="p-quick">' +
-        '<button class="' + (wished?'active':'') + '" onclick="event.stopPropagation(); toggleWishlist(\'' + p.id + '\')" aria-label="Add to wishlist" title="Wishlist"><svg viewBox="0 0 24 24" fill="' + (wished?'currentColor':'none') + '" stroke="currentColor" stroke-width="1.8"><path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.6l-1-1a5.5 5.5 0 10-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 000-7.8z"/></svg></button>' +
-        '<button onclick="event.stopPropagation(); openQuickView(\'' + p.id + '\')" aria-label="Quick view" title="Quick view"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg></button>' +
+        '<button class="' + (wished?'active':'') + '" onclick="event.preventDefault(); event.stopPropagation(); toggleWishlist(\'' + p.id + '\')" aria-label="Add to wishlist" title="Wishlist"><svg viewBox="0 0 24 24" fill="' + (wished?'currentColor':'none') + '" stroke="currentColor" stroke-width="1.8"><path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.6l-1-1a5.5 5.5 0 10-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 000-7.8z"/></svg></button>' +
+        '<button onclick="event.preventDefault(); event.stopPropagation(); openQuickView(\'' + p.id + '\')" aria-label="Quick view" title="Quick view"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg></button>' +
       '</div>' +
       quickAddHTML(p) +
-    '</div>' +
+    '</a>' +
     '<div class="p-body">' +
       '<div class="p-cat">' + catLabel(p.cat) + '</div>' +
-      '<div class="p-name" onclick="openProduct(\'' + p.id + '\')">' + escapeHtml(p.name) + '</div>' +
-      '<div class="p-rating">' + starsHTML(p.rating) + '<span class="cnt">(' + p.reviews + ')</span></div>' +
+      '<a class="p-name" href="' + productHref(p) + '" onclick="openProduct(\'' + p.id + '\'); return false;">' + escapeHtml(p.name) + '</a>' +
+      '<div class="p-rating">' + ratingBlockHTML(p.rating, p.reviews) + '</div>' +
       // Material instead of shortDesc here: shortDesc falls back to the
       // product NAME when a product has no description set, which is what
       // made the name appear twice on every card.
@@ -4476,7 +4818,7 @@ function openQuickView(id){
     '<div class="qv-info">' +
       '<div class="p-cat">' + catLabel(p.cat) + '</div>' +
       '<h3 style="margin-bottom:10px;">' + escapeHtml(p.name) + '</h3>' +
-      '<div class="p-rating" style="margin-bottom:14px;">' + starsHTML(p.rating) + '<span class="cnt">(' + p.reviews + ' reviews)</span></div>' +
+      '<div class="p-rating" style="margin-bottom:14px;">' + ratingBlockHTML(p.rating, p.reviews) + '</div>' +
       '<div class="pd-price" style="margin-bottom:14px;"><span class="now" style="font-size:1.5rem;">' + formatINR(p.price) + '</span>' + wasHTML + '</div>' +
       '<p style="margin-bottom:18px;" id="qvShortDesc">' + escapeHtml(p.shortDesc) + '</p>' +
       '<div class="pd-buy-row">' +
@@ -4544,7 +4886,7 @@ async function handleDemoAuth(e){
       if(!email || !password){ toast('Enter email and password', 'err'); return false; }
       try{
         const res = await apiFetch('/api/auth/login', { method:'POST', body: JSON.stringify({ email, password }) });
-        if(res && res.token){ setAuthToken(res.token); await loadCurrentUser(); switchAuthTab('account'); if(location.hash.replace('#','')==='orders') renderOrdersPage(); toast('Logged in successfully.'); }
+        if(res && res.token){ setAuthToken(res.token); await loadCurrentUser(); switchAuthTab('account'); if(currentRouteId() === 'orders') renderOrdersPage(); toast('Logged in successfully.'); }
         else { toast('Login failed', 'err'); }
       }catch(err){ toast((err && err.error) ? err.error : 'Login failed', 'err'); }
     }else{
@@ -4554,8 +4896,26 @@ async function handleDemoAuth(e){
       if(!name || !email || !password){ toast('Please fill all fields', 'err'); return false; }
       try{
         const res = await apiFetch('/api/auth/register', { method:'POST', body: JSON.stringify({ name, email, password }) });
-        if(res && res.token){ setAuthToken(res.token); await loadCurrentUser(); switchAuthTab('account'); if(location.hash.replace('#','')==='orders') renderOrdersPage(); toast('Account created and logged in.'); }
-        else { toast('Registration failed', 'err'); }
+        if(res && res.token){
+          setAuthToken(res.token);
+          await loadCurrentUser();
+          switchAuthTab('account');
+          if(currentRouteId() === 'orders') renderOrdersPage();
+          toast(res.requiresVerification
+            ? 'Account created. Check your email to verify your address.'
+            : 'Account created and logged in.');
+        } else if(res && res.message){
+          // AUTH-04 — the API deliberately answers 202 with no token when the
+          // address is ALREADY registered, so registration cannot be used to
+          // discover which emails have accounts. That is a success status, so
+          // it lands here rather than in the catch; without this branch the
+          // customer saw a bare "Registration failed", which is both wrong and
+          // less helpful than what they need to hear.
+          toast(res.message, 'ok');
+          switchAuthTab('login');
+        } else {
+          toast('Registration failed', 'err');
+        }
       }catch(err){ toast((err && (err.error || (err.errors && err.errors[0] && err.errors[0].msg))) ? (err.error || err.errors[0].msg) : 'Registration failed', 'err'); }
     }
   }catch(e){ toast('Unexpected error', 'err'); console.error(e); }
@@ -4565,7 +4925,7 @@ async function handleDemoAuth(e){
 function renderShopFilterSidebar(){
   const catCounts = {};
   PRODUCTS.forEach(function(p){ catCounts[p.cat] = (catCounts[p.cat]||0)+1; });
-  let catHTML = '<label class="filter-check ' + (shopFilters.cat==='all'?'active':'') + '"><input type="radio" name="catf" ' + (shopFilters.cat==='all'?'checked':'') + ' onchange="setCategoryFilter(\'all\')"><span class="n">All Products</span><span class="c">' + PRODUCTS.length + '</span></label>';
+  let catHTML = '<label class="filter-check ' + (shopFilters.cat==='all'?'active':'') + '"><input aria-label="catf" type="radio" name="catf" ' + (shopFilters.cat==='all'?'checked':'') + ' onchange="setCategoryFilter(\'all\')"><span class="n">All Products</span><span class="c">' + PRODUCTS.length + '</span></label>';
   // Union of the known starter categories (shown even at zero count, for
   // merchandising) and any category actually present in the real catalog —
   // previously this only ever iterated the fixed CAT_LABELS keys, so a new
@@ -4573,15 +4933,15 @@ function renderShopFilterSidebar(){
   const allCatKeys = Object.keys(Object.assign({}, CAT_LABELS, catCounts));
   allCatKeys.sort(function(a,b){ return catLabel(a).localeCompare(catLabel(b)); });
   allCatKeys.forEach(function(key){
-    catHTML += '<label class="filter-check ' + (shopFilters.cat===key?'active':'') + '"><input type="radio" name="catf" ' + (shopFilters.cat===key?'checked':'') + ' onchange="setCategoryFilter(\'' + key + '\')"><span class="n">' + catLabel(key) + '</span><span class="c">' + (catCounts[key]||0) + '</span></label>';
+    catHTML += '<label class="filter-check ' + (shopFilters.cat===key?'active':'') + '"><input aria-label="catf" type="radio" name="catf" ' + (shopFilters.cat===key?'checked':'') + ' onchange="setCategoryFilter(\'' + key + '\')"><span class="n">' + catLabel(key) + '</span><span class="c">' + (catCounts[key]||0) + '</span></label>';
   });
   qs('#filterCategoryList').innerHTML = catHTML;
 
   let ratingHTML = '';
   [4,3,2].forEach(function(r){
-    ratingHTML += '<label><input type="radio" name="ratef" ' + (shopFilters.minRating===r?'checked':'') + ' onchange="setRatingFilter(' + r + ')">' + starsHTML(r) + '<span style="margin-left:4px;">&amp; up</span></label>';
+    ratingHTML += '<label><input aria-label="ratef" type="radio" name="ratef" ' + (shopFilters.minRating===r?'checked':'') + ' onchange="setRatingFilter(' + r + ')">' + starsHTML(r) + '<span style="margin-left:4px;">&amp; up</span></label>';
   });
-  ratingHTML += '<label><input type="radio" name="ratef" ' + (shopFilters.minRating===0?'checked':'') + ' onchange="setRatingFilter(0)"><span>Any rating</span></label>';
+  ratingHTML += '<label><input aria-label="ratef" type="radio" name="ratef" ' + (shopFilters.minRating===0?'checked':'') + ' onchange="setRatingFilter(0)"><span>Any rating</span></label>';
   qs('#ratingFilterList').innerHTML = ratingHTML;
 
   qs('#priceRange').value = shopFilters.maxPrice;
@@ -4752,7 +5112,14 @@ async function renderProductDetail(id){
   qs('#pdInfo').innerHTML =
     '<div class="p-cat">' + catLabel(p.cat) + '</div>' +
     '<h1>' + escapeHtml(p.name) + '</h1>' +
-    '<div class="pd-rating-row"><span onclick="openProductTab(\'reviews\')" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px;" title="Read all reviews">' + starsHTML(p.rating) + '<span class="cnt">' + p.rating + ' (' + p.reviews + ' reviews)</span></span><span class="sku">SKU: ' + escapeHtml(p.sku) + '</span></div>' +
+    '<div class="pd-rating-row">' +
+      (Number(p.reviews) > 0 && Number(p.rating) > 0
+        ? '<span onclick="openProductTab(\'reviews\')" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px;" title="Read all reviews">' + starsHTML(p.rating) + '<span class="cnt">' + Number(p.rating).toFixed(1) + ' (' + p.reviews + ' reviews)</span></span>'
+        // BIZ-04 — without this branch an unrated product rendered five hollow
+        // stars beside "null (0 reviews)", which reads as a zero-star rating:
+        // worse than the fabricated 4.5 it replaced.
+        : '<span class="no-rating">No reviews yet — be the first to review this</span>') +
+      '<span class="sku">SKU: ' + escapeHtml(p.sku) + '</span></div>' +
     '<div class="pd-price">' + '<span class="now" id="pdPriceNow">' + formatINR(p.price) + '</span>' + wasHTML + '</div>' +
     '<p class="pd-desc" id="pdShortDesc">' + escapeHtml(p.shortDesc) + '</p>' +
     optionsHTML +
@@ -4832,7 +5199,13 @@ function renderReviewsTab(p, reviews, eligibility){
   });
 
   let html = '<div class="review-summary">' +
-    '<div class="review-avg"><div class="num">' + (p.rating || 0) + '</div>' + starsHTML(p.rating) + '<div style="font-size:.78rem;color:var(--text-mute);margin-top:6px;">' + reviews.length + ' review' + (reviews.length===1?'':'s') + '</div></div>' +
+    '<div class="review-avg">' +
+      (reviews.length
+        ? ('<div class="num">' + (Number(p.rating) || 0).toFixed(1) + '</div>' + starsHTML(p.rating))
+        : '<div class="num" style="font-size:1.1rem;">—</div>') +
+      '<div style="font-size:.78rem;color:var(--text-mute);margin-top:6px;">' +
+        (reviews.length ? (reviews.length + ' review' + (reviews.length===1?'':'s')) : 'No reviews yet') +
+      '</div></div>' +
     '<div class="review-bars">' + dist.map(function(d){ return '<div class="review-bar-row"><span>' + d.star + '★</span><div class="track"><div class="fill" style="width:' + d.pct + '%;"></div></div><span>' + d.pct + '%</span></div>'; }).join('') + '</div>' +
   '</div>';
 
@@ -4863,16 +5236,110 @@ function renderReviewsTab(p, reviews, eligibility){
         '<div class="star-input" id="reviewStarInput">' +
           [1,2,3,4,5].map(function(n){ return '<span data-star="' + n + '" onclick="setReviewStars(' + n + ')">★</span>'; }).join('') +
         '</div>' +
-        '<textarea id="reviewComment" placeholder="Share your experience with this product (optional)" style="width:100%;min-height:80px;margin:10px 0;padding:10px;border:1px solid var(--line);border-radius:8px;"></textarea>' +
+        '<textarea aria-label="Share your experience with this product (optional)" id="reviewComment" placeholder="Share your experience with this product (optional)" style="width:100%;min-height:80px;margin:10px 0;padding:10px;border:1px solid var(--line);border-radius:8px;"></textarea>' +
         '<button class="btn btn-primary btn-sm" onclick="submitProductReview(\'' + p.id + '\', this)">Submit Review</button>' +
       '</div>';
     reviewStarValue = 5;
+  } else if(eligibility && eligibility.verifiedPurchase && eligibility.emailVerified === false){
+    // AUTH-04 — the server requires a verified email before accepting a review,
+    // so a customer who HAS bought and received the item still cannot post one
+    // until they confirm their address.
+    //
+    // This branch is the fix for a dead end I created: the gate went in with no
+    // way to pass it. There was no verification handler, no resend control, and
+    // the fallback message below told a customer whose order WAS delivered that
+    // it had not been. They had bought the thing, received it, and the site
+    // simply refused them with the wrong reason.
+    formWrap.innerHTML =
+      '<div class="review-cta">' +
+        '<p style="margin-bottom:8px;"><strong>One step first:</strong> please confirm your email address so we know reviews come from real customers.</p>' +
+        '<button class="btn btn-primary btn-sm" onclick="resendVerificationEmail(this)">Send me the link</button>' +
+      '</div>';
   } else {
-    // Logged in, but either hasn't bought this product or their order
-    // hasn't been marked delivered yet — matches the server-side gate
-    // exactly, so this message is never misleading about why the form isn't shown.
+    // Logged in, but either hasn't bought this product or their order hasn't
+    // been marked delivered yet — the two remaining server-side conditions.
     formWrap.innerHTML = '<div class="review-cta"><p>Reviews are open to customers whose order for this item has been delivered.</p></div>';
   }
+}
+
+/* AUTH-04 — the customer-facing half of email verification.
+   The backend has issued verification links since registration, and gates COD
+   and reviews on them. Without these two functions the link in the email led
+   nowhere and there was no way to request another. */
+async function resendVerificationEmail(btn){
+  if(!getAuthToken()){ await promptLoginRequired('Please log in first.'); return; }
+  const original = btn ? btn.textContent : '';
+  if(btn){ btn.disabled = true; btn.textContent = 'Sending…'; }
+  try{
+    const res = await apiFetch('/api/auth/resend-verification', { method:'POST' });
+    toast(res && res.verified
+      ? 'Your email address is already verified.'
+      : 'Verification email sent — please check your inbox.', 'ok');
+    if(res && res.verified) await loadCurrentUser();
+  }catch(err){
+    toast((err && err.error) ? err.error : 'Could not send the verification email. Please try again shortly.', 'err');
+  }finally{
+    if(btn){ btn.disabled = false; btn.textContent = original; }
+  }
+}
+
+/* Handles the /verify-email?token=… link from the email. Called during boot so
+   a customer arriving from their inbox is verified immediately and told so. */
+async function handleEmailVerificationLink(){
+  let token = null;
+  try { token = new URLSearchParams(location.search || '').get('token'); } catch(e){ return; }
+  if(!token) return;
+  const path = (location.pathname || '').replace(/\/+$/, '');
+  if(path !== '/verify-email') return;
+
+  try{
+    await apiFetch('/api/auth/verify-email', { method:'POST', body: JSON.stringify({ token: token }) });
+    toast('Your email address has been verified — thank you.', 'ok');
+    if(getAuthToken()) await loadCurrentUser();
+  }catch(err){
+    toast((err && err.error) ? err.error : 'That verification link is invalid or has expired.', 'err');
+  }
+  // Strip the token from the URL either way, so it is not left in history, in a
+  // shared link, or in a referrer header.
+  try { history.replaceState(null, '', '/'); } catch(e){ /* file:// */ }
+  navigateTo('home', { replace: true });
+}
+
+/* Same for the password-reset link the backend has always emailed. It pointed at
+   /reset-password?token=… and nothing on the site handled that path either. */
+async function handlePasswordResetLink(){
+  let token = null;
+  try { token = new URLSearchParams(location.search || '').get('token'); } catch(e){ return false; }
+  if(!token) return false;
+  const path = (location.pathname || '').replace(/\/+$/, '');
+  if(path !== '/reset-password') return false;
+
+  const newPassword = window.prompt('Enter a new password (at least 8 characters):');
+  if(!newPassword){
+    toast('Password reset cancelled. Request a new link when you are ready.', 'err');
+    try { history.replaceState(null, '', '/'); } catch(e){}
+    navigateTo('home', { replace: true });
+    return true;
+  }
+
+  try{
+    const res = await apiFetch('/api/auth/reset-password', {
+      method:'POST', body: JSON.stringify({ token: token, newPassword: newPassword })
+    });
+    // A reset now revokes every existing session (AUTH-03), so any token this
+    // browser is holding is already dead — clear it rather than leaving the UI
+    // showing a signed-in state that every request will reject.
+    setAuthToken(null);
+    currentUser = null;
+    updateAccountUI();
+    toast((res && res.message) || 'Password updated. Please sign in with your new password.', 'ok');
+    openAccountModal();
+  }catch(err){
+    toast((err && err.error) ? err.error : 'That reset link is invalid or has expired.', 'err');
+  }
+  try { history.replaceState(null, '', '/'); } catch(e){}
+  navigateTo('home', { replace: true });
+  return true;
 }
 
 let reviewStarValue = 5;
@@ -5256,10 +5723,19 @@ async function applyCoupon(){
   if(!getAuthToken()){ await promptLoginRequired('Please log in to apply a coupon.'); return; }
 
   const subtotalPaise = Math.round(getCartSubtotal() * 100);
+  // Send the CART, not a subtotal. The server prices it from the database, so
+  // the discount previewed here is the discount actually applied at checkout —
+  // previously the two could disagree, which is a support ticket every time.
+  // subtotalPaise is still included so that during a deploy where the API is
+  // older than this file, the Apply button keeps working (the API falls back to
+  // it and marks the response verified:false).
+  const couponItems = cart.map(function(l){
+    return { productId: l.id, variantId: l.variantId || null, quantity: l.qty };
+  });
   try{
     const res = await apiFetch('/api/coupons/validate', {
       method:'POST',
-      body: JSON.stringify({ code: val, subtotalPaise: subtotalPaise })
+      body: JSON.stringify({ code: val, items: couponItems, subtotalPaise: subtotalPaise })
     });
     appliedCoupon = { code: res.code, discountPaise: res.discountPaise, description: res.description };
     toast('Coupon "' + res.code + '" applied — you saved ' + formatINR(res.discountPaise/100) + '.', 'ok');
@@ -5280,9 +5756,12 @@ function removeCoupon(){
 // Re-renders whichever of the two pages is currently visible, so the
 // discount line stays consistent across both without one clobbering the other.
 function refreshCartAndCheckoutViews(){
-  const h = location.hash.replace('#','').split('/')[0];
-  if(h === 'cart') renderCartPage();
-  if(h === 'checkout') renderCheckoutPage();
+  // Was `location.hash.replace('#','')`, which is empty now that routing uses
+  // real paths — so applying or removing a coupon silently stopped updating the
+  // totals on screen.
+  const view = currentRouteId();
+  if(view === 'cart') renderCartPage();
+  if(view === 'checkout') renderCheckoutPage();
 }
 
 // Shared summary-lines builder used by BOTH the cart page and the checkout
@@ -5309,7 +5788,7 @@ function buildCouponRowHTML(){
       '</div>' +
       '<button class="btn btn-ghost btn-sm" onclick="removeCoupon()">Remove</button></div>';
   }
-  return '<div class="coupon-row"><input type="text" placeholder="Coupon code" id="couponInput"><button class="btn btn-ghost btn-sm" onclick="applyCoupon()">Apply</button></div>';
+  return '<div class="coupon-row"><input aria-label="Coupon code" type="text" placeholder="Coupon code" id="couponInput"><button class="btn btn-ghost btn-sm" onclick="applyCoupon()">Apply</button></div>';
 }
 
 /* ---------- Checkout page ---------- */
@@ -5440,8 +5919,7 @@ async function placeOrder(){
     if (body.requiresRazorpay === false) {
       qs('#checkoutProcessing').style.display = 'none';
       qs('#checkoutSuccess').style.display = '';
-      qs('#successOrderId').textContent = body.orderNumber || '—';
-      qs('#successDeliveryDate').textContent = new Date(new Date().setDate(new Date().getDate() + 5)).toLocaleDateString('en-IN', { day:'numeric', month:'long', year:'numeric' });
+      showCheckoutSuccess(body.orderNumber, null);
       toast('Your cash-on-delivery order has been placed. We will contact you with delivery details soon.');
       cart = [];
       appliedCoupon = null; // a coupon is single-use per order — clear it so it can't carry over to the next one
@@ -5479,18 +5957,24 @@ async function placeOrder(){
           // must not be reported to the customer as a failed payment. If all
           // retries fail, the webhook and the reconciliation script still
           // confirm the order server-side.
-          await verifyPaymentWithRetry({
+          const verifyResult = await verifyPaymentWithRetry({
             razorpay_order_id: response.razorpay_order_id,
             razorpay_payment_id: response.razorpay_payment_id,
             razorpay_signature: response.razorpay_signature
           });
 
-          // show success UI
+          // PAY-01 — the API answers 202 {pending:true} when it could not reach
+          // the gateway, or when the gateway reported an amount, currency or
+          // capture status that did not match this order. 202 is a SUCCESS
+          // status, so it resolves normally here; without this branch the
+          // customer was shown "Order Confirmed" and a delivery date while the
+          // server had the order parked for manual review — or still pending,
+          // where the expiry sweep would later cancel it and hand the stock
+          // back. Telling someone their order is confirmed when it is not is
+          // worse than any error message.
           qs('#checkoutProcessing').style.display = 'none';
           qs('#checkoutSuccess').style.display = '';
-          qs('#successOrderId').textContent = body.orderNumber || '—';
-          const d = new Date(); d.setDate(d.getDate() + 5);
-          qs('#successDeliveryDate').textContent = d.toLocaleDateString('en-IN', { day:'numeric', month:'long', year:'numeric' });
+          showCheckoutSuccess(body.orderNumber, verifyResult && verifyResult.pending ? verifyResult : null);
 
           // clear local cart and update UI
           cart = [];
@@ -5515,6 +5999,56 @@ async function placeOrder(){
     toast((err && (err.error || (err.message))) ? (err.error || err.message) : 'Could not process checkout', 'err');
   }
 }
+/* Renders the checkout success panel.
+   
+   WHY THIS IS A FUNCTION AND NOT INLINE: #checkoutSuccess is ONE static element
+   reused for every order in an SPA session — its own "View More Products"
+   button navigates back to the shop, so a second checkout re-shows the same
+   node. An earlier version of the pending branch mutated the heading and
+   appended a note without ever resetting them, so a later fully-confirmed order
+   still read "Payment received — confirming your order" and carried a stale
+   note about a different order. Every render now starts from a known state. */
+function showCheckoutSuccess(orderNumber, pendingInfo){
+  const panel = qs('#checkoutSuccess');
+  if(!panel) return;
+
+  qs('#successOrderId').textContent = orderNumber || '—';
+
+  // Clear anything a previous render appended.
+  qsa('.checkout-pending-note', panel).forEach(function(n){ n.remove(); });
+
+  const heading = qs('h2', panel) || qs('h3', panel);
+  // Remember the designer's original wording the first time we touch it, so the
+  // confirmed state restores exactly what the markup says rather than whatever
+  // string happened to be typed into this function.
+  if(heading && !heading.dataset.originalText) heading.dataset.originalText = heading.textContent;
+
+  const dateEl = qs('#successDeliveryDate');
+  // parentElement, NOT closest('div,...'): #successDeliveryDate IS a div, and
+  // closest() starts at the node itself — hiding it left the "Estimated
+  // Delivery" label visible with no value beneath it.
+  const dateBlock = dateEl ? dateEl.parentElement : null;
+
+  if(pendingInfo){
+    if(heading) heading.textContent = 'Payment received — confirming your order';
+    if(dateBlock) dateBlock.style.display = 'none'; // a date here would be a promise we cannot keep
+    const note = document.createElement('p');
+    note.className = 'checkout-pending-note';
+    note.style.cssText = 'margin-top:12px;padding:12px 14px;border:1.5px solid var(--gold);background:#FBF6E6;border-radius:9px;font-size:.92rem;';
+    note.textContent = pendingInfo.message
+      || 'We have received your payment and are confirming it. You will get an email as soon as your order is confirmed — no further action is needed.';
+    panel.appendChild(note);
+    toast('Payment received. We are confirming your order.', 'ok');
+  } else {
+    if(heading) heading.textContent = heading.dataset.originalText || 'Your Order Is Confirmed';
+    if(dateBlock) dateBlock.style.display = '';
+    if(dateEl){
+      const d = new Date(); d.setDate(d.getDate() + 5);
+      dateEl.textContent = d.toLocaleDateString('en-IN', { day:'numeric', month:'long', year:'numeric' });
+    }
+  }
+}
+
 /* ---------- Shared booking confirmation modal (created on demand) ---------- */
 function ensureBookingModal(){
   let el = document.getElementById('bookingModal');
@@ -5729,13 +6263,25 @@ async function confirmPujaBooking(){
       prefill: { name: qs('#pjName').value, email: qs('#pjEmail').value, contact: qs('#pjPhone').value },
       handler: async function(response){
         try{
-          await apiFetch('/api/bookings/verify-payment', { method:'POST', body: JSON.stringify({
+          const verifyResult = await apiFetch('/api/bookings/verify-payment', { method:'POST', body: JSON.stringify({
             bookingType: 'puja', bookingId: body.bookingId,
             razorpay_order_id: response.razorpay_order_id,
             razorpay_payment_id: response.razorpay_payment_id,
             razorpay_signature: response.razorpay_signature
           })});
-          showBookingConfirmation('Puja Booked & Paid', 'Your ' + svc.name + ' is confirmed and paid. Our priest coordination team will call within 2 hours to confirm samagri and final timing.', body.bookingId);
+          // PAY-01 — /verify-payment answers 202 {pending:true} when the gateway
+          // could not be reached, or reported an amount or capture status that
+          // did not match this booking. 202 is a success status, so it lands
+          // here; saying "confirmed and paid" in that case tells the customer
+          // something the server does not believe.
+          if(verifyResult && verifyResult.pending){
+            showBookingConfirmation('Puja Booked — Confirming Payment',
+              (verifyResult.message || 'We have received your payment and are confirming it.') +
+              ' You will get an email as soon as it is confirmed — no further action is needed.',
+              body.bookingId);
+          } else {
+            showBookingConfirmation('Puja Booked & Paid', 'Your ' + svc.name + ' is confirmed and paid. Our priest coordination team will call within 2 hours to confirm samagri and final timing.', body.bookingId);
+          }
           selectedPuja = null;
           ['pjName','pjPhone','pjEmail','pjAddress','pjGotra','pjNotes'].forEach(function(id){ const e = qs('#'+id); if(e) e.value=''; });
           renderPujaPage();
@@ -5869,13 +6415,25 @@ async function confirmAstroBooking(){
       prefill: { name: qs('#asName').value, email: qs('#asEmail').value, contact: qs('#asPhone').value },
       handler: async function(response){
         try{
-          await apiFetch('/api/bookings/verify-payment', { method:'POST', body: JSON.stringify({
+          const verifyResult = await apiFetch('/api/bookings/verify-payment', { method:'POST', body: JSON.stringify({
             bookingType: 'astrology', bookingId: body.bookingId,
             razorpay_order_id: response.razorpay_order_id,
             razorpay_payment_id: response.razorpay_payment_id,
             razorpay_signature: response.razorpay_signature
           })});
-          showBookingConfirmation('Consultation Booked & Paid', 'Your ' + svc.name + ' is confirmed and paid. You will receive a reminder before your scheduled slot.', body.bookingId);
+          // PAY-01 — /verify-payment answers 202 {pending:true} when the gateway
+          // could not be reached, or reported an amount or capture status that
+          // did not match this booking. 202 is a success status, so it lands
+          // here; saying "confirmed and paid" in that case tells the customer
+          // something the server does not believe.
+          if(verifyResult && verifyResult.pending){
+            showBookingConfirmation('Consultation Booked — Confirming Payment',
+              (verifyResult.message || 'We have received your payment and are confirming it.') +
+              ' You will get an email as soon as it is confirmed — no further action is needed.',
+              body.bookingId);
+          } else {
+            showBookingConfirmation('Consultation Booked & Paid', 'Your ' + svc.name + ' is confirmed and paid. You will receive a reminder before your scheduled slot.', body.bookingId);
+          }
           selectedAstro = null;
           ['asName','asPhone','asEmail','asDob','asTob','asPob','asNotes'].forEach(function(id){ const e = qs('#'+id); if(e) e.value=''; });
           renderAstroPage();
@@ -5959,32 +6517,55 @@ async function sendChatMessage(textOverride){
   qs('#chatSendBtn').disabled = true;
   showTyping();
   try{
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method:'POST',
-      headers:{ 'Content-Type':'application/json' },
-      body: JSON.stringify({
-        model:'claude-sonnet-4-6',
-        max_tokens:1000,
-        system: CHAKRA_SYSTEM_PROMPT,
-        messages: chatHistory
-      })
+    // Calls OUR backend, never the model provider directly. The previous
+    // implementation posted straight to api.anthropic.com from the browser with
+    // no credentials at all, which meant this feature never once worked — and
+    // the only way to make that version work would have been to put an API key
+    // into a public HTML file, where it would be scraped and billed within
+    // hours. src/routes/support.routes.js holds the key server-side.
+    const response = await fetch(API_BASE + '/api/support/chat', {
+      method: 'POST',
+      headers: Object.assign(
+        { 'Content-Type': 'application/json' },
+        getAuthToken() ? { Authorization: 'Bearer ' + getAuthToken() } : {}
+      ),
+      body: JSON.stringify({ messages: chatHistory.slice(-12) })
     });
-    const data = await response.json();
+
     hideTyping();
-    if(data && data.content){
-      const replyText = data.content.map(function(block){ return block.type === 'text' ? block.text : ''; }).join('\n').trim();
-      if(replyText){
-        addChatMessage('bot', replyText);
-        chatHistory.push({ role:'assistant', content:replyText });
-      } else {
-        addChatMessage('err', "I couldn't quite process that — could you try rephrasing?");
-      }
+
+    if(response.status === 501 || response.status === 404){
+      // The assistant is not configured on this deployment. Give the customer
+      // the thing they actually came for rather than an apology.
+      addChatMessage('bot',
+        "I'm not available right now, but our team is. WhatsApp us on +91 70765 11660 " +
+        "or email support@chakrashri.com and we'll get straight back to you.");
+      chatHistory.pop(); // don't keep an unanswered turn in the transcript
+      qs('#chatSendBtn').disabled = false;
+      return;
+    }
+
+    if(response.status === 429){
+      addChatMessage('err', "You're sending messages faster than I can answer. Give me a few seconds and try again.");
+      qs('#chatSendBtn').disabled = false;
+      return;
+    }
+
+    const data = await response.json().catch(function(){ return null; });
+
+    if(data && data.reply){
+      addChatMessage('bot', data.reply);
+      chatHistory.push({ role:'assistant', content:data.reply });
     } else {
-      addChatMessage('err', "Sorry, I'm having trouble connecting right now. Please try again in a moment.");
+      addChatMessage('err',
+        "Sorry, I couldn't process that. You can reach our team on WhatsApp at " +
+        "+91 70765 11660 or at support@chakrashri.com.");
     }
   }catch(err){
     hideTyping();
-    addChatMessage('err', "Sorry, I'm having trouble connecting right now. Please try again, or reach us at support@chakrashri.com.");
+    addChatMessage('err',
+      "Sorry, I'm having trouble connecting right now. Please try again, or reach us " +
+      "on WhatsApp at +91 70765 11660 or at support@chakrashri.com.");
   }
   qs('#chatSendBtn').disabled = false;
 }
@@ -6217,10 +6798,47 @@ async function init(){
     }
   });
 
-  const initialHash = location.hash.replace('#','') || 'home';
-  navigateTo(initialHash, { silent:true });
+  // Accepts /product/slug (the present) and #product/slug (bookmarks, and links
+  // in order emails already sitting in customers' inboxes). A legacy fragment is
+  // honoured and then rewritten to its path form with replaceState, so the URL
+  // becomes canonical without adding a history entry the Back button trips over.
+  // AUTH-03 / AUTH-04 — handle the two emailed links BEFORE normal routing, so
+  // arriving from an inbox does the thing the email promised instead of landing
+  // on a 404-ish home page. Both strip their token from the URL afterwards.
+  if(await handlePasswordResetLink()) { refreshReveal(); return; }
+  await handleEmailVerificationLink();
+
+  const parsed = routeFromLocation();
+  applyQueryFilters();
+  navigateTo(parsed.route || 'home', { silent: true, replace: parsed.fromHash });
   refreshReveal();
 }
+
+/* ---------------------------------------------------------------------------
+   Nested-control click guard.
+
+   Product cards are real <a href> elements so that crawlers can follow them and
+   shoppers can middle-click or "open in new tab" (SEO-01). That puts the
+   wishlist, quick-view and quick-add buttons INSIDE a link.
+
+   event.stopPropagation() on those buttons stops the anchor's own listener from
+   running, but it does NOT stop the browser following the href — the default
+   action is decided by the event's path, not by which listeners ran. Every one
+   of those handlers now calls preventDefault() explicitly, which is the real
+   fix and the one a reviewer should read.
+
+   This capture-phase listener is the safety net for the next control someone
+   nests in a card and forgets. It runs before any target-phase handler, so
+   navigation is already cancelled by the time the button's own code executes.
+   Buttons outside a link are untouched, and the anchor itself still navigates
+   normally when the customer clicks the image or the product name.
+   --------------------------------------------------------------------------- */
+document.addEventListener('click', function(e){
+  const control = e.target.closest && e.target.closest('button, input, select, textarea, [role="button"]');
+  if(!control) return;
+  const link = control.closest('a[href]');
+  if(link && link !== control) e.preventDefault();
+}, true);
 
 document.addEventListener('DOMContentLoaded', init);
 

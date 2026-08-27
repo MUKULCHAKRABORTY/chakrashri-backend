@@ -1,0 +1,61 @@
+# FE-01 — Content Security Policy and transport hardening for the static
+# storefront and admin console.
+#
+# helmet sets a CSP on API responses, but the CSP that matters is the one on the
+# HTML documents themselves — and those are served by Netlify, which applied no
+# policy at all. This file is Netlify's mechanism for that.
+#
+#
+# WHY RAZORPAY IS A WILDCARD, AND WHY form-action ADMITS IT
+#
+# Razorpay Checkout is not one origin. It loads checkout.razorpay.com, frames
+# api.razorpay.com, talks to lumberjack.razorpay.com for telemetry, and uses
+# regional and CDN subdomains that are not documented and can change. Naming
+# them individually means a payment fails one day with an opaque console error
+# and nobody connects it to a header.
+#
+# form-action originally read `'self'`, which is stricter — and I verified in a
+# real browser that it genuinely blocks cross-origin form POSTs. This project
+# uses the modal integration (`new Razorpay(opts).open()`), which renders in an
+# iframe and is therefore unaffected, so 'self' would PROBABLY have been fine.
+#
+# "Probably" is the wrong standard for a payment path. Razorpay already holds
+# script-src and frame-src grants, meaning it can already execute code in this
+# page — refusing it a form POST buys no real protection, while getting it wrong
+# means a customer picks their bank, the redirect is silently blocked, and the
+# order fails with nothing to diagnose. The restriction is dropped where it is
+# theatre and kept everywhere it bites.
+#
+# NOTE: connect-src names the API host explicitly. If the API ever moves to a
+# custom domain (api.chakrashri.com), THIS LINE MUST CHANGE or every request
+# from the storefront is blocked.
+#
+# Chart.js is self-hosted (see admin.html), so cdnjs is deliberately absent
+# from script-src — one fewer third-party origin able to run code on the admin
+# console.
+#
+# WHY 'unsafe-inline' IS STILL PRESENT, stated plainly rather than hidden:
+# both pages carry ~200 inline onclick attributes and a large inline <style>
+# block. A policy without 'unsafe-inline' would break the site outright. The
+# honest sequence is: ship a real policy now, which closes external script
+# injection, framing, form hijacking and plugin embedding today; then migrate
+# the inline handlers to delegated listeners and tighten script-src to
+# 'self' plus a nonce. The remaining gap is documented, not pretended away.
+
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://checkout.razorpay.com https://*.razorpay.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://chakrashri-api.onrender.com https://*.razorpay.com; frame-src https://*.razorpay.com; form-action 'self' https://*.razorpay.com; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; upgrade-insecure-requests
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: geolocation=(), microphone=(), camera=(), payment=(self "https://checkout.razorpay.com"), interest-cohort=()
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+
+# The HTML itself must never be cached hard — a stale index.html is what the
+# site_settings content_version handshake exists to work around, and a
+# long-lived cache here would defeat it.
+/index.html
+  Cache-Control: public, max-age=0, must-revalidate
+
+/admin.html
+  Cache-Control: no-store
+  X-Robots-Tag: noindex, nofollow

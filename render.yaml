@@ -1,17 +1,27 @@
 services:
+  # =========================================================================
+  # API
+  # =========================================================================
   - type: web
     name: chakrashri-api
     runtime: node
     region: ohio # matches your Neon database (us-east-2) — avoids unnecessary cross-country latency on every DB round-trip
     plan: starter # cheapest paid tier — avoids free-tier cold starts, which delay Razorpay webhook delivery
-    buildCommand: npm install
+    buildCommand: npm ci --omit=dev
+    # Migrations run on every deploy, before the new process starts serving.
+    # `npm ci` (not `install`) installs exactly what package-lock.json pins, so a
+    # transitive dependency cannot change silently between a tested build and a
+    # production one.
+    preDeployCommand: npm run migrate
     startCommand: npm start
-    healthCheckPath: /api/health
+    healthCheckPath: /api/health # liveness only — deliberately does NOT touch the DB, so a database blip cannot make Render restart-loop the API. Point uptime monitoring at /api/ready instead, which does check it.
     envVars:
       - key: NODE_ENV
         value: production
       - key: PORT
         value: 10000
+      - key: TZ
+        value: Asia/Kolkata # BIZ-06 — the business runs in IST; UTC bucketed evening sales into the next day and rejected valid same-day bookings before 05:30
       - key: DATABASE_URL
         sync: false # set manually in the Render dashboard — never commit real secrets to this file
       - key: DB_SSL
@@ -22,6 +32,12 @@ services:
         value: 7d
       - key: ADMIN_JWT_EXPIRES_IN
         value: 8h
+      - key: REQUIRE_TOKEN_VERSION
+        # AUTH-03 rollout. Tokens issued before that change carry no `tv` claim.
+        # Leave false for the first 7 days (one JWT_EXPIRES_IN window) so the
+        # deploy does not sign every customer out mid-session, then flip to
+        # "true" to close the grace period permanently.
+        value: "false"
       - key: BCRYPT_SALT_ROUNDS
         value: "12"
       - key: RAZORPAY_KEY_ID
@@ -31,24 +47,87 @@ services:
       - key: RAZORPAY_WEBHOOK_SECRET
         sync: false
       - key: CLIENT_URL
-        sync: false # set to your deployed frontend's real origin once it exists
+        sync: false # the deployed storefront's real origin, no trailing slash
+      - key: ADDITIONAL_CLIENT_ORIGINS
+        sync: false # optional, comma-separated — Netlify branch previews
       - key: RATE_LIMIT_WINDOW_MS
         value: "900000"
       - key: RATE_LIMIT_MAX
-        value: "200"
+        value: "600"
+      - key: LOG_LEVEL
+        value: info
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: FROM_EMAIL
+        sync: false
 
+  # =========================================================================
+  # Abandoned-checkout sweep — releases reserved stock and booking capacity
+  # =========================================================================
   - type: cron
     name: chakrashri-expiry-sweep
     runtime: node
     region: ohio
     plan: starter
     schedule: "*/10 * * * *" # every 10 minutes
-    buildCommand: npm install
+    buildCommand: npm ci --omit=dev
     startCommand: node scripts/release-expired-orders.js
     envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TZ
+        value: Asia/Kolkata
       - key: DATABASE_URL
         sync: false
       - key: DB_SSL
         value: "true"
       - key: ORDER_RESERVATION_EXPIRY_MINUTES
-        value: "30"
+        value: "30" # overridden by the site_settings value of the same name if present
+      - key: LOG_LEVEL
+        value: info
+
+  # =========================================================================
+  # OPS-02 — Payment reconciliation.
+  #
+  # This is the fix for the gap the audit found: scripts/reconcile-payments.js
+  # existed and documented its own schedule, but nothing ever ran it. It is the
+  # third and most authoritative of the three paths that can confirm a payment —
+  # the one that asks Razorpay directly — and without it, "customer paid, closed
+  # the tab, webhook was throttled" ends with the order cancelled and the money
+  # captured.
+  #
+  # It also resolves refunds left in-flight by a crash (PAY-02) and exits
+  # non-zero on any amount mismatch, so a real problem shows as a failed cron run
+  # rather than a green tick with a warning buried in the log.
+  # =========================================================================
+  - type: cron
+    name: chakrashri-payment-reconcile
+    runtime: node
+    region: ohio
+    plan: starter
+    schedule: "*/15 * * * *" # every 15 minutes
+    buildCommand: npm ci --omit=dev
+    startCommand: node scripts/reconcile-payments.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TZ
+        value: Asia/Kolkata
+      - key: DATABASE_URL
+        sync: false
+      - key: DB_SSL
+        value: "true"
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+      - key: RECONCILE_LOOKBACK_HOURS
+        value: "72"
+      - key: LOG_LEVEL
+        value: info

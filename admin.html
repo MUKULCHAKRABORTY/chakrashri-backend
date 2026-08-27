@@ -8,7 +8,29 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700;800&family=Poppins:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<!-- FE-01 — Chart.js is SELF-HOSTED rather than loaded from cdnjs.
+
+     The audit flagged this tag as a CDN script with `crossorigin` but no
+     `integrity`, meaning a compromised or hijacked CDN response would execute
+     with full access to the admin session token in sessionStorage.
+
+     Adding an SRI hash would mitigate that. Self-hosting REMOVES it: there is
+     no third-party origin in the request path at all, cdnjs disappears from the
+     Content-Security-Policy, the admin console keeps working if cdnjs is
+     blocked or down (a real consideration on some Indian networks), and nobody
+     has to remember to regenerate a hash on the next upgrade — a stale hash
+     silently blocks the script and the dashboard charts just vanish.
+
+     The file is vendor/chart.umd.js, copied verbatim from the chart.js@4.4.4
+     npm package (license in vendor/chart.js-LICENSE.md). The integrity
+     attribute is kept as a tamper check on our own asset.
+     To upgrade:
+       npm pack chart.js@<version> && tar xzf chart.js-<version>.tgz
+       cp package/dist/chart.umd.js vendor/chart.umd.js
+       openssl dgst -sha384 -binary vendor/chart.umd.js | openssl base64 -A -->
+<script src="vendor/chart.umd.js"
+        integrity="sha384-G436+Z2nlA8+PNoeRvWdxKbvOf8E/y+lYxqht2iBwNHTQDV5CJr3+AGVj8fGZi5t"
+        crossorigin="anonymous"></script>
 <style>
 /* ===== Brand tokens — matched exactly to the storefront (index.html) so the
    admin dashboard reads as the same product, not a bolted-on tool. ===== */
@@ -321,6 +343,25 @@ code.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.78rem; 
   .sidebar-backdrop{ position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:39; display:none; }
   .sidebar-backdrop.show{ display:block; }
 }
+
+/* AUTH-02 — capability-gated controls start HIDDEN and are revealed once the
+   server has told us what this account may do.
+   
+   Awaiting the capability fetch is not enough on its own: these controls live
+   in the static sidebar markup, so they are painted the moment the document
+   parses — before any script has run. Defaulting them to hidden means the only
+   possible failure is a control appearing a fraction of a second late, never a
+   staff user seeing a refund button that then vanishes. applyCapabilities()
+   also reveals everything if the lookup fails, so a backend blip degrades to
+   "show it and let the server refuse" rather than a locked-out admin. */
+[data-cap]:not(.cap-ok){ display:none !important; }
+
+/* A :not() rule rather than `[data-cap]{display:none}` plus an inline override.
+   Setting el.style.display='' to reveal an element REMOVES the inline style,
+   which lets the hiding rule reassert itself — so an admin who is allowed
+   everything would see nothing at all. Toggling a class instead lets each
+   element fall back to its own natural display (.nav-btn is flex, a div is
+   block) without this code needing to know what that is. */
 </style>
 </head>
 <body>
@@ -390,11 +431,11 @@ code.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.78rem; 
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M20 12a2 2 0 012-2V7a1 1 0 00-1-1H3a1 1 0 00-1 1v3a2 2 0 010 4v3a1 1 0 001 1h18a1 1 0 001-1v-3a2 2 0 01-2-2z"/><path d="M9 9l6 6M9 15l6-6"/></svg>
         Coupons
       </button>
-      <button class="nav-btn" data-view="customers" onclick="switchView('customers')">
+      <button class="nav-btn" data-cap="customers:read" data-view="customers" onclick="switchView('customers')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/></svg>
         Customers
       </button>
-      <button class="nav-btn" data-view="auditlog" onclick="switchView('auditlog')">
+      <button class="nav-btn" data-cap="audit:read" data-view="auditlog" onclick="switchView('auditlog')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 4h16v16H4z"/><path d="M8 9h8M8 13h8M8 17h5"/></svg>
         Audit Log
       </button>
@@ -484,12 +525,12 @@ code.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.78rem; 
         <div class="toolbar">
           <div class="search-box">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
-            <input id="productSearch" placeholder="Search products…" oninput="debounceLoadProducts()">
+            <input aria-label="Search products…" id="productSearch" placeholder="Search products…" oninput="debounceLoadProducts()">
           </div>
-          <select class="filter-select" id="productCategoryFilter" onchange="loadProducts(1)">
+          <select class="filter-select" id="productCategoryFilter" onchange="loadProducts(1)" aria-label="Filter products by category">
             <option value="">All categories</option>
           </select>
-          <select class="filter-select" id="productBadgeFilter" onchange="loadProducts(1)">
+          <select class="filter-select" id="productBadgeFilter" onchange="loadProducts(1)" aria-label="Filter products by badge">
             <option value="">All badges</option>
           </select>
           <button class="btn btn-primary btn-sm" style="margin-left:auto;" onclick="openProductForm()">+ Add Product</button>
@@ -506,7 +547,7 @@ code.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.78rem; 
       <!-- ============ ORDERS ============ -->
       <section class="view" id="view-orders">
         <div class="toolbar">
-          <select class="filter-select" id="orderStatusFilter" onchange="loadOrders(1)">
+          <select class="filter-select" id="orderStatusFilter" onchange="loadOrders(1)" aria-label="Filter orders by status">
             <option value="">All statuses</option>
             <option value="pending">Pending</option>
             <option value="paid">Paid</option>
@@ -515,6 +556,11 @@ code.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.78rem; 
             <option value="delivered">Delivered</option>
             <option value="cancelled">Cancelled</option>
             <option value="refunded">Refunded</option>
+            <option value="partially_refunded">Partially Refunded</option>
+            <!-- PAY-01 — orders the gateway could not be reconciled against.
+                 Listed here so the dashboard banner's "Review them" button has
+                 a filter to select, and so staff can find them on their own. -->
+            <option value="payment_review">Needs Payment Review</option>
             <option value="payment_failed">Payment Failed</option>
           </select>
         </div>
@@ -580,7 +626,7 @@ code.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.78rem; 
         <div class="toolbar">
           <div class="search-box">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
-            <input id="customerSearch" placeholder="Search by name or email…" oninput="debounceLoadCustomers()">
+            <input aria-label="Search by name or email…" id="customerSearch" placeholder="Search by name or email…" oninput="debounceLoadCustomers()">
           </div>
         </div>
         <div class="card" style="padding:0;">
@@ -614,28 +660,28 @@ code.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.78rem; 
     </div>
     <div class="modal-body">
       <div class="form-grid">
-        <div class="field"><label>Name *</label><input id="pfName"><div class="err" id="pfNameErr">Name is required.</div></div>
-        <div class="field"><label>SKU *</label><input id="pfSku"><div class="err" id="pfSkuErr">SKU is required.</div></div>
-        <div class="field"><label>Slug *</label><input id="pfSlug" placeholder="rudraksha-mala-5-mukhi"><div class="hint">URL-safe, lowercase, hyphens only.</div><div class="err" id="pfSlugErr">Valid slug required.</div></div>
-        <div class="field"><label>Category *</label>
+        <div class="field"><label for="pfName">Name *</label><input id="pfName"><div class="err" id="pfNameErr">Name is required.</div></div>
+        <div class="field"><label for="pfSku">SKU *</label><input id="pfSku"><div class="err" id="pfSkuErr">SKU is required.</div></div>
+        <div class="field"><label for="pfSlug">Slug *</label><input id="pfSlug" placeholder="rudraksha-mala-5-mukhi"><div class="hint">URL-safe, lowercase, hyphens only.</div><div class="err" id="pfSlugErr">Valid slug required.</div></div>
+        <div class="field"><label for="pfCategory">Category *</label>
           <input id="pfCategory" list="pfCategoryList" placeholder="rudraksha, idols, gemstones…" autocomplete="off">
           <datalist id="pfCategoryList"></datalist>
           <div class="hint">Pick an existing one from the list, or type a new name. Casing doesn't matter — "Malas" and "malas" are treated as the same category.</div>
         </div>
-        <div class="field"><label>Price (₹) *</label><input id="pfPrice" type="number" min="1" step="0.01"><div class="err" id="pfPriceErr">Valid price required.</div></div>
-        <div class="field"><label>MRP (₹)</label><input id="pfMrp" type="number" min="1" step="0.01"></div>
-        <div class="field"><label>Stock Quantity *</label><input id="pfStock" type="number" min="0" step="1"></div>
-        <div class="field"><label>GST Rate (%)</label><input id="pfGst" type="number" min="0" max="28" step="0.01" value="3"></div>
-        <div class="field"><label>HSN Code</label><input id="pfHsn"></div>
-        <div class="field"><label>Badge</label>
+        <div class="field"><label for="pfPrice">Price (₹) *</label><input id="pfPrice" type="number" min="1" step="0.01"><div class="err" id="pfPriceErr">Valid price required.</div></div>
+        <div class="field"><label for="pfMrp">MRP (₹)</label><input id="pfMrp" type="number" min="1" step="0.01"></div>
+        <div class="field"><label for="pfStock">Stock Quantity *</label><input id="pfStock" type="number" min="0" step="1"></div>
+        <div class="field"><label for="pfGst">GST Rate (%)</label><input id="pfGst" type="number" min="0" max="28" step="0.01" value="3"></div>
+        <div class="field"><label for="pfHsn">HSN Code</label><input id="pfHsn"></div>
+        <div class="field"><label for="pfBadge">Badge</label>
           <input id="pfBadge" list="pfBadgeList" placeholder="Bestseller, New, Certified…" autocomplete="off">
           <datalist id="pfBadgeList"></datalist>
           <div class="hint">Leave blank for no badge. Casing doesn't matter.</div>
         </div>
-        <div class="field"><label>Material</label><input id="pfMaterial"></div>
-        <div class="field checkbox"><input type="checkbox" id="pfActive" checked><label style="margin:0;text-transform:none;letter-spacing:0;font-weight:500;">Active (visible in store)</label></div>
-        <div class="field full"><label>Short Description</label><textarea id="pfShortDesc" style="min-height:50px;"></textarea></div>
-        <div class="field full"><label>Long Description</label><textarea id="pfLongDesc"></textarea></div>
+        <div class="field"><label for="pfMaterial">Material</label><input id="pfMaterial"></div>
+        <div class="field checkbox"><input type="checkbox" id="pfActive" checked aria-label="Product is active and visible in the shop"><label style="margin:0;text-transform:none;letter-spacing:0;font-weight:500;">Active (visible in store)</label></div>
+        <div class="field full"><label for="pfShortDesc">Short Description</label><textarea id="pfShortDesc" style="min-height:50px;"></textarea></div>
+        <div class="field full"><label for="pfLongDesc">Long Description</label><textarea id="pfLongDesc"></textarea></div>
       </div>
 
       <div id="pfImagesSection" style="display:none;">
@@ -643,7 +689,7 @@ code.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.78rem; 
         <label style="display:block;font-size:.72rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--oxblood);margin-bottom:10px;">Product Images</label>
         <div id="pfImageChips" style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:10px;"></div>
         <div style="display:flex;gap:8px;">
-          <input id="pfNewImageUrl" placeholder="https://… image URL" style="flex:1;padding:10px 12px;border:1.5px solid var(--parchment-2);border-radius:9px;">
+          <input aria-label="https://… image URL" id="pfNewImageUrl" placeholder="https://… image URL" style="flex:1;padding:10px 12px;border:1.5px solid var(--parchment-2);border-radius:9px;">
           <button class="btn btn-ghost btn-sm" onclick="addProductImage()">Add</button>
         </div>
         <div class="hint">Images are hosted externally (e.g. Cloudinary) and referenced by URL — paste a link above.</div>
@@ -654,10 +700,10 @@ code.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.78rem; 
         <div class="hint" style="margin-bottom:10px;">Informational only — shown in the product's "Additional Information" tab. For options a customer <em>chooses</em> (and that have their own stock), use Variants below instead.</div>
         <div id="pfPropertiesList" style="margin-bottom:10px;"></div>
         <div class="form-grid" style="gap:8px;">
-          <div class="field" style="margin:0;"><input id="pfPropName" placeholder="Property name (e.g. Finish)"></div>
-          <div class="field" style="margin:0;"><input id="pfPropValue" placeholder="Value (e.g. Antique Gold)"></div>
+          <div class="field" style="margin:0;"><input aria-label="Property name (e.g. Finish)" id="pfPropName" placeholder="Property name (e.g. Finish)"></div>
+          <div class="field" style="margin:0;"><input aria-label="Value (e.g. Antique Gold)" id="pfPropValue" placeholder="Value (e.g. Antique Gold)"></div>
           <div class="field" style="margin:0;display:flex;align-items:center;gap:8px;">
-            <input type="color" id="pfPropColor" value="#C9A227" style="width:44px;height:38px;padding:2px;border:1.5px solid var(--parchment-2);border-radius:9px;background:#fff;">
+            <input type="color" id="pfPropColor" value="#C9A227" style="width:44px;height:38px;padding:2px;border:1.5px solid var(--parchment-2);border-radius:9px;background:#fff;" aria-label="Property colour">
             <label style="margin:0;text-transform:none;letter-spacing:0;font-weight:500;font-size:.8rem;display:flex;align-items:center;gap:5px;">
               <input type="checkbox" id="pfPropIsColor" style="width:15px;height:15px;"> Colour swatch
             </label>
@@ -672,14 +718,14 @@ code.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.78rem; 
 
         <div id="pfOptionsList" style="margin-bottom:12px;"></div>
         <div class="form-grid" style="gap:8px;">
-          <div class="field" style="margin:0;"><input id="pfOptName" placeholder="Option name (e.g. Colour, Size)"></div>
+          <div class="field" style="margin:0;"><input aria-label="Option name (e.g. Colour, Size)" id="pfOptName" placeholder="Option name (e.g. Colour, Size)"></div>
           <div class="field" style="margin:0;">
-            <select id="pfOptType">
+            <select id="pfOptType" aria-label="Option type">
               <option value="text">Text values (e.g. S, M, L)</option>
               <option value="color">Colour values (shows swatches)</option>
             </select>
           </div>
-          <div class="field full" style="margin:0;"><input id="pfOptValues" placeholder="Values, comma separated — e.g. Red, Blue, Green"></div>
+          <div class="field full" style="margin:0;"><input aria-label="Values, comma separated — e.g. Red, Blue, Green" id="pfOptValues" placeholder="Values, comma separated — e.g. Red, Blue, Green"></div>
           <div class="field full" style="margin:0;"><button class="btn btn-ghost btn-sm" style="width:100%;" onclick="addProductOption()">Add Option</button>
             <div class="hint">For colour options you'll pick each exact shade after adding.</div>
           </div>
@@ -713,11 +759,11 @@ code.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.78rem; 
         <div class="hint" style="margin-top:6px;">The option combination can't be changed here — editing it would rewrite what past orders appear to contain. Remove and re-create the variant instead.</div>
       </div>
       <div class="form-grid">
-        <div class="field"><label>Stock *</label><input id="veStock" type="number" min="0" step="1"></div>
-        <div class="field"><label>Price (₹)</label><input id="vePrice" type="number" min="1" step="0.01" placeholder="Leave blank = base price"></div>
+        <div class="field"><label for="veStock">Stock *</label><input id="veStock" type="number" min="0" step="1"></div>
+        <div class="field"><label for="vePrice">Price (₹)</label><input id="vePrice" type="number" min="1" step="0.01" placeholder="Leave blank = base price"></div>
         <div class="field full"><label>Variant Image URL</label>
           <div style="display:flex;gap:10px;align-items:flex-start;">
-            <input id="veImage" placeholder="https://…" oninput="previewVariantEditImage()" style="flex:1;min-width:0;">
+            <input aria-label="https://…" id="veImage" placeholder="https://…" oninput="previewVariantEditImage()" style="flex:1;min-width:0;">
             <div id="veImagePreview" style="width:52px;height:52px;border-radius:8px;border:1.5px dashed var(--parchment-2);flex:none;display:flex;align-items:center;justify-content:center;font-size:.62rem;color:#8a7768;text-align:center;overflow:hidden;">no image</div>
           </div>
         </div>
@@ -739,22 +785,22 @@ code.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.78rem; 
     </div>
     <div class="modal-body">
       <div class="form-grid">
-        <div class="field"><label>Coupon Code *</label><input id="cfCode" placeholder="DIWALI20" style="text-transform:uppercase;"><div class="hint">Customers type this at checkout. Stored uppercase.</div></div>
-        <div class="field"><label>Discount Type *</label>
+        <div class="field"><label for="cfCode">Coupon Code *</label><input id="cfCode" placeholder="DIWALI20" style="text-transform:uppercase;"><div class="hint">Customers type this at checkout. Stored uppercase.</div></div>
+        <div class="field"><label for="cfType">Discount Type *</label>
           <select id="cfType" onchange="onCouponTypeChange()">
             <option value="percentage">Percentage off</option>
             <option value="fixed">Flat amount off</option>
           </select>
         </div>
-        <div class="field" id="cfPercentField"><label>Discount Percent *</label><input id="cfPercent" type="number" min="0.01" max="100" step="0.01" placeholder="10"><div class="hint">e.g. 10 = 10% off</div></div>
-        <div class="field" id="cfMaxDiscountField"><label>Max Discount (₹)</label><input id="cfMaxDiscount" type="number" min="1" step="1" placeholder="Optional cap"><div class="hint">Caps a percentage coupon, e.g. "10% off up to ₹500". Strongly recommended.</div></div>
-        <div class="field" id="cfValueField" style="display:none;"><label>Discount Amount (₹) *</label><input id="cfValue" type="number" min="1" step="1" placeholder="200"></div>
-        <div class="field"><label>Minimum Order (₹)</label><input id="cfMinOrder" type="number" min="0" step="1" placeholder="0"><div class="hint">Cart subtotal must reach this before the coupon applies.</div></div>
-        <div class="field"><label>Total Usage Limit</label><input id="cfUsageTotal" type="number" min="1" step="1" placeholder="Unlimited"><div class="hint">Across all customers. Leave blank for unlimited.</div></div>
-        <div class="field"><label>Uses Per Customer</label><input id="cfUsagePerCustomer" type="number" min="1" step="1" value="1"></div>
-        <div class="field"><label>Valid Until</label><input id="cfValidUntil" type="date"><div class="hint">Leave blank for no expiry.</div></div>
-        <div class="field full"><label>Description</label><input id="cfDescription" placeholder="Shown to the customer when the coupon is applied"></div>
-        <div class="field checkbox"><input type="checkbox" id="cfActive" checked><label style="margin:0;text-transform:none;letter-spacing:0;font-weight:500;">Active (customers can use it)</label></div>
+        <div class="field" id="cfPercentField"><label for="cfPercent">Discount Percent *</label><input id="cfPercent" type="number" min="0.01" max="100" step="0.01" placeholder="10"><div class="hint">e.g. 10 = 10% off</div></div>
+        <div class="field" id="cfMaxDiscountField"><label for="cfMaxDiscount">Max Discount (₹)</label><input id="cfMaxDiscount" type="number" min="1" step="1" placeholder="Optional cap"><div class="hint">Caps a percentage coupon, e.g. "10% off up to ₹500". Strongly recommended.</div></div>
+        <div class="field" id="cfValueField" style="display:none;"><label for="cfValue">Discount Amount (₹) *</label><input id="cfValue" type="number" min="1" step="1" placeholder="200"></div>
+        <div class="field"><label for="cfMinOrder">Minimum Order (₹)</label><input id="cfMinOrder" type="number" min="0" step="1" placeholder="0"><div class="hint">Cart subtotal must reach this before the coupon applies.</div></div>
+        <div class="field"><label for="cfUsageTotal">Total Usage Limit</label><input id="cfUsageTotal" type="number" min="1" step="1" placeholder="Unlimited"><div class="hint">Across all customers. Leave blank for unlimited.</div></div>
+        <div class="field"><label for="cfUsagePerCustomer">Uses Per Customer</label><input id="cfUsagePerCustomer" type="number" min="1" step="1" value="1"></div>
+        <div class="field"><label for="cfValidUntil">Valid Until</label><input id="cfValidUntil" type="date"><div class="hint">Leave blank for no expiry.</div></div>
+        <div class="field full"><label for="cfDescription">Description</label><input id="cfDescription" placeholder="Shown to the customer when the coupon is applied"></div>
+        <div class="field checkbox"><input type="checkbox" id="cfActive" checked aria-label="Coupon is active"><label style="margin:0;text-transform:none;letter-spacing:0;font-weight:500;">Active (customers can use it)</label></div>
       </div>
     </div>
     <div class="modal-foot">
@@ -772,19 +818,19 @@ code.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.78rem; 
       <div class="close-x" onclick="closeModal('serviceModal')">✕</div>
     </div>
     <div class="modal-body">
-      <div class="field"><label>Type *</label>
+      <div class="field"><label for="sfType">Type *</label>
         <select id="sfType">
           <option value="puja">Puja</option>
           <option value="astrology">Astrology</option>
         </select>
       </div>
-      <div class="field"><label>Name *</label><input id="sfName"></div>
-      <div class="field"><label>Description</label><textarea id="sfDescription" style="min-height:60px;"></textarea></div>
+      <div class="field"><label for="sfName">Name *</label><input id="sfName"></div>
+      <div class="field"><label for="sfDescription">Description</label><textarea id="sfDescription" style="min-height:60px;"></textarea></div>
       <div class="form-grid">
-        <div class="field"><label>Price (₹) *</label><input id="sfPrice" type="number" min="1" step="0.01"></div>
-        <div class="field"><label>Duration Label</label><input id="sfDuration" placeholder="~2 hrs, 30 minutes…"></div>
+        <div class="field"><label for="sfPrice">Price (₹) *</label><input id="sfPrice" type="number" min="1" step="0.01"></div>
+        <div class="field"><label for="sfDuration">Duration Label</label><input id="sfDuration" placeholder="~2 hrs, 30 minutes…"></div>
       </div>
-      <div class="field checkbox"><input type="checkbox" id="sfActive" checked><label style="margin:0;text-transform:none;letter-spacing:0;font-weight:500;">Active (visible to customers)</label></div>
+      <div class="field checkbox"><input type="checkbox" id="sfActive" checked aria-label="Service is active"><label style="margin:0;text-transform:none;letter-spacing:0;font-weight:500;">Active (visible to customers)</label></div>
     </div>
     <div class="modal-foot">
       <button class="btn btn-ghost" onclick="closeModal('serviceModal')">Cancel</button>
@@ -969,7 +1015,7 @@ async function handleAdminLogin(){
     }
     sessionStorage.setItem(TOKEN_KEY, body.token);
     sessionStorage.setItem(USER_KEY, JSON.stringify(body.user));
-    enterApp(body.user);
+    await enterApp(body.user);
   } catch (err) {
     errEl.textContent = (err && err.error) ? err.error : 'Login failed. Please check your credentials.';
     errEl.style.display = 'block';
@@ -988,21 +1034,94 @@ function handleLogout(silent){
   if (!silent) toast('Logged out.');
 }
 
-function enterApp(user){
+async function enterApp(user){
   qs('#loginScreen').style.display = 'none';
   qs('#app').style.display = 'block';
   qs('#adminName').textContent = user.name || user.email;
   qs('#adminRole').textContent = user.role;
   qs('#adminAvatar').textContent = (user.name || user.email || '?').charAt(0).toUpperCase();
+  // AWAITED, deliberately. Firing this without awaiting leaves
+  // adminCapabilities === null for the length of the round-trip, during which
+  // hasCapability() returns true for everything and every [data-cap] control
+  // renders visible. Measured at 40-80ms locally, but api() retries GETs with
+  // 2.5s/5s backoff, so against a cold backend a staff user would see the
+  // refund and customer controls for seconds before they vanished. The server
+  // still refuses them, so it was a cosmetic flash rather than a hole — but a
+  // back office that shows you a button and then takes it away is worse than
+  // one that never showed it.
+  await applyCapabilities();
   switchView('dashboard');
 }
 
+/* ---------------------------------------------------------------------------
+   AUTH-02 — hide what this account cannot actually do.
+
+   Authorization is now capability-based: a `staff` account can run the shop but
+   cannot issue refunds, read the bulk customer list, or read the audit log.
+   The server enforces that correctly — but the UI was never told, so a staff
+   user saw every button, clicked one, and got a toast. Half the back office
+   looked broken rather than restricted.
+
+   The permission map is fetched from the server rather than hardcoded here.
+   Hardcoding it would guarantee the two drift apart the first time a capability
+   changes, and a UI that hides a control the server allows is just as wrong as
+   one that shows a control the server forbids.
+   --------------------------------------------------------------------------- */
+let adminCapabilities = null;
+
+async function applyCapabilities(){
+  try {
+    const body = await api('/api/admin/me/capabilities');
+    adminCapabilities = Array.isArray(body.capabilities) ? body.capabilities : [];
+  } catch (err) {
+    // Fail OPEN for the UI only. The server is the enforcement point; if this
+    // lookup fails, showing everything and letting the API reject is strictly
+    // better than locking an admin out of controls they legitimately need.
+    console.warn('Could not load capabilities; showing all controls.', err);
+    adminCapabilities = null;
+    qsa('[data-cap]').forEach((el) => el.classList.add('cap-ok'));
+    return;
+  }
+
+  // The CSS above hides these by default, so this REVEALS the permitted ones
+  // rather than hiding the forbidden ones. That ordering is what removes the
+  // window in which a forbidden control is on screen.
+  qsa('[data-cap]').forEach((el) => {
+    const needed = el.getAttribute('data-cap').split(/\s+/).filter(Boolean);
+    const allowed = needed.every((c) => adminCapabilities.includes(c));
+    el.classList.toggle('cap-ok', allowed);
+  });
+}
+
+function hasCapability(cap){
+  // null = capabilities unknown (lookup failed); do not hide anything.
+  return adminCapabilities === null || adminCapabilities.includes(cap);
+}
+
 // Restore session on page load if a token is already present (e.g. refresh)
+// Declared BEFORE restoreSession, not after.
+//
+// PRE-EXISTING BUG (present in the original too, not introduced here): this
+// `let` sat below the restoreSession IIFE, so the IIFE -> enterApp ->
+// switchView chain read it inside the temporal dead zone and threw
+// "Cannot access 'currentView' before initialization". restoreSession's
+// catch swallowed that into handleLogout(true) — so refreshing the admin
+// console with a perfectly valid session silently logged you out, and the
+// only symptom was being back at the login screen.
+//
+// `var` would have hoisted and hidden it; `let` surfaced it as a throw that
+// something else caught. Moving the declaration is the actual fix.
+let currentView = 'dashboard';
+
 (function restoreSession(){
   const token = sessionStorage.getItem(TOKEN_KEY);
   const userRaw = sessionStorage.getItem(USER_KEY);
   if (token && userRaw) {
-    try { enterApp(JSON.parse(userRaw)); } catch (e) { handleLogout(true); }
+    // enterApp is async now; a rejection must not escape this IIFE as an
+    // unhandled rejection, and a failure to restore should log out cleanly.
+    try {
+      Promise.resolve(enterApp(JSON.parse(userRaw))).catch(() => handleLogout(true));
+    } catch (e) { handleLogout(true); }
   }
 })();
 
@@ -1021,7 +1140,6 @@ const VIEW_META = {
   customers: { title: 'Customers', sub: 'Everyone who has an account' },
   auditlog:  { title: 'Audit Log', sub: 'Every admin action, for accountability' }
 };
-let currentView = 'dashboard';
 
 function switchView(view){
   currentView = view;
@@ -1099,12 +1217,56 @@ async function loadDashboard(){
     const badge = qs('#navBookingsBadge');
     if (overview.pendingPujaBookings > 0) { badge.style.display = ''; badge.textContent = overview.pendingPujaBookings; }
     else badge.style.display = 'none';
+
+    // PAY-01 — orders parked at `payment_review` need a human. A state nobody
+    // can see is a state nobody resolves, and this one holds real money in
+    // limbo: the customer may have paid, and the goods have not shipped. It
+    // gets a banner rather than a number buried in a table.
+    renderPaymentReviewBanner(overview.ordersNeedingPaymentReview || 0);
   } catch (err) { toast(err.error || 'Could not load dashboard stats.', 'err'); }
 
   loadRevenueChart();
   loadStatusChart();
   loadTopProducts();
   loadLowStock();
+}
+
+/* Renders (or removes) the payment-review alert above the dashboard.
+   Built and inserted here rather than added to the static markup so it is
+   impossible to leave a stale "0 orders need review" banner on the page. */
+function renderPaymentReviewBanner(count){
+  const existing = qs('#paymentReviewBanner');
+  if (!count) { if (existing) existing.remove(); return; }
+
+  const host = qs('#view-dashboard');
+  if (!host) return;
+  const el = existing || document.createElement('div');
+  el.id = 'paymentReviewBanner';
+  el.style.cssText = 'margin:0 0 18px;padding:14px 16px;border:1.5px solid #E0A54A;'
+    + 'background:#FBF3E2;border-radius:10px;display:flex;gap:12px;align-items:center;'
+    + 'flex-wrap:wrap;justify-content:space-between;';
+  // textContent for the count, so nothing here is an injection point.
+  el.innerHTML = '<div style="max-width:62ch;">'
+    + '<strong style="display:block;margin-bottom:2px;">'
+    + esc(String(count)) + (count === 1 ? ' order needs' : ' orders need') + ' a payment review</strong>'
+    + '<span style="font-size:.86rem;color:#6b625a;">The gateway reported an amount, currency or capture '
+    + 'status that did not match the order, so it was not marked paid. Check Razorpay before fulfilling.</span>'
+    + '</div>'
+    + '<button class="btn btn-sm" onclick="openPaymentReviewQueue()">Review them</button>';
+  if (!existing) host.insertBefore(el, host.firstChild);
+}
+
+/* Jumps to the Orders view already filtered to the review queue. Written as a
+   named function rather than inline in the button's onclick so the view switch
+   and the filter can never get out of step — and so the CSP tightening that
+   removes inline handlers has one less place to touch. */
+function openPaymentReviewQueue(){
+  switchView('orders');
+  const filter = qs('#orderStatusFilter');
+  if (filter) {
+    filter.value = 'payment_review';
+    loadOrders(1);
+  }
 }
 
 function showChartMessage(canvasId, message){
@@ -1177,7 +1339,15 @@ async function loadStatusChart(){
       showChartMessage('statusChart', 'No orders yet — the status breakdown will appear here once orders start coming in.');
       return;
     }
-    const colors = { pending:'#9C7E1C', paid:'#3E7A4F', processing:'#2E4E8C', shipped:'#E08A1E', delivered:'#3E7A4F', cancelled:'#8a7768', refunded:'#B23A2E', payment_failed:'#B23A2E' };
+    const colors = {
+      pending:'#9C7E1C', paid:'#3E7A4F', processing:'#2E4E8C', shipped:'#E08A1E',
+      delivered:'#3E7A4F', cancelled:'#8a7768', refunded:'#B23A2E',
+      // Added with the two new statuses. A status missing from this map renders
+      // as `undefined`, which Chart.js draws in its default grey — visually
+      // identical to "cancelled" and quietly misleading on a revenue dashboard.
+      payment_review:'#C9762A', partially_refunded:'#C79A3A',
+      payment_failed:'#B23A2E'
+    };
     const labels = breakdown.map((r) => r.status);
     const data = breakdown.map((r) => Number(r.count));
     const ctx = qs('#statusChart').getContext('2d');
@@ -1432,15 +1602,15 @@ function renderProductOptions(){
       <div style="display:flex;flex-wrap:wrap;gap:6px;">
         ${(opt.values||[]).map((v) => `
           <span style="display:inline-flex;align-items:center;gap:5px;padding:4px 9px;background:#fff;border:1px solid var(--parchment-2);border-radius:20px;font-size:.78rem;">
-            ${opt.option_type === 'color' ? `<input type="color" value="${esc(v.color_hex || '#cccccc')}" onchange="updateOptionValueColor('${opt.id}','${v.id}',this.value)" style="width:20px;height:20px;padding:0;border:none;background:none;cursor:pointer;" title="Pick the exact shade">` : ''}
+            ${opt.option_type === 'color' ? `<input aria-label="Pick the exact shade" type="color" value="${esc(v.color_hex || '#cccccc')}" onchange="updateOptionValueColor('${opt.id}','${v.id}',this.value)" style="width:20px;height:20px;padding:0;border:none;background:none;cursor:pointer;" title="Pick the exact shade">` : ''}
             ${esc(v.value)}
             <button onclick="removeOptionValue('${opt.id}','${v.id}')" style="color:var(--danger);font-weight:700;line-height:1;" title="Remove value">×</button>
           </span>`).join('')}
       </div>
       <div class="opt-add-row">
-        <input id="ov_${opt.id}" placeholder="Add another value${opt.option_type === 'color' ? ' (then pick its shade)' : ''}"
+        <input aria-label="Add another value${opt.option_type === 'color' ? ' (then pick its shade)' : ''}" id="ov_${opt.id}" placeholder="Add another value${opt.option_type === 'color' ? ' (then pick its shade)' : ''}"
                onkeydown="if(event.key==='Enter'){event.preventDefault();addOptionValueInline('${opt.id}');}">
-        ${opt.option_type === 'color' ? `<input type="color" id="ovc_${opt.id}" value="#C9A227" title="Colour for the new value">` : ''}
+        ${opt.option_type === 'color' ? `<input aria-label="Colour for the new value" type="color" id="ovc_${opt.id}" value="#C9A227" title="Colour for the new value">` : ''}
         <button class="btn btn-ghost btn-sm" onclick="addOptionValueInline('${opt.id}')">Add Value</button>
       </div>
     </div>`).join('');
@@ -1593,16 +1763,16 @@ function renderVariantBuilder(){
     '<div class="form-grid" style="gap:8px;">' +
       editingProductOptions.map((opt) => `
         <div class="field" style="margin:0;">
-          <label>${esc(opt.option_name)}</label>
+          <label for="vb_${opt.id}">${esc(opt.option_name)}</label>
           <select id="vb_${opt.id}">
             ${(opt.values||[]).map((v) => `<option value="${esc(v.value)}">${esc(v.value)}</option>`).join('')}
           </select>
         </div>`).join('') +
-      '<div class="field" style="margin:0;"><label>Stock *</label><input id="vbStock" type="number" min="0" step="1" value="0"></div>' +
-      '<div class="field" style="margin:0;"><label>Price (₹)</label><input id="vbPrice" type="number" min="1" step="0.01" placeholder="Leave blank = base price"></div>' +
+      '<div class="field" style="margin:0;"><label for="vbStock">Stock *</label><input id="vbStock" type="number" min="0" step="1" value="0"></div>' +
+      '<div class="field" style="margin:0;"><label for="vbPrice">Price (₹)</label><input id="vbPrice" type="number" min="1" step="0.01" placeholder="Leave blank = base price"></div>' +
       '<div class="field full" style="margin:0;"><label>Variant Image URL</label>' +
         '<div style="display:flex;gap:10px;align-items:flex-start;">' +
-          '<input id="vbImage" placeholder="https://… shown when this variant is selected" oninput="previewVariantImage()" style="flex:1;min-width:0;">' +
+          '<input aria-label="https://… shown when this variant is selected" id="vbImage" placeholder="https://… shown when this variant is selected" oninput="previewVariantImage()" style="flex:1;min-width:0;">' +
           '<div id="vbImagePreview" style="width:52px;height:52px;border-radius:8px;border:1.5px dashed var(--parchment-2);flex:none;display:flex;align-items:center;justify-content:center;font-size:.62rem;color:#8a7768;text-align:center;overflow:hidden;">no image</div>' +
         '</div></div>' +
       '<div class="field full" style="margin:0;"><button class="btn btn-primary btn-sm" style="width:100%;" onclick="addProductVariant()">Add This Combination</button></div>' +
@@ -1843,7 +2013,23 @@ function deleteProductConfirm(id, name){
 let ordersState = { page: 1 };
 const ORDER_STATUS_PILL = {
   pending: 'pill-warn', paid: 'pill-success', processing: 'pill-info', shipped: 'pill-info',
-  delivered: 'pill-success', cancelled: 'pill-neutral', refunded: 'pill-danger', payment_failed: 'pill-danger'
+  delivered: 'pill-success', cancelled: 'pill-neutral', refunded: 'pill-danger',
+  // PAY-01 / PAY-02 added two states. Without entries here they render with no
+  // pill class at all, which reads as a rendering bug rather than a status.
+  //
+  // payment_review is the important one: it means the gateway reported an
+  // amount, currency or capture status that did not match the order, so the
+  // order was deliberately NOT marked paid and is waiting for a person. It is
+  // styled as a warning because it needs action, not as a failure — the
+  // customer's money may well have moved.
+  payment_review: 'pill-warn',
+  partially_refunded: 'pill-warn',
+  payment_failed: 'pill-danger'
+};
+
+const ORDER_STATUS_HELP = {
+  payment_review: 'The gateway reported an amount, currency or capture status that did not match this order. Money may have moved — check Razorpay before fulfilling, then accept or reject the payment.',
+  partially_refunded: 'Part of this order has been refunded. The remaining balance can still be refunded.'
 };
 
 async function loadOrders(page){
@@ -1900,7 +2086,12 @@ function renderOrderDetail(o, items){
   // "cancelled". A COD order has nothing to refund, so it stays cancellable.
   const hasCapturedPayment = !!o.razorpay_payment_id;
   const moneyCollected = hasCapturedPayment && ['paid','processing','shipped','delivered'].includes(o.status);
+  // `partially_refunded` is deliberately NOT terminal: part of the money has
+  // come back, the rest still can, and the order may still need fulfilling for
+  // the items that were not returned. Treating it as final would strand the
+  // order with no way to refund the remaining balance.
   const terminal = ['cancelled','refunded','payment_failed'].includes(o.status);
+  const needsPaymentReview = o.status === 'payment_review';
 
   const itemsHtml = items.map((i) => `
     <tr>
@@ -1921,6 +2112,10 @@ function renderOrderDetail(o, items){
     // "Refunded" is meaningless without a captured gateway payment — offering
     // it for a COD order would just produce a server error.
     .filter((s) => !(s === 'refunded' && !hasCapturedPayment))
+    // AUTH-02 — and meaningless for an account that cannot refund. A staff user
+    // picking it would get a 403 toast with no explanation of why the option
+    // was offered in the first place.
+    .filter((s) => !(s === 'refunded' && !hasCapability('orders:refund')))
     .map((s) => `<option value="${s}" ${o.status===s?'selected':''}>${s}</option>`).join('');
 
   qs('#orderDrawerBody').innerHTML = `
@@ -1963,15 +2158,34 @@ function renderOrderDetail(o, items){
     <table class="data"><tbody>${itemsHtml}</tbody></table>
 
     <div class="divider"></div>
-    ${terminal ? `<div class="hint">This order is in a final state and can no longer be updated.</div>` : `
+    ${needsPaymentReview ? `
+      <div style="padding:14px 16px;border:1.5px solid #E0A54A;background:#FBF3E2;border-radius:10px;margin-bottom:14px;">
+        <strong style="display:block;margin-bottom:4px;">This payment needs a decision</strong>
+        <div style="font-size:.88rem;color:#6b625a;margin-bottom:10px;">
+          ${esc(o.payment_review_reason || 'The gateway reported something that did not match this order.')}
+        </div>
+        <div class="hint" style="margin-bottom:10px;">
+          Open this payment in the Razorpay dashboard first. <b>Accept</b> marks the order paid and
+          releases it for fulfilment. <b>Reject</b> marks it failed and returns the reserved stock —
+          use it only once you are sure no money was captured.
+        </div>
+        ${hasCapability('orders:refund') ? `
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn btn-primary btn-sm" onclick="resolvePaymentReview('accept')">Accept payment</button>
+          <button class="btn btn-ghost btn-sm" onclick="resolvePaymentReview('reject')">Reject payment</button>
+        </div>` : `
+        <div class="hint">Resolving a payment review needs an administrator account. Please ask one to review this order.</div>`}
+      </div>
+    ` : ''}
+    ${terminal ? `<div class="hint">This order is in a final state and can no longer be updated.</div>` : needsPaymentReview ? '' : `
       <label style="display:block;font-size:.72rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--oxblood);margin-bottom:8px;">Update Status</label>
-      <div class="field"><select id="odStatus">${statusOptions}</select></div>
+      <div class="field"><select id="odStatus" aria-label="Update order status">${statusOptions}</select></div>
       <div id="odTrackingFields" style="display:${'shipped'===o.status?'':'none'};">
-        <div class="field"><label>Courier Name</label><input id="odCourier" value="${esc(o.courier_name||'')}"></div>
-        <div class="field"><label>Tracking Number</label><input id="odTracking" value="${esc(o.tracking_number||'')}"></div>
+        <div class="field"><label for="odCourier">Courier Name</label><input id="odCourier" value="${esc(o.courier_name||'')}"></div>
+        <div class="field"><label for="odTracking">Tracking Number</label><input id="odTracking" value="${esc(o.tracking_number||'')}"></div>
       </div>
       <div id="odRefundFields" style="display:none;">
-        <div class="field"><label>Refund Amount (₹, leave blank for full refund)</label><input id="odRefundAmount" type="number" min="1" step="0.01" placeholder="${(o.total_paise/100).toFixed(2)}"></div>
+        <div class="field"><label for="odRefundAmount">Refund Amount (₹, leave blank for full refund)</label><input id="odRefundAmount" type="number" min="1" step="0.01" placeholder="${(o.total_paise/100).toFixed(2)}"></div>
         <div class="hint">This calls Razorpay's real Refunds API — money actually moves back to the customer.</div>
       </div>
       <button class="btn btn-primary" style="width:100%;margin-top:10px;" onclick="submitOrderStatusUpdate()">Update Order</button>
@@ -1989,22 +2203,90 @@ function renderOrderDetail(o, items){
   }
 }
 
+/* PAY-02 — refunds moved OFF the status endpoint and onto their own route.
+   "Change a status" and "send money back to a customer" are not the same
+   action: they need different permissions (only an admin may refund; staff may
+   fulfil), a different audit entry, and a completely different flow on the
+   server — one that records intent BEFORE calling Razorpay so a crash in
+   between is resolvable rather than a silent double refund.
+   The dropdown still offers "Refunded" because that is how staff think about
+   it; this function is where the two paths separate. */
 async function submitOrderStatusUpdate(){
   const status = qs('#odStatus').value;
-  const payload = { status };
-  const courierEl = qs('#odCourier'), trackingEl = qs('#odTracking'), refundEl = qs('#odRefundAmount');
-  if (courierEl && courierEl.value.trim()) payload.courierName = courierEl.value.trim();
-  if (trackingEl && trackingEl.value.trim()) payload.trackingNumber = trackingEl.value.trim();
-  if (refundEl && refundEl.value) payload.refundAmountPaise = Math.round(parseFloat(refundEl.value) * 100);
+  const refundEl = qs('#odRefundAmount');
 
   if (status === 'refunded') {
-    confirmAction('Confirm Refund', 'This will call Razorpay\'s real Refunds API and actually return money to the customer. Continue?', async () => {
-      await doOrderStatusUpdate(payload);
+    const amountPaise = (refundEl && refundEl.value)
+      ? Math.round(parseFloat(refundEl.value) * 100)
+      : null; // null means "refund whatever is still refundable"
+
+    if (amountPaise !== null && (!Number.isFinite(amountPaise) || amountPaise <= 0)) {
+      toast('Enter a valid refund amount, or leave it blank to refund the full remaining balance.', 'err');
+      return;
+    }
+
+    const wording = amountPaise
+      ? `This will return ${paise(amountPaise)} to the customer through Razorpay. Continue?`
+      : 'This will return the full remaining balance to the customer through Razorpay. Continue?';
+
+    confirmAction('Confirm Refund', wording, async () => {
+      try {
+        const result = await api('/api/admin/orders/' + currentOrderId + '/refund', {
+          method: 'POST',
+          body: JSON.stringify({ amountPaise: amountPaise, reason: 'admin_panel_refund' })
+        });
+        toast(
+          result.fullyRefunded
+            ? `Refunded ${paise(result.amountPaise)} — this order is now fully refunded.`
+            : `Refunded ${paise(result.amountPaise)}. ${paise(result.totalRefundedPaise)} refunded in total so far.`,
+          'ok'
+        );
+        closeDrawer();
+        loadOrders(ordersState.page);
+        if (currentView === 'dashboard') loadDashboard();
+      } catch (err) {
+        toast(err.error || 'Could not process the refund.', 'err');
+      }
     });
-  } else {
-    await doOrderStatusUpdate(payload);
+    return;
   }
+
+  const payload = { status };
+  const courierEl = qs('#odCourier'), trackingEl = qs('#odTracking');
+  if (courierEl && courierEl.value.trim()) payload.courierName = courierEl.value.trim();
+  if (trackingEl && trackingEl.value.trim()) payload.trackingNumber = trackingEl.value.trim();
+  await doOrderStatusUpdate(payload);
 }
+
+/* PAY-01 — resolves an order the gateway could not be reconciled against.
+   Deliberately a two-button decision rather than a status dropdown: "accept"
+   and "reject" are the only two answers, and framing it as a status change
+   invites someone to pick "delivered" and move on without looking at Razorpay. */
+async function resolvePaymentReview(resolution){
+  const accepting = resolution === 'accept';
+  const title = accepting ? 'Accept this payment' : 'Reject this payment';
+  const message = accepting
+    ? 'Confirm the payment is genuinely captured in Razorpay for the full order amount. This marks the order paid and releases it for fulfilment.'
+    : 'Confirm no money was captured for this order. This marks the payment failed and returns the reserved stock to the catalogue.';
+
+  confirmAction(title, message, async () => {
+    try {
+      const result = await api('/api/admin/orders/' + currentOrderId + '/resolve-review', {
+        method: 'POST',
+        body: JSON.stringify({ resolution })
+      });
+      toast(accepting
+        ? `${result.orderNumber} marked paid and released for fulfilment.`
+        : `${result.orderNumber} marked payment failed; stock returned.`, 'ok');
+      closeDrawer();
+      loadOrders(ordersState.page);
+      if (currentView === 'dashboard') loadDashboard();
+    } catch (err) {
+      toast(err.error || 'Could not resolve this payment review.', 'err');
+    }
+  });
+}
+
 async function doOrderStatusUpdate(payload){
   try {
     await api('/api/admin/orders/' + currentOrderId + '/status', { method: 'PATCH', body: JSON.stringify(payload) });
@@ -2176,7 +2458,7 @@ async function openBookingDetail(type, id){
     );
 
     html += `<div class="divider"></div>
-      <div class="field"><label>Update Booking Status</label>
+      <div class="field"><label for="bmStatus">Update Booking Status</label>
         <select id="bmStatus">
           ${['requested','confirmed','completed','cancelled'].map((s) => `<option value="${s}" ${b.status===s?'selected':''}>${s}</option>`).join('')}
         </select>
@@ -2188,7 +2470,7 @@ async function openBookingDetail(type, id){
     if (paid && !refunded) {
       html += `<div class="divider"></div>
         <label style="display:block;font-size:.72rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--oxblood);margin-bottom:8px;">Refund</label>
-        <div class="field"><label>Refund Amount (₹) — leave blank for a full refund</label>
+        <div class="field"><label for="bmRefundAmount">Refund Amount (₹) — leave blank for a full refund</label>
           <input id="bmRefundAmount" type="number" min="1" step="0.01" placeholder="${((b.amount_paise||0)/100).toFixed(2)}"></div>
         <div class="hint" style="margin-bottom:10px;">This calls Razorpay's real Refunds API — money actually returns to the customer, and they are emailed.</div>
         <button class="btn btn-danger" style="width:100%;" onclick="refundBooking('${type}','${id}', ${b.amount_paise || 0})">Refund This Booking</button>`;

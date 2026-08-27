@@ -27,6 +27,7 @@ process.env.PORT = '0'; // ask the OS for a free ephemeral port
 process.env.JWT_SECRET = 'test_jwt_secret_do_not_use_in_prod';
 process.env.JWT_EXPIRES_IN = '7d';
 process.env.CLIENT_URL = 'https://app.example.test';
+process.env.ADDITIONAL_CLIENT_ORIGINS = 'https://preview.example.test';
 process.env.RAZORPAY_KEY_ID = 'rzp_test_dummy';
 process.env.RAZORPAY_KEY_SECRET = 'dummy_key_secret';
 process.env.RAZORPAY_WEBHOOK_SECRET = 'dummy_webhook_secret';
@@ -51,6 +52,23 @@ const fakeDb = {
     if (sql.includes('COALESCE(SUM(total_paise)')) return { rows: [{ total: '450000' }] };
     if (sql.includes("FROM puja_bookings WHERE status = 'requested'")) return { rows: [{ count: '1' }] };
     if (sql.includes('SELECT id, name, email FROM users WHERE email')) return { rows: [] };
+
+    // These two were deliberately left unstubbed at first, and the mock's throw
+    // was caught by the fail-soft paths in the routes — both tests passed, but
+    // every green run printed two `"level":"error"` lines with a stack trace.
+    // A suite that prints errors on success teaches people to ignore errors,
+    // which is how a real one gets scrolled past. Stubbing them turns the noise
+    // into an asserted branch instead of removing the check.
+    //
+    // Empty rows here is not a convenience — it is the interesting case: a
+    // webhook naming an order this database has never seen (a replayed event, a
+    // webhook aimed at the wrong environment). It must exit cleanly, not 500.
+    if (sql.includes('FROM orders WHERE razorpay_order_id')) return { rows: [] };
+    // Registration issues an email-verification token. The mailer no-ops here
+    // because SMTP_HOST is unset, which is what we want: the route's own logic
+    // is under test, not nodemailer's.
+    if (sql.includes('INSERT INTO email_verification_tokens')) return { rows: [], rowCount: 1 };
+
     throw new Error('Unexpected query in http test mock: ' + sql);
   },
   async withTransaction(fn) {
@@ -264,13 +282,18 @@ section('[http-4] Razorpay webhook — raw-body HMAC signature verification');
       headers: { 'Content-Type': 'application/json', 'x-razorpay-signature': sig },
       body: payload
     });
-    // The mock DB throws on the resulting UPDATE (not stubbed, deliberately) —
-    // what this test actually proves is that a genuine signature clears the
-    // gate at all, distinct from the "always 400" case above. A thrown error
-    // downstream still surfaces as the route's own catch-all (500), which is
-    // the correct behavior for "signature valid but DB unavailable" — not the
-    // same failure mode as "signature invalid".
+    // Two distinct claims, and the second is the one worth having:
+    //   1. a genuine signature clears the gate (not a 400, unlike the cases above);
+    //   2. an event naming an order this database does not have is handled — it
+    //      looks the order up, finds nothing, and returns cleanly.
+    // Razorpay retries any non-2xx, so answering an unknown order with a 500
+    // would earn a retry storm for an event that can never succeed.
     assert.notStrictEqual(res.status, 400, 'a validly signed webhook must not be rejected as an invalid signature');
+    assert.strictEqual(res.status, 200, 'an unknown order must be acknowledged, not retried forever');
+    assert.ok(
+      seenQueries.some((q) => q.includes('FROM orders WHERE razorpay_order_id')),
+      'the webhook must actually look the order up — a 200 without the lookup would mean it exited earlier than we think'
+    );
   });
 }
 
@@ -282,9 +305,41 @@ section('[http-5] CORS — origin allow-list matches CLIENT_URL exactly');
     assert.strictEqual(res.headers['access-control-allow-credentials'], 'true');
   });
 
-  test('cors is configured with a fixed origin string, so it ALWAYS echoes CLIENT_URL regardless of the request\'s actual Origin — this is safe, not a bug: the `cors` package only compares Origin against a function/array/`true` config, never against a plain string, so an unrelated page still gets refused by the BROWSER because the returned header will not equal that page\'s own origin. Documented here so a future refactor to origin:true (which reflects any origin) is caught immediately by this test failing.', async () => {
+  // WHAT THIS ASSERTION USED TO SAY, AND WHY IT CHANGED.
+  //
+  // The origin was previously configured as a plain STRING, which makes the
+  // `cors` package echo CLIENT_URL back on every response regardless of who
+  // asked. That was safe — an unrelated page still gets refused by the BROWSER,
+  // because the returned header does not equal that page's own origin — and the
+  // old test asserted exactly that, to catch a future refactor to `origin:true`
+  // (which reflects any origin, and IS a hole).
+  //
+  // The config is now a FUNCTION with an allow-list, which is strictly stronger:
+  // a disallowed origin gets no Access-Control-Allow-Origin header at all rather
+  // than one that happens not to match, and the rejection is logged. It also
+  // supports ADDITIONAL_CLIENT_ORIGINS for Netlify branch previews, which a
+  // single string cannot.
+  //
+  // So the assertion is inverted, and the original intent is preserved: this
+  // still fails loudly if someone refactors to `origin: true`, because that
+  // WOULD reflect evil.example.com back and the check below would see it.
+  test('an origin that is NOT in the allow-list gets no Access-Control-Allow-Origin header at all (and never a reflected one)', async () => {
     const res = await req(PORT, '/api/health', { headers: { Origin: 'https://evil.example.com' } });
-    assert.strictEqual(res.headers['access-control-allow-origin'], process.env.CLIENT_URL, 'must stay pinned to the configured CLIENT_URL, never reflect the caller\'s Origin');
+    assert.notStrictEqual(
+      res.headers['access-control-allow-origin'],
+      'https://evil.example.com',
+      'the caller\'s own origin must NEVER be reflected back — that would be origin:true, which allows any site to read authenticated responses'
+    );
+    assert.strictEqual(
+      res.headers['access-control-allow-origin'],
+      undefined,
+      'a disallowed origin should receive no CORS grant header whatsoever'
+    );
+  });
+
+  test('a second allowed origin from ADDITIONAL_CLIENT_ORIGINS is accepted, so branch previews work without a config change', async () => {
+    const res = await req(PORT, '/api/health', { headers: { Origin: process.env.ADDITIONAL_CLIENT_ORIGINS } });
+    assert.strictEqual(res.headers['access-control-allow-origin'], process.env.ADDITIONAL_CLIENT_ORIGINS);
   });
 }
 

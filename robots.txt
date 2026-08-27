@@ -1,0 +1,23 @@
+# SEO-01 — this file did not exist, so crawler behaviour was entirely default
+# and there was no sitemap reference at all.
+
+User-agent: *
+Allow: /
+
+# Per-customer pages with no search value. Indexing them wastes crawl budget on
+# pages that show a stranger an empty cart, and risks a "Your Cart" result
+# appearing for a brand query.
+Disallow: /cart
+Disallow: /checkout
+Disallow: /wishlist
+Disallow: /orders
+Disallow: /admin
+Disallow: /verify-email
+Disallow: /reset-password
+
+# Faceted URLs. The category facet is a real, indexable landing page; sort and
+# page parameters produce near-duplicates of it.
+Disallow: /*?sort=
+Disallow: /*?page=
+
+Sitemap: https://www.chakrashri.com/sitemap.xml

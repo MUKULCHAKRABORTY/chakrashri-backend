@@ -1,0 +1,157 @@
+# HYG-08 — CI ran a keep-alive ping and never the test suite.
+#
+# The suite is genuinely good (101 assertions covering the concurrency and money
+# paths that matter most) and it was only ever run by hand, which means a
+# regression reached production the moment someone forgot. This runs it on every
+# push and pull request.
+#
+# It also runs the migrations against a real Postgres, because a migration that
+# only ever runs against production is a migration nobody has tested. That
+# catches a broken CHECK constraint or a backfill that fails on an empty table
+# before it reaches Neon.
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  # A new push supersedes an in-flight run on the same branch — no point burning
+  # minutes verifying a commit that has already been replaced.
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Tests and migrations
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        # Matches Neon's major version. Testing against a different major is how
+        # you find out in production that a function you relied on behaves
+        # differently.
+        image: postgres:16
+        env:
+          POSTGRES_USER: chakrashri_test
+          POSTGRES_PASSWORD: chakrashri_test
+          POSTGRES_DB: chakrashri_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd="pg_isready -U chakrashri_test"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      NODE_ENV: test
+      TZ: Asia/Kolkata
+      DATABASE_URL: postgresql://chakrashri_test:chakrashri_test@localhost:5432/chakrashri_test
+      DB_SSL: 'false'
+      JWT_SECRET: ci_only_secret_not_used_anywhere_real_0123456789
+      RAZORPAY_KEY_ID: rzp_test_ci
+      RAZORPAY_KEY_SECRET: ci_dummy_secret
+      RAZORPAY_WEBHOOK_SECRET: ci_dummy_webhook_secret
+      CLIENT_URL: https://ci.example.test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        # `ci` not `install`: fails if package-lock.json and package.json have
+        # drifted, which is exactly what you want a build to tell you.
+        run: npm ci
+
+      - name: Syntax check every file
+        # Runs FIRST because it is the cheapest check and catches the class of
+        # bug that is invisible in a diff: a cron expression inside a block
+        # comment closing it early, a backtick inside a SQL comment ending a
+        # template literal, a closing script tag truncating 140KB of inline JS.
+        # All three happened during this work.
+        run: npm run check:syntax
+
+      - name: Audit dependencies
+        # Advisory only for moderate and below; a high or critical advisory fails
+        # the build. A transitive vulnerability in a payments backend is not
+        # something to discover from a customer.
+        run: npm audit --audit-level=high
+
+      - name: Apply migrations against a real Postgres
+        run: npm run migrate
+
+      - name: Apply migrations a second time (idempotency check)
+        # Every migration is written to be re-runnable, and the runner tracks
+        # what it has applied. Running twice proves both — and catches the class
+        # of bug where a migration succeeds once and fails on a redeploy.
+        run: npm run migrate
+
+      - name: Unit tests
+        run: npm run test:unit
+
+      - name: Coupon tests
+        run: npm run test:coupons
+
+      - name: HTTP / middleware tests
+        run: npm run test:http
+
+      - name: Security and regression tests
+        run: npm run test:security
+
+      - name: Install Chromium for the browser regression test
+        run: npx playwright install --with-deps chromium
+
+      - name: Browser regression tests
+        # Catches the class of bug that only a real browser can see. Making the
+        # product card a real <a> (for crawlability) put the wishlist and
+        # add-to-cart buttons inside a link; their handlers called
+        # stopPropagation(), which does NOT stop the browser following the href.
+        # Clicking "add to cart" navigated to the product page instead. No diff
+        # review would have caught it.
+        #
+        # The test skips itself on a developer machine that has not downloaded
+        # the Chromium binary, so a missing optional download can never take down
+        # the whole suite. That leniency is wrong HERE: the step above installs
+        # the browser, so a skip in CI means the install silently failed and this
+        # gate has quietly stopped testing anything. REQUIRE_BROWSER_TESTS turns
+        # the skip back into a failure.
+        env:
+          REQUIRE_BROWSER_TESTS: 'true'
+        run: npm run test:browser
+
+      - name: Database integration tests
+        # These run against the live Postgres service above and cover the things
+        # a mocked database cannot prove: concurrent checkout of the last unit,
+        # the variant stock trigger, refund-ledger arithmetic and slot capacity.
+        run: npm run test:db-integration
+
+  lint-sql:
+    name: Migration hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: No edits to already-applied migrations
+        # Migrations are tracked by filename, so editing one that has already run
+        # in production means the change reaches a fresh database and never the
+        # live one — a silent, and very confusing, divergence. New work always
+        # goes in a new numbered file.
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "Not a pull request — skipping."
+            exit 0
+          fi
+          git fetch --no-tags --depth=50 origin "${{ github.base_ref }}"
+          CHANGED=$(git diff --name-only --diff-filter=M "origin/${{ github.base_ref }}"...HEAD -- migrations/ || true)
+          if [ -n "$CHANGED" ]; then
+            echo "::error::These already-committed migrations were modified:"
+            echo "$CHANGED"
+            echo "Add a new numbered migration instead — the runner tracks applied files by name and will never re-run an edited one."
+            exit 1
+          fi
+          echo "No existing migrations were modified."

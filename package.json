@@ -1,6 +1,6 @@
 {
   "name": "chakrashri-backend",
-  "version": "1.0.0",
+  "version": "1.1.1",
   "description": "Production backend API for Chakrashri e-commerce (sacred objects, puja booking, astrology consultations)",
   "main": "src/server.js",
   "type": "commonjs",
@@ -8,14 +8,32 @@
     "start": "node src/server.js",
     "dev": "node node_modules/nodemon/bin/nodemon.js src/server.js",
     "migrate": "node scripts/run-migrations.js",
+    "sitemap": "node scripts/generate-sitemap.js",
+    "check:syntax": "node scripts/check-syntax.js",
+
     "test:unit": "node test/unit.test.js",
     "test:coupons": "node test/coupons.test.js",
     "test:http": "node test/http.test.js",
+    "test:security": "node test/security.test.js",
+    "test:frontend": "node test/frontend.test.js",
+    "test:browser": "node test/browser-cards.test.js",
+    "test:db-integration": "node test/db-integration.test.js",
+
     "test:db": "node scripts/test-db-connection.js",
     "test:razorpay": "node scripts/test-razorpay-connection.js",
-    "verify": "npm run test:unit && npm run test:coupons && npm run test:http && npm run test:db && npm run test:razorpay",
+
+    "setup:browser": "npx playwright install chromium",
+
+    "//test": "Everything that runs with no external services. This is what CI gates on and what to run before every commit. test:browser needs a Chromium binary that npm install does NOT fetch — run `npm run setup:browser` once per machine. Without it the test skips (exit 0) and the chain continues; set REQUIRE_BROWSER_TESTS=true, as CI does, to turn that skip into a failure.",
+    "test": "npm run check:syntax && npm run test:unit && npm run test:coupons && npm run test:http && npm run test:security && npm run test:frontend && npm run test:browser",
+
+    "//verify": "The full pre-deploy check: the offline suite, plus the integration tests and live connectivity checks that need a real database and Razorpay account.",
+    "verify": "npm run test && npm run test:db-integration && npm run test:db && npm run test:razorpay",
+
     "reconcile": "node scripts/reconcile-payments.js",
-    "keep-alive": "node scripts/keep-alive.js"
+    "sweep": "node scripts/release-expired-orders.js",
+    "keep-alive": "node scripts/keep-alive.js",
+    "create-admin": "node scripts/create-admin.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -33,7 +51,8 @@
     "razorpay": "^2.9.4"
   },
   "devDependencies": {
-    "nodemon": "^3.1.4"
+    "nodemon": "^3.1.4",
+    "playwright": "^1.48.0"
   },
   "engines": {
     "node": ">=18.0.0"

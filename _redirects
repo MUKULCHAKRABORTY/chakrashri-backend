@@ -1,0 +1,26 @@
+# Netlify SPA fallback — required by SEO-01.
+#
+# Routing now uses real paths (/product/sphatik-shivling) instead of fragments,
+# because a search engine treats a #fragment as a position within one document
+# rather than a separate URL — which meant the entire catalog was a single
+# indexable page.
+#
+# Real paths only work if the host serves index.html for a path that has no file
+# behind it. Without this rule, /product/sphatik-shivling is a hard 404 for
+# anyone arriving from a search result, a shared link, or a page refresh.
+#
+# The 200 (not 301/302) is the important part: it rewrites internally and keeps
+# the requested URL in the address bar, so the app can read location.pathname
+# and render the right view.
+
+# Real files win first — these two are served as themselves, not rewritten.
+/robots.txt   /robots.txt   200
+/sitemap.xml  /sitemap.xml  200
+
+# The admin console is a separate document and must not be swallowed by the
+# storefront's catch-all below.
+/admin        /admin.html   200
+/admin/*      /admin.html   200
+
+# Everything else renders the storefront.
+/*            /index.html   200
