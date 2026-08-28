@@ -129,6 +129,13 @@ jobs:
         # These run against the live Postgres service above and cover the things
         # a mocked database cannot prove: concurrent checkout of the last unit,
         # the variant stock trigger, refund-ledger arithmetic and slot capacity.
+        #
+        # The suite skips itself when no disposable database is configured, which
+        # is right on a laptop and wrong here: in CI a skip means the service
+        # container never came up, and this gate has quietly stopped testing
+        # anything. REQUIRE_DB_TESTS makes that a failure instead of a notice.
+        env:
+          REQUIRE_DB_TESTS: 'true'
         run: npm run test:db-integration
 
   lint-sql:

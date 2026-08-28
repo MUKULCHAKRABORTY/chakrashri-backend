@@ -18,42 +18,145 @@
  *
  * "The oversell fix works" was, until now, an assertion about a mock.
  *
- * SKIPS CLEANLY when no test database is configured, so `npm run verify` on a
- * laptop with no Postgres still passes. CI provides one (see .github/workflows).
+ * SKIPS LOUDLY when no throwaway database is configured, so `npm run verify` on
+ * a laptop with no Postgres still passes — but says plainly what did not run,
+ * because a suite that removes itself from the gate without anyone noticing is
+ * worse than one that fails. CI sets REQUIRE_DB_TESTS=true, which turns any
+ * skip into a failure.
  *
  * SAFETY: refuses to run against anything that does not look like a throwaway
  * test database. These tests create and delete rows; pointing them at
  * production would be destructive, so the guard is deliberately paranoid.
  *
- * Run: DATABASE_URL=postgres://... node test/db-integration.test.js
+ * Run: TEST_DATABASE_URL=postgres://... node test/db-integration.test.js
  */
 const assert = require('assert');
 const crypto = require('crypto');
 
 process.env.NODE_ENV = 'test';
 
-const DATABASE_URL = process.env.DATABASE_URL || '';
+// Load .env so this is configurable on any machine without shell exports.
+// dotenv never overwrites a variable already present in the real environment,
+// so CI's service-container DATABASE_URL still wins over anything in a file.
+try { require('dotenv').config(); } catch { /* optional */ }
 
-if (!DATABASE_URL) {
-  console.log('\n[db-integration] No DATABASE_URL set — skipping database integration tests.');
-  console.log('                 CI runs these against a Postgres service container.\n');
+// TEST_DATABASE_URL first, deliberately. A developer's .env holds the PRODUCTION
+// DATABASE_URL, and these tests create and delete rows — so the variable that
+// selects a database to write to must be one you have to set on purpose.
+const DATABASE_URL = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL || '';
+
+// CI sets this. Then a skip — for ANY reason — is a failure, because in CI a
+// skip does not mean "no database here", it means the service container broke
+// and this gate has quietly stopped testing anything.
+const REQUIRE_DB = process.env.REQUIRE_DB_TESTS === 'true';
+
+function skip(lines) {
+  const label = REQUIRE_DB ? 'FAILED' : 'SKIPPED';
+  const out = REQUIRE_DB ? console.error : console.log;
+  out(`\n[db-integration] ${label}: the 29 database integration tests did NOT run.`);
+  lines.forEach((l) => out('                 ' + l));
+  if (REQUIRE_DB) {
+    console.error('                 REQUIRE_DB_TESTS=true, so this cannot be skipped.\n');
+    process.exit(1);
+  }
+  out('');
+  out('                 These are the tests that prove oversell is impossible under');
+  out('                 concurrency, that a refund returns stock exactly once, and that');
+  out('                 the audit log cannot be edited. `npm test` passing without them');
+  out('                 is a weaker claim than it looks — run them before you deploy.\n');
   process.exit(0);
 }
 
-// --- Guard rail -------------------------------------------------------------
-// These tests write and delete. Refuse anything that is not obviously a test
-// database. A false negative here costs a config tweak; a false positive costs
-// production data.
-const looksLikeTestDb = /test|localhost|127\.0\.0\.1|ci/i.test(DATABASE_URL);
-if (!looksLikeTestDb) {
-  console.error('\n[db-integration] REFUSING TO RUN.');
-  console.error('  DATABASE_URL does not look like a disposable test database.');
-  console.error('  These tests create and delete rows. Point them at a throwaway database');
-  console.error('  whose URL contains "test", "ci" or "localhost".\n');
-  process.exit(1);
+if (!DATABASE_URL) {
+  skip([
+    'No TEST_DATABASE_URL (or DATABASE_URL) is set.',
+    'Point TEST_DATABASE_URL at a THROWAWAY database — a Neon branch, a local',
+    'Postgres, or a second database whose name contains "test".'
+  ]);
 }
 
+// --- Guard rail -------------------------------------------------------------
+// These tests write and delete. Refuse anything that is not obviously a
+// disposable database.
+//
+// The previous version tested the WHOLE connection string against
+// /test|localhost|127\.0\.0\.1|ci/. Two problems with that, and the second is
+// the dangerous one:
+//
+//   1. `ci` as a bare substring matches inside ordinary words — and a Neon
+//      endpoint id is random, so a host like ep-precious-sun-12345 authorises a
+//      destructive run on a production database by coincidence.
+//   2. It searched the credentials too. A randomly generated PASSWORD containing
+//      "ci" or "test" would have been enough to unlock it. A secret should never
+//      be able to grant permission.
+//
+// So: decide on the HOST and DATABASE NAME only, never the credentials, and
+// require a whole-word marker. A false negative costs one config tweak. A false
+// positive costs the client's live orders.
+const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '::1', '0.0.0.0']);
+
+function looksDisposable(rawUrl) {
+  let url;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    // Not a URL we can dissect — fall back to the database name at the end of a
+    // key=value DSN, and refuse if even that is unreadable.
+    return /(^|[\s;])dbname=\S*(^|[^a-z])(test|ci)([^a-z]|$)/i.test(rawUrl);
+  }
+  const host = url.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  if (LOCAL_HOSTNAMES.has(host)) return true;
+
+  const dbName = decodeURIComponent(url.pathname.replace(/^\//, '')).toLowerCase();
+  // Whole-word "test" or "ci", separated by a non-letter or a string boundary:
+  // matches chakrashri_test, test-db, ci, shop_ci — not "precious" or "civic".
+  return /(^|[^a-z])(test|ci)([^a-z]|$)/.test(dbName);
+}
+
+if (!looksDisposable(DATABASE_URL)) {
+  const shown = (() => {
+    try {
+      const u = new URL(DATABASE_URL);
+      return `${u.hostname}${u.pathname}`; // host + database only; never the password
+    } catch { return '(unparseable connection string)'; }
+  })();
+  skip([
+    'The configured database does not look disposable: ' + shown,
+    'These tests CREATE AND DELETE rows, so running them against production',
+    'would destroy real orders. Refusing on purpose.',
+    'Set TEST_DATABASE_URL to a database whose name contains "test" or "ci",',
+    'or whose host is localhost.'
+  ]);
+}
+
+// ---------------------------------------------------------------------------
+// The guard above approved DATABASE_URL. This line makes the pool USE it.
+// ---------------------------------------------------------------------------
+// Without this, introducing TEST_DATABASE_URL created the worst possible
+// version of this file: the guard validated the throwaway database while
+// src/config/db.js — which reads process.env.DATABASE_URL — connected to the
+// production one. Destructive tests would have run against live orders while
+// the console reported that a test database had been checked. A guard that
+// inspects a different thing from the one being used is not a guard.
+//
+// So the approved URL becomes THE url, before anything opens a connection.
+process.env.DATABASE_URL = DATABASE_URL;
+
 const db = require('../src/config/db');
+
+// Belt and braces: prove the pool really did end up on the approved database.
+// The connection string may be rewritten by the TLS normaliser in config/db.js,
+// so compare host and database name rather than the whole string.
+(function assertConnectedToApprovedDatabase() {
+  const actual = db.basePoolConfig.connectionString;
+  const target = (u) => { try { const x = new URL(u); return x.hostname + x.pathname; } catch { return u; } };
+  if (target(actual) !== target(DATABASE_URL)) {
+    console.error('\n[db-integration] ABORTING: the pool is not on the database that was checked.');
+    console.error('  approved: ' + target(DATABASE_URL));
+    console.error('  actual:   ' + target(actual) + '\n');
+    process.exit(1);
+  }
+})();
 const { reserveStockAndCreateOrder } = require('../src/utils/orders');
 const { restoreOrderStock } = require('../src/utils/stock');
 

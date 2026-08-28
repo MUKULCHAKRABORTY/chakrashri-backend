@@ -1,105 +1,124 @@
-# Patch 1.1.1 — what broke, what changed, how to apply
+# Patch 1.1.2 — your verify run was green and still incomplete
 
-`npm run verify` on your machine stopped at `test:browser` with
-`Executable doesn't exist … chrome-headless-shell.exe`. Nothing in the
-application was wrong: 258 tests passed, and the browser test could not *start*
-because Playwright's Chromium binary is a separate download that `npm install`
-does not perform.
+Your 1.1.1 run passed everything it executed. Look at this line, though:
 
-But the crash was a defect in the test harness, and it mattered more than the
-missing download: `test:db-integration`, `test:db` and `test:razorpay` never ran,
-so that green-looking run had actually verified far less than it appeared to.
+```
+> chakrashri-backend@1.1.1 test:db-integration
+[db-integration] No DATABASE_URL set — skipping database integration tests.
+```
+
+**Twenty-nine tests did not run, and `npm run verify` still reported success.**
+Those are the ones that prove oversell is impossible when two people check out
+the last unit at the same moment, that a refund returns stock exactly once, that
+a partial refund does not invent returned units, and that the audit log cannot be
+edited or deleted. Your green run was 209 tests, not 238.
+
+That is the same defect I fixed in the browser test one release ago — a suite
+that removes itself from the gate and nobody notices — and I did not check
+whether anything else in the suite did it too. It did.
 
 ## Apply
 
-Extract this over your project folder, keeping the directory structure. It
-replaces nine files and touches nothing else.
+Extract the zip anywhere, then copy the **contents** of `chakrashri-patch-1.1.2`
+into `C:\Users\chakr\Downloads\chakrashri-backend\chakrashri-backend`, keeping the
+folder structure and overwriting when prompted. Eleven files replaced, one new
+(`scripts/verify-full.js`). Your `.env`, `node_modules` and database are untouched.
+
+In PowerShell, from inside the extracted folder:
+
+```powershell
+Copy-Item -Path .\* -Destination C:\Users\chakr\Downloads\chakrashri-backend\chakrashri-backend -Recurse -Force
+```
+
+Then `npm install`, and read the next section before running anything.
+
+## The one thing you need to set up
+
+The 29 tests **create and delete rows**. They must never touch production, so
+they now read `TEST_DATABASE_URL` rather than `DATABASE_URL` — a variable you
+have to set on purpose. Without it they skip, loudly, and say what did not run.
+
+A **Neon branch** is the easiest throwaway: instant, free, isolated, discardable.
 
 ```
-npm install                # picks up the version bump
-npm run setup:browser      # one-time per machine: downloads Chromium
-npm run verify
+1. In the Neon console, create a branch of your project (or a second database
+   named chakrashri_test). Copy its connection string.
+
+2. Apply the migrations to it once. `npm run migrate` reads DATABASE_URL, so
+   point it there for this one command only:
+
+   cmd:  set "DATABASE_URL=postgresql://neondb_owner:npg_yRxerNMh4i9w@ep-misty-glitter-aytpft51-pooler.c-5.us-east-2.aws.neon.tech/chakrashri_test?sslmode=verify-full&channel_binding=require" && npm run migrate
+
+3. Add to .env:
+
+   TEST_DATABASE_URL=postgresql://.../chakrashri_test?sslmode=verify-full
+
+4. npm run verify:full
 ```
 
-`npm run setup:browser` is new — it is just `npx playwright install chromium`.
+## `verify` and `verify:full` are different claims
 
-## What changed, and why
+`npm run verify` allows a skip and tells you about it. `npm run verify:full` is
+new and forbids one: a missing browser binary or a missing test database becomes
+a **failure**, not a notice. Its green means every suite actually ran. **Use
+`verify:full` as the pre-deploy gate.** CI now enforces the same thing.
 
-**1. `test/browser-cards.test.js` — the crash.**
-The old guard handled "playwright package not installed" but not "package
-installed, browser binary missing", and the launch failure happened inside an
-async function with no catch. Node turns that into an unhandled rejection and
-kills the process, which killed the whole `npm run verify` chain.
+## Also fixed: the safety guard was not safe
 
-Now it detects both, prints the exact command, exits 0, and lets the rest of the
-suite run. A launch failure for any *other* reason is still re-thrown as a real
-failure — a check that cannot fail is worse than no check.
+The guard that stops these destructive tests running against production checked
+the whole connection string against `/test|localhost|127\.0\.0\.1|ci/i`. Two
+problems, and the second is the one that matters:
 
-Set `REQUIRE_BROWSER_TESTS=true` to turn the skip back into a failure. CI now
-does exactly that, so a silently broken browser install cannot hide there.
+1. `ci` matched as a bare substring — inside any word. A Neon endpoint id is
+   random, so a host like `ep-pre**ci**ous-sun-a1b2c3` would have authorised a
+   destructive run against a production database by coincidence. So would the
+   region `ap-pa**ci**fic-1`.
+2. It searched the **credentials**. A generated password containing `ci` or
+   `test` was enough to unlock it. A secret must never be able to grant
+   permission.
 
-**2. `src/config/db.js` — a scheduled TLS downgrade (TLS-01).**
-Your migration run printed this, and it is not cosmetic:
+The guard now decides on the **host and database name only** and requires a
+whole-word marker. I tested it against twelve realistic connection strings,
+including three that the old guard wrongly approved. Failure messages print host
+and database name only — never the password.
 
-> The SSL modes 'prefer', 'require', and 'verify-ca' are treated as aliases for
-> 'verify-full'. In the next major version … weaker security guarantees.
+While fixing that I introduced a worse bug and caught it in testing: the guard
+validated `TEST_DATABASE_URL` while the connection pool, which reads
+`DATABASE_URL`, would have connected to **production**. Destructive tests against
+live orders, with the console reporting that a test database had been checked.
+The approved URL is now assigned before anything opens a connection, and the file
+asserts at startup that the pool really is on the database that was checked. I
+proved that assertion fires by feeding it a mismatched pool.
 
-`sslmode=require` means "encrypted and certificate-verified" today. After a
-routine `npm update` to pg v9 it will mean "encrypted, but any certificate is
-accepted" — a man-in-the-middle window between Render and Neon that opens with
-no code change, no error and no failing test.
+## Third silent skip, in the unit suite
 
-`require` and `verify-ca` are now rewritten to `verify-full` at boot, which is
-exactly what they already do today, so nothing changes now and nothing breaks
-later. One log line reports it. `sslmode=prefer` is warned about but never
-rewritten (it permits a plaintext fallback that local development relies on),
-and `localhost` connections are left alone (a dev Postgres often has a
-self-signed certificate that `verify-full` is right to reject).
-`DB_SSL_NORMALIZE=false` disables the rewrite.
-
-**Please also set it at the source:** change `?sslmode=require` to
-`?sslmode=verify-full` in `.env` and in the Render dashboard, so the code has
-nothing to correct.
-
-The same file's comment used to say `DB_SSL` controlled certificate validation.
-It does not — a parsed `sslmode` overrides that property entirely — and a
-misleading comment on a security control is worse than none. The comment is
-fixed; the `ssl:` line itself is unchanged, byte for byte.
-
-**3. `scripts/test-db-connection.js` — a consumer of the value above.**
-It string-matched `sslmode=require`, so the moment you set `verify-full` it
-would have reported a false failure and advised you to undo the stronger
-setting. It now accepts every mode that mandates TLS.
-
-**4. `test/http.test.js` — two red error lines on a green run.**
-Two queries were unstubbed; the routes correctly fail-softed and both tests
-passed, but every run printed `"level":"error"` with a stack trace. A suite that
-prints errors on success teaches people to scroll past errors. Both are now
-stubbed, which turns the noise into real coverage: a webhook naming an unknown
-order must return 200, not 500, because Razorpay retries anything else.
-
-**5. `test/security.test.js` — 11 new tests** covering the TLS change, including
-the regression it must not cause (a local test database must never be forced
-into `verify-full`).
+Three tests in `[4b] jsonb serialization` began with
+`if (!prepareValue) return;` — reporting PASS while asserting nothing if
+`pg/lib/utils` (an internal path) ever moved. They pin the array-vs-object trap
+that has broken variant creation twice. They now fail with an explanation
+instead of falling silent.
 
 ## Verified before shipping
 
-- Reproduced your exact error by pointing `PLAYWRIGHT_BROWSERS_PATH` at an empty
-  directory; confirmed the skip, confirmed `REQUIRE_BROWSER_TESTS=true` fails,
-  confirmed the real test still runs and passes.
-- Confirmed five realistic non-binary launch errors are still re-thrown, not
-  swallowed.
-- Full offline suite: 60 + 17 + 24 + 73 + 35 tests, 0 failed, plus the browser
-  test passing.
-- Migrations applied twice against a fresh PostgreSQL 16, then 29 integration
-  tests against it, 0 failed.
-- Diffed against the previous release: exactly these nine files changed.
-- `npm audit`: 0 vulnerabilities.
+- Every skip path in `test/` and `scripts/` audited; all three found are fixed.
+- db-integration: no database → loud skip, exit 0; production-shaped URL → refuses,
+  exit 0; same with `REQUIRE_DB_TESTS=true` → exit 1; throwaway database → 29 pass.
+- Guard rail: 12 connection strings, including the three the old one got wrong.
+- Pool-mismatch abort: proved it fires by pre-seeding a mismatched db module.
+- jsonb tests: pass normally, fail loudly when `pg/lib/utils` is unavailable.
+- Offline suite 60 + 17 + 24 + 73 + 35, browser test passing, 29 integration
+  tests against a real PostgreSQL 16. `npm audit`: 0 vulnerabilities.
+- Diffed against 1.1.0: exactly the eleven files listed, plus the new script.
 
 ## Still outstanding, and still yours
 
-1. **Rotate the five credentials** that were in the `.env` inside the archive
-   you sent: `DATABASE_URL`, `JWT_SECRET`, `RAZORPAY_KEY_SECRET`,
-   `RAZORPAY_WEBHOOK_SECRET`, and the SMTP password.
-2. Set `REQUIRE_TOKEN_VERSION=true` seven days after deploying.
-3. Change `sslmode=require` to `sslmode=verify-full` in `.env` and on Render.
+1. **Rotate the five credentials** that were in the `.env` inside the archive you
+   sent: `DATABASE_URL`, `JWT_SECRET`, `RAZORPAY_KEY_SECRET`,
+   `RAZORPAY_WEBHOOK_SECRET`, SMTP password. This has been open for two releases.
+2. Change `?sslmode=require` to `?sslmode=verify-full` in `.env` and on Render.
+   The code corrects it at boot and logs that it did; fixing it at the source
+   means there is nothing to correct.
+3. Set `REQUIRE_TOKEN_VERSION=true` seven days after deploying.
+4. The manual end-to-end test: one real ₹1 order through Razorpay, confirm the
+   webhook lands, refund it from the admin panel, confirm the ledger, the audit
+   entry and the customer email all appear. No automated suite covers that path.

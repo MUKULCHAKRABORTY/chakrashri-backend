@@ -1,6 +1,6 @@
 {
   "name": "chakrashri-backend",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Production backend API for Chakrashri e-commerce (sacred objects, puja booking, astrology consultations)",
   "main": "src/server.js",
   "type": "commonjs",
@@ -27,8 +27,11 @@
     "//test": "Everything that runs with no external services. This is what CI gates on and what to run before every commit. test:browser needs a Chromium binary that npm install does NOT fetch — run `npm run setup:browser` once per machine. Without it the test skips (exit 0) and the chain continues; set REQUIRE_BROWSER_TESTS=true, as CI does, to turn that skip into a failure.",
     "test": "npm run check:syntax && npm run test:unit && npm run test:coupons && npm run test:http && npm run test:security && npm run test:frontend && npm run test:browser",
 
-    "//verify": "The full pre-deploy check: the offline suite, plus the integration tests and live connectivity checks that need a real database and Razorpay account.",
+    "//verify": "The offline suite plus the integration tests and live connectivity checks. Two suites here CAN skip themselves: test:browser without a Chromium binary, and test:db-integration without a throwaway database. Both say so loudly, but a skip still leaves verify green — so this is the developer command, not the gate.",
     "verify": "npm run test && npm run test:db-integration && npm run test:db && npm run test:razorpay",
+
+    "//verify:full": "The actual pre-deploy gate, and what CI runs. Identical to verify except nothing is allowed to skip: a missing browser or missing test database becomes a failure instead of a notice. Needs TEST_DATABASE_URL pointing at a DISPOSABLE database (a Neon branch, or a local Postgres) — never production; these tests create and delete rows.",
+    "verify:full": "node scripts/verify-full.js",
 
     "reconcile": "node scripts/reconcile-payments.js",
     "sweep": "node scripts/release-expired-orders.js",

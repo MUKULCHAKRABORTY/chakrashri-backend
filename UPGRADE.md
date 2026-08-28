@@ -249,6 +249,38 @@ Then:
 ```bash
 npm test                  # offline suite — this is what CI gates on
 npm run verify            # adds the DB integration tests and live connectivity checks
+npm run verify:full       # the actual pre-deploy gate — nothing is allowed to skip
+```
+
+### `verify` and `verify:full` are not the same claim
+
+Two suites can remove themselves from a run: `test:browser` without a Chromium
+binary, and `test:db-integration` without a disposable database. Both skips are
+correct on a laptop — a missing optional download must never stop the checks that
+*can* run — and both are wrong immediately before a deploy.
+
+`npm run verify` permits them and says loudly what did not run.
+`npm run verify:full` forbids them: a skip becomes a failure. **Use `verify:full`
+as the gate.** Its green means every suite actually executed; `verify`'s does not.
+
+### Setting up the throwaway database (one time)
+
+The 29 integration tests create and delete rows — concurrent checkout of the last
+unit, refund-ledger arithmetic, append-only audit log — so they read
+`TEST_DATABASE_URL`, never your production `DATABASE_URL`. A guard refuses
+anything that does not look disposable: the host must be localhost, or the
+database name must contain `test` or `ci` as a whole word. Credentials are not
+examined, deliberately — a password must never be what grants write permission.
+
+A **Neon branch** is the easiest option: instant, free, isolated, discardable.
+
+```bash
+# 1. create the branch/database in the Neon console, copy its URL
+# 2. apply the migrations to it once — migrate reads DATABASE_URL, so point it there
+#    for this one command only:
+DATABASE_URL="postgresql://.../chakrashri_test?sslmode=verify-full" npm run migrate
+# 3. put it in .env as TEST_DATABASE_URL, then:
+npm run verify:full
 ```
 
 If you skip `setup:browser`, the browser test now reports `SKIPPED` and the rest
