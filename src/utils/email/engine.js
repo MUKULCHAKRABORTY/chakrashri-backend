@@ -236,6 +236,33 @@ async function isSuppressed(email, category) {
   }
 }
 
+/**
+ * The global marketing kill switch (`email_marketing_enabled`).
+ *
+ * Migration 015 seeds this row and documents it as the switch that decides
+ * whether marketing goes out, but nothing read it: flipping it to 'false' saved
+ * successfully and every campaign kept sending. A control that reports success
+ * and changes nothing is the failure mode 015's own header warns about — a
+ * promise the software cannot keep.
+ *
+ * Fails OPEN, unlike the per-recipient consent check below. That looks like the
+ * wrong direction for marketing until you note that hasMarketingConsent() fails
+ * CLOSED on the same outage: with the database unreachable, no send can prove
+ * consent, so nothing marketing goes out regardless of what this returns. Making
+ * this one fail closed too would only mean a database blip silently disables a
+ * switch the admin never touched.
+ */
+async function marketingEnabled() {
+  try {
+    const { rows } = await db().query(
+      "SELECT value FROM site_settings WHERE key = 'email_marketing_enabled'"
+    );
+    return !rows.length || String(rows[0].value) !== 'false';
+  } catch (err) {
+    return true;
+  }
+}
+
 async function hasMarketingConsent(email) {
   try {
     const { rows } = await db().query(
@@ -347,6 +374,14 @@ async function sendMail({ to, subject, html, template, category, dedupeKey, user
   if (await isSuppressed(recipient, cat)) {
     await recordSkip(name, recipient, userId, subject, 'suppressed');
     return { sent: false, reason: 'suppressed' };
+  }
+
+  // Checked before consent so the log distinguishes "we have this list switched
+  // off" from "this person never opted in". Same outcome, completely different
+  // thing to do about it.
+  if (cat === CATEGORY.MARKETING && !(await marketingEnabled())) {
+    await recordSkip(name, recipient, userId, subject, 'skipped_marketing_disabled');
+    return { sent: false, reason: 'marketing_disabled' };
   }
 
   if (cat === CATEGORY.MARKETING && !(await hasMarketingConsent(recipient))) {

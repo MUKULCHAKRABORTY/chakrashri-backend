@@ -8,18 +8,45 @@
 require('dotenv').config();
 const db = require('../src/config/db');
 
-const EXPECTED_TABLES = [
-  // migration 001
-  'users', 'addresses', 'products', 'product_images', 'orders', 'order_items',
-  'puja_bookings', 'astrology_bookings', 'blog_posts', 'wishlist_items', 'admin_audit_log',
-  'password_reset_tokens',   // 003
-  'booking_services',        // 004
-  'product_reviews',         // 005
-  'coupons', 'coupon_redemptions',                              // 006
-  'product_properties',                                          // 007
-  'product_options', 'product_option_values', 'product_variants', // 008
-  'site_settings' // 011
-];
+// Every table this build expects, grouped by the migration that creates it.
+//
+// The list used to stop at 011 and be a flat array, which made the check report
+// "ALL CHECKS PASSED — 21/21 found" against a database that could be missing the
+// entire refunds ledger and the entire email system. That is worse than no check
+// at all: it is a green light for a schema nobody verified.
+//
+// The grouping exists because "table is missing" has two completely different
+// meanings, and conflating them is how the flat list would have turned this
+// script into a permanent false alarm the moment it was brought up to date:
+//
+//   - missing, and its migration is NOT in _migrations: this database is simply
+//     behind. Before any deploy that adds a migration, production is behind BY
+//     DEFINITION — that is what the deploy is for. Reporting it as a failure
+//     would mean the pre-deploy gate can never pass before a schema change.
+//   - missing, and its migration IS recorded as applied: real schema drift.
+//     Something was dropped, or a migration recorded success without doing its
+//     work. That is a genuine failure and must stay one.
+const TABLES_BY_MIGRATION = {
+  '001': [
+    'users', 'addresses', 'products', 'product_images', 'orders', 'order_items',
+    'puja_bookings', 'astrology_bookings', 'blog_posts', 'wishlist_items', 'admin_audit_log'
+  ],
+  '003': ['password_reset_tokens'],
+  '004': ['booking_services'],
+  '005': ['product_reviews'],
+  '006': ['coupons', 'coupon_redemptions'],
+  '007': ['product_properties'],
+  '008': ['product_options', 'product_option_values', 'product_variants'],
+  '011': ['site_settings'],
+  '013': ['email_verification_tokens', 'refunds', 'practitioners', 'availability_slots'],
+  // 014 adds indexes only — no tables.
+  '015': [
+    'email_log', 'email_subscriptions', 'email_suppressions',
+    'stock_notifications', 'contact_messages'
+  ]
+};
+
+const EXPECTED_TABLES = Object.values(TABLES_BY_MIGRATION).flat();
 
 // A subset of columns the application code actually queries/inserts by name.
 // If a table pre-existed (e.g. from earlier manual testing) with a different
@@ -135,9 +162,43 @@ async function main() {
       `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'`
     );
     const existing = new Set(rows.map((r) => r.table_name));
-    const missing = EXPECTED_TABLES.filter((t) => !existing.has(t));
-    if (missing.length) {
-      report('All expected tables exist', false, `missing: ${missing.join(', ')} — run "npm run migrate"`);
+
+    // Which migrations does this database say it has run? A database old enough
+    // to predate the runner has no _migrations table at all; treat that as "no
+    // information" and fall back to reporting every gap as drift, which is the
+    // safe direction.
+    let applied = null;
+    try {
+      const m = await db.query('SELECT filename FROM _migrations');
+      applied = new Set(m.rows.map((r) => String(r.filename).slice(0, 3)));
+    } catch (err) {
+      applied = null;
+    }
+
+    const drift = [];
+    const behind = [];
+    for (const [migration, tables] of Object.entries(TABLES_BY_MIGRATION)) {
+      const missing = tables.filter((t) => !existing.has(t));
+      if (!missing.length) continue;
+      if (applied && !applied.has(migration)) behind.push({ migration, missing });
+      else drift.push(...missing);
+    }
+
+    if (drift.length) {
+      // Two different failures share this branch, and saying the wrong one sends
+      // whoever reads it looking for the wrong problem. With no _migrations
+      // table there is nothing that could have been "recorded as applied".
+      report('All expected tables exist', false, applied
+        ? `missing though their migration is recorded as applied: ${drift.join(', ')} — this is schema drift, not a pending migration`
+        : `missing, and this database has no _migrations table to say what has run: ${drift.join(', ')} — run "npm run migrate"`);
+    } else if (behind.length) {
+      // Deliberately not a failure: see the note above TABLES_BY_MIGRATION.
+      // Loud, though — this is the difference between "the deploy will fix it"
+      // and nobody noticing that production never got the schema.
+      const list = behind.map((b) => `${b.migration} (${b.missing.join(', ')})`).join('; ');
+      report('All expected tables exist', true,
+        `every applied migration's tables are present. THIS DATABASE IS BEHIND — not yet applied: ${list}. `
+        + 'Render runs "npm run migrate" as its preDeployCommand, so a deploy applies it; run it by hand to apply it now.');
     } else {
       report('All expected tables exist', true, `${EXPECTED_TABLES.length}/${EXPECTED_TABLES.length} found`);
     }

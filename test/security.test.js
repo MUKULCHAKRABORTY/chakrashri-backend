@@ -631,6 +631,72 @@ section('[sec-11] TLS-01 — sslmode aliases are resolved before pg v9 redefines
 }
 
 // ============================================================
+// The email settings migration 015 seeds but nothing could edit
+// ============================================================
+section('[sec-12] The settings 015 seeds are actually editable, and admin_alert_email cannot inject headers');
+{
+  const { DEFAULTS, setSetting } = require('../src/utils/settings');
+
+  // THE FINDING: 015 seeded six rows, documented them as the configuration
+  // surface for the email system, and shipped consumers that read them — but
+  // setSetting() rejects any key absent from DEFAULTS, so every one of them
+  // answered "400 Unknown setting" and GET /settings never returned them. The
+  // release notes' own action item ("set admin_alert_email in the admin
+  // console") was impossible to carry out.
+  test('THE FINDING: every setting migration 015 seeds is editable, not just seeded', () => {
+    for (const key of [
+      'admin_alert_email', 'email_admin_alerts_enabled', 'email_marketing_enabled',
+      'abandoned_cart_email_after_minutes', 'booking_reminder_hours_before',
+      'low_stock_alert_threshold'
+    ]) {
+      assert.ok(
+        Object.prototype.hasOwnProperty.call(DEFAULTS, key),
+        `${key} is seeded by migration 015 but missing from DEFAULTS, so no admin can change it`
+      );
+    }
+  });
+
+  test('the defaults match what 015 seeds, so listing them changed no behaviour', () => {
+    assert.strictEqual(DEFAULTS.admin_alert_email, '');
+    assert.strictEqual(DEFAULTS.email_admin_alerts_enabled, true);
+    assert.strictEqual(DEFAULTS.email_marketing_enabled, true);
+    assert.strictEqual(DEFAULTS.abandoned_cart_email_after_minutes, 20);
+    assert.strictEqual(DEFAULTS.booking_reminder_hours_before, 24);
+    assert.strictEqual(DEFAULTS.low_stock_alert_threshold, 5);
+  });
+
+  // admin_alert_email becomes the `To:` header of every operational alert, so
+  // it is an injection surface the moment it is editable. Every value below is
+  // rejected before setSetting reaches the database, which is why this runs in
+  // the offline suite.
+  const injections = [
+    ['a CR/LF that would start a new header', 'ops@x.com\r\nBcc: attacker@evil.com'],
+    ['a bare newline', 'ops@x.com\nBcc: attacker@evil.com'],
+    ['a comma that turns one recipient into two', 'ops@x.com,attacker@evil.com'],
+    ['a semicolon recipient list', 'ops@x.com;attacker@evil.com'],
+    ['a display-name form smuggling angle brackets', 'Ops <ops@x.com> <attacker@evil.com>'],
+    ['not an address at all', 'not-an-email'],
+    ['a hostname with no TLD', 'ops@localhost']
+  ];
+  for (const [why, value] of injections) {
+    test(`admin_alert_email refuses ${why}`, async () => {
+      await assert.rejects(
+        () => setSetting('admin_alert_email', value, null),
+        (err) => err.status === 400,
+        `${JSON.stringify(value)} was accepted as an alert recipient`
+      );
+    });
+  }
+
+  test('a key that is genuinely unknown is still refused', async () => {
+    await assert.rejects(
+      () => setSetting('not_a_real_setting', 'x', null),
+      (err) => err.status === 400
+    );
+  });
+}
+
+// ============================================================
 // Runner
 // ============================================================
 (async () => {

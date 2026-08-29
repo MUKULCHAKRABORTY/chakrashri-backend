@@ -24,6 +24,14 @@
  *
  * Run: npm run verify:full
  */
+// Load .env BEFORE deciding whether a test database is configured. Without this
+// the gate inspects a bare process.env, finds no TEST_DATABASE_URL, and refuses
+// to run — while instructing you to put TEST_DATABASE_URL in the .env file it
+// just declined to read. Every suite it spawns calls dotenv itself, which is why
+// the omission hid here: the tests could see the value, the gate guarding them
+// could not.
+require('dotenv').config();
+
 const { spawn } = require('child_process');
 
 const REQUIRED = {

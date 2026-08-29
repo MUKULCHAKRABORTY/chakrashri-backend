@@ -210,17 +210,57 @@ async function stockOf(productId) {
 section('[db-1] The schema this code expects actually exists');
 // ============================================================
 {
-  test('migrations 013 and 014 have been applied', async () => {
+  test('migrations 013, 014 and 015 have been applied', async () => {
     const { rows } = await db.query('SELECT filename FROM _migrations ORDER BY filename');
     const applied = rows.map((r) => r.filename);
     assert.ok(applied.some((f) => f.startsWith('013_')), 'migration 013 has not been applied');
     assert.ok(applied.some((f) => f.startsWith('014_')), 'migration 014 has not been applied');
+    // 015 was added to this list after a release where nobody could say whether
+    // it had been applied to a given database. That question is CI's job, not a
+    // thing to reconstruct by hand before each deploy.
+    assert.ok(applied.some((f) => f.startsWith('015_')), 'migration 015 has not been applied');
   });
 
   test('the new tables exist', async () => {
     for (const table of ['refunds', 'practitioners', 'availability_slots', 'email_verification_tokens']) {
       const { rows } = await db.query('SELECT to_regclass($1) AS reg', [`public.${table}`]);
       assert.ok(rows[0].reg, `table ${table} is missing`);
+    }
+  });
+
+  test('015: the email system has the tables it writes to on every send', async () => {
+    for (const table of [
+      'email_log', 'email_subscriptions', 'email_suppressions',
+      'stock_notifications', 'contact_messages'
+    ]) {
+      const { rows } = await db.query('SELECT to_regclass($1) AS reg', [`public.${table}`]);
+      assert.ok(rows[0].reg, `table ${table} is missing — every email send would fail to record`);
+    }
+  });
+
+  test('015: the abandoned-checkout marker exists, without which recovery mail repeats every sweep', async () => {
+    const { rows } = await db.query(
+      `SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'orders' AND column_name = 'recovery_email_sent_at'`
+    );
+    assert.strictEqual(rows.length, 1, 'orders.recovery_email_sent_at is missing');
+  });
+
+  test('015: the email settings rows are seeded AND editable through the settings module', async () => {
+    const { DEFAULTS } = require('../src/utils/settings');
+    const { rows } = await db.query(
+      `SELECT key FROM site_settings WHERE key = ANY($1)`,
+      [['admin_alert_email', 'email_admin_alerts_enabled', 'email_marketing_enabled',
+        'abandoned_cart_email_after_minutes', 'booking_reminder_hours_before',
+        'low_stock_alert_threshold']]
+    );
+    const seeded = rows.map((r) => r.key);
+    assert.strictEqual(seeded.length, 6, `only ${seeded.length} of the 6 email settings are seeded`);
+    // Seeded is not the same as reachable: setSetting() refuses any key absent
+    // from DEFAULTS, which is how these stayed read-only after 015 shipped.
+    for (const key of seeded) {
+      assert.ok(Object.prototype.hasOwnProperty.call(DEFAULTS, key),
+        `${key} exists in the database but no admin can change it`);
     }
   });
 
@@ -895,6 +935,115 @@ section('[db-9] Stock can never be restored twice — the phantom-inventory guar
     const { rows } = await db.query('SELECT booked_count FROM availability_slots WHERE id = $1', [slot.id]);
     assert.strictEqual(Number(rows[0].booked_count), 1, 'the seat count must be untouched by a refused refund');
   });
+}
+
+// ============================================================
+section('[db-10] The marketing kill switch actually stops marketing');
+// ============================================================
+// Migration 015 seeded email_marketing_enabled and documented it as the switch
+// that decides whether campaigns go out. Nothing read it: an admin could turn
+// marketing off, watch the save succeed, and every campaign kept sending.
+//
+// Neither test below can reach SMTP — both assert on a send that returns before
+// the transporter is ever constructed. That is deliberate: a test suite must not
+// be one refactor away from mailing real people.
+{
+  const { sendMail, CATEGORY } = require('../src/utils/email/engine');
+
+  async function setMarketingEnabled(value) {
+    await db.query(
+      `INSERT INTO site_settings (key, value) VALUES ('email_marketing_enabled', $1)
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+      [value]
+    );
+  }
+
+  test('THE FINDING: the switch overrides consent — a fully opted-in subscriber is still not mailed', async () => {
+    const recipient = `killswitch-${Date.now()}@example.invalid`;
+    // Real, confirmed consent, so the ONLY thing that can stop this send is the
+    // switch under test. Without this the test would pass for the wrong reason.
+    await db.query(
+      `INSERT INTO email_subscriptions (email, status, confirmed_at)
+       VALUES ($1, 'confirmed', now())`,
+      [recipient]
+    );
+    try {
+      await setMarketingEnabled('false');
+      const r = await sendMail({
+        to: recipient,
+        subject: 'Campaign that must not go out',
+        html: '<p>hi</p>',
+        template: 'test_marketing_killswitch',
+        category: CATEGORY.MARKETING
+      });
+      assert.strictEqual(r.sent, false, 'a marketing email was sent with the kill switch off');
+      assert.strictEqual(r.reason, 'marketing_disabled');
+
+      const { rows } = await db.query(
+        'SELECT status FROM email_log WHERE recipient = $1', [recipient]
+      );
+      assert.strictEqual(rows[0].status, 'skipped_marketing_disabled',
+        'the skip was not recorded as a kill-switch skip, so nobody could tell why the campaign stopped');
+    } finally {
+      await setMarketingEnabled('true');
+      await db.query('DELETE FROM email_log WHERE recipient = $1', [recipient]);
+      await db.query('DELETE FROM email_subscriptions WHERE email = $1', [recipient]);
+    }
+  });
+
+  test("'0' means off in the mail engine too — the settings API and the engine cannot disagree", async () => {
+    const { setSetting } = require('../src/utils/settings');
+    const recipient = `zero-${Date.now()}@example.invalid`;
+    await db.query(
+      `INSERT INTO email_subscriptions (email, status, confirmed_at)
+       VALUES ($1, 'confirmed', now())`,
+      [recipient]
+    );
+    try {
+      // setSetting accepts '0' as boolean false. Stored verbatim, engine.js's
+      // `value !== 'false'` test reads "0" as ON — so the settings screen would
+      // report marketing disabled while campaigns kept going out.
+      await setSetting('email_marketing_enabled', '0', null);
+      const r = await sendMail({
+        to: recipient,
+        subject: 'Campaign that must not go out',
+        html: '<p>hi</p>',
+        template: 'test_marketing_zero',
+        category: CATEGORY.MARKETING
+      });
+      assert.strictEqual(r.reason, 'marketing_disabled',
+        "the switch set to '0' disabled marketing in the settings API but not in the mail engine");
+    } finally {
+      await setMarketingEnabled('true');
+      await db.query('DELETE FROM email_log WHERE recipient = $1', [recipient]);
+      await db.query('DELETE FROM email_subscriptions WHERE email = $1', [recipient]);
+    }
+  });
+
+  test('with the switch back ON the normal consent check is reached, so the switch is not simply always blocking', async () => {
+    const recipient = `noconsent-${Date.now()}@example.invalid`;
+    try {
+      await setMarketingEnabled('true');
+      const r = await sendMail({
+        to: recipient,
+        subject: 'Campaign to a stranger',
+        html: '<p>hi</p>',
+        template: 'test_marketing_killswitch',
+        category: CATEGORY.MARKETING
+      });
+      assert.strictEqual(r.sent, false);
+      assert.strictEqual(r.reason, 'no_consent');
+    } finally {
+      await db.query('DELETE FROM email_log WHERE recipient = $1', [recipient]);
+    }
+  });
+
+  // There is deliberately NO test here that a transactional email survives the
+  // switch. Proving that requires letting sendMail run past the marketing gates,
+  // and the next thing it does is hand the message to a configured SMTP
+  // transporter — which on a developer machine with real SMTP_* values means the
+  // suite mails somebody. The guard that matters is visible in engine.js instead:
+  // both marketing checks are conditioned on `cat === CATEGORY.MARKETING`.
 }
 
 // ============================================================

@@ -1,1 +1,6 @@
 index.html linguist-detectable=false
+# Vendored third-party assets are byte-exact artifacts: their SRI integrity
+# hash is computed over the committed bytes. Git for Windows (core.autocrlf=true)
+# would rewrite LF to CRLF on checkout, changing the hash and making the browser
+# refuse the script. -text pins the working copy to the committed bytes.
+vendor/** -text

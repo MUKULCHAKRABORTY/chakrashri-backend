@@ -47,7 +47,7 @@ A **Neon branch** is the easiest throwaway: instant, free, isolated, discardable
 2. Apply the migrations to it once. `npm run migrate` reads DATABASE_URL, so
    point it there for this one command only:
 
-   cmd:  set "DATABASE_URL=postgresql://neondb_owner:npg_yRxerNMh4i9w@ep-misty-glitter-aytpft51-pooler.c-5.us-east-2.aws.neon.tech/chakrashri_test?sslmode=verify-full&channel_binding=require" && npm run migrate
+   cmd:  set "DATABASE_URL=postgresql://USER:PASSWORD@YOUR-TEST-ENDPOINT-pooler.REGION.aws.neon.tech/chakrashri_test?sslmode=verify-full&channel_binding=require" && npm run migrate
 
 3. Add to .env:
 
