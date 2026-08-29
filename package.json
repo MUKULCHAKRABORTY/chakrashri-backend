@@ -23,6 +23,10 @@
     "test:db": "node scripts/test-db-connection.js",
     "test:razorpay": "node scripts/test-razorpay-connection.js",
 
+    "//jobs": "Free-plan only. The three cron services in render.yaml do not exist on Render's free tier; an external scheduler calls an HTTP trigger instead. `jobs:status` answers 'is the schedule actually firing?' and exits non-zero if no run has ever happened. `jobs:run` starts one immediately. Both read JOBS_TRIGGER_TOKEN from .env — the same value set in the Render dashboard — and never print it.",
+    "jobs:status": "node scripts/jobs-trigger.js status",
+    "jobs:run": "node scripts/jobs-trigger.js run",
+
     "setup:browser": "npx playwright install chromium",
 
     "//test": "Everything that runs with no external services. This is what CI gates on and what to run before every commit. The two browser suites (test:browser, test:browser-settings) need a Chromium binary that npm install does NOT fetch — run `npm run setup:browser` once per machine. Without it they skip (exit 0) and the chain continues; set REQUIRE_BROWSER_TESTS=true, as CI does, to turn that skip into a failure.",

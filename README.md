@@ -199,18 +199,39 @@ therefore means *started*, not *succeeded*. Ask for the outcome separately:
 > timeout to its maximum, and treat `/status` (below) as the source of truth for whether work
 > actually happened, not the cron dashboard's red ticks.
 
+**Put `JOBS_TRIGGER_TOKEN` in your local `.env` as well** — the same value you set in the Render
+dashboard. `.env` is gitignored, and it lets the two commands below read the token instead of you
+pasting it into a shell (which puts it in your shell history, and into any screenshot you share):
+
 ```bash
-curl -s -H "X-Jobs-Token: $JOBS_TRIGGER_TOKEN" https://chakrashri-api.onrender.com/api/internal/jobs/status
+npm run jobs:status
 ```
 
-You can also run one job on its own — useful when debugging, and what to reach for if a payment
-looks stuck:
+That prints whether a run is in progress, when the last one finished, and each job's exit code.
+**It exits non-zero if no run has ever happened** — which is what you want in a monitor, because
+"the scheduler was never configured" and "the scheduler is fine" must not both look like success.
+
+To start one immediately — the thing to reach for when a payment looks stuck:
 
 ```bash
-curl -s -X POST -H "X-Jobs-Token: $JOBS_TRIGGER_TOKEN" https://chakrashri-api.onrender.com/api/internal/jobs/run/payment-reconcile
+npm run jobs:run
+```
+
+Or a single job:
+
+```bash
+node scripts/jobs-trigger.js run payment-reconcile
 ```
 
 Valid names: `expiry-sweep`, `payment-reconcile`, `scheduled-emails`.
+
+Two things about `jobs:status` that will otherwise mislead you:
+
+- **`lastRun` lives in memory, not the database.** Every deploy resets it, so "no run has ever
+  happened" is normal immediately after deploying and only meaningful once the service has been up
+  longer than your scheduler's interval.
+- **A non-zero exit is not always a bug.** The reconciler exits non-zero deliberately when an
+  amount mismatch needs a human to look at it. That is the signal working, not failing.
 
 **Design note worth knowing before you change it:** the trigger runs each script as its own
 child process, exactly as Render's cron would — it does not `require()` them. Two of the three
@@ -447,6 +468,27 @@ comment saying so above them.
 `.github/workflows/keep-alive.yml` now carries a warning to disable it before the repository goes
 private: at every 10 minutes it is ~4,300 runs a month against a 2,000-minute free allowance, so
 it would starve CI and the migration workflow. The external scheduler above replaces it.
+
+`scripts/jobs-trigger.js` (`npm run jobs:status` / `npm run jobs:run`) exists because the two
+questions this setup raises — "is the schedule actually firing?" and "run it now, I am not
+waiting" — otherwise mean hand-assembling a curl with the token in it, which is how secrets end up
+in shell history and screenshots. It reads the token from `.env` like every other script here.
+
+**Proven end to end against production on 2026-08-29:** `jobs:status` first reported
+`NO RUN HAS EVER HAPPENED` — correctly, because no scheduler was configured yet — and a manual
+`run expiry-sweep` then completed with `exit=0` in 5.7s, releasing stock that had been locked by
+abandoned checkouts since the beginning. That single run exercised the whole chain: token auth,
+routing, child-process spawn, the real script against the real database, exit code capture, and
+status reporting.
+
+One trap that cost a debugging cycle, recorded so it is not repeated: the CLI originally used
+global `fetch`, whose socket stays in a connection pool after the response. Calling
+`process.exit()` with that pool open aborts the process on Windows with a libuv assertion printed
+*after* the real output, so a correct run looked like a crash. It now uses the built-in `https`
+module with `agent: false`. When that swap was made, `if (!res.ok)` was left at the call site while
+the replacement helper had no `ok` property — so every success reported "Unexpected response 200".
+`ok` is now computed inside the helper, where a future change of HTTP client cannot silently drop
+it.
 
 ## Round 17 — Running the 1.2.0 Pre-Deploy Gate Found Eight Defects, and the Gate Itself Was One
 
