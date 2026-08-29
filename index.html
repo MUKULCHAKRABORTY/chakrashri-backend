@@ -3983,8 +3983,42 @@ async function loadCatalog(){
   // Try loading live catalog from the backend API; if that fails, fall back to demo/shared storage.
   try{
     if(typeof apiFetch === 'function'){
-      const body = await apiFetch('/api/products?limit=1000');
-      if(body && body.products){
+      // This used to be one request asking for a thousand products. The API
+      // clamps the limit to 100 — deliberately, so no client can force a
+      // full-table scan — and returns pagination.totalCount alongside. Asking
+      // for more and keeping whatever came back therefore meant the 101st
+      // product would silently never appear
+      // on the storefront: no error, no warning, and a request that "succeeded".
+      // Nothing in the logs would have pointed at it either.
+      //
+      // So page until we actually have them all, and say so loudly if we do not.
+      const PAGE_SIZE = 100;
+      let rows = [];
+      let totalCount = null;
+      // Whether the API ANSWERED, which is a different question from whether it
+      // returned any products. An empty catalog is a legitimate answer — every
+      // product deactivated, say — and must win over the stale copy in local
+      // storage. Gating on rows.length instead would mean emptying the catalog
+      // silently resurrects old products and shows customers things that are no
+      // longer for sale, which is worse than showing nothing.
+      let apiAnswered = false;
+      for(let page = 1; page <= 50; page++){   // 50 pages = 5,000 products; a runaway loop is worse than a truncated catalog
+        const body = await apiFetch(`/api/products?limit=${PAGE_SIZE}&page=${page}`);
+        if(!body || !Array.isArray(body.products)) break;
+        apiAnswered = true;
+        rows = rows.concat(body.products);
+        totalCount = (body.pagination && body.pagination.totalCount !== undefined)
+          ? Number(body.pagination.totalCount)
+          : null;
+        // Stop when the server says we have everything, or when a page comes
+        // back short/empty (which also covers an API that omits pagination).
+        if(totalCount === null || rows.length >= totalCount || body.products.length < PAGE_SIZE) break;
+      }
+      if(totalCount !== null && rows.length < totalCount){
+        console.warn(`Catalog is INCOMPLETE: loaded ${rows.length} of ${totalCount} products. Some products will not be visible to customers.`);
+      }
+      if(apiAnswered){
+        const body = { products: rows };
         PRODUCTS = body.products.map(p => ({
           id: String(p.id),
           slug: p.slug,

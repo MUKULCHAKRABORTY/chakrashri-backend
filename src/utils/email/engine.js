@@ -432,8 +432,32 @@ async function recordSkip(template, recipient, userId, subject, status) {
   } catch (err) { /* best effort — never block on bookkeeping */ }
 }
 
+/**
+ * The `reason` values from sendMail that mean "this will never succeed, stop
+ * trying" — as opposed to a transient failure worth retrying.
+ *
+ * sendMail returns a fixed vocabulary for deliberate skips, but on a real SMTP
+ * error it returns the driver's message verbatim, which cannot be enumerated.
+ * So the test is membership of THIS set, not absence from some failure list:
+ * anything not listed here is treated as retryable. That direction is the safe
+ * one — the cost of a wrong guess is one extra delivery attempt, whereas
+ * guessing the other way loses the email permanently.
+ *
+ * Callers that claim a row before sending (a `notified_at` marker, say) must
+ * release that claim when the reason is NOT in this set, or a transient SMTP
+ * blip silently marks the notification delivered forever.
+ */
+const TERMINAL_SKIP_REASONS = Object.freeze(new Set([
+  'duplicate',            // another path already sent it — the dedupe key did its job
+  'suppressed',           // hard bounce or complaint; retrying damages sender reputation
+  'no_recipient',         // no address to send to; a retry has nothing new to work with
+  'no_consent',           // marketing without opt-in; consent is not going to appear on retry
+  'marketing_disabled'    // the admin switched the list off; that is a decision, not a fault
+]));
+
 module.exports = {
   CATEGORY,
+  TERMINAL_SKIP_REASONS,
   BRAND,
   sendMail,
   renderShell,

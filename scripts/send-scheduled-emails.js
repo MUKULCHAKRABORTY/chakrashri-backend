@@ -32,6 +32,9 @@ const { logger } = require('../src/utils/logger');
 const {
   sendBackInStock, sendBookingReminder, sendAbandonedCheckout, sendAdminDailyDigest
 } = require('../src/utils/mailer');
+// Which send outcomes are final versus worth retrying. Defined next to sendMail
+// so the vocabulary has one owner — see the comment on it in email/engine.js.
+const { TERMINAL_SKIP_REASONS } = require('../src/utils/email/engine');
 const { loadOrderForEmail } = require('../src/utils/orderEmails');
 
 const BATCH = parseInt(process.env.SCHEDULED_EMAIL_BATCH || '200', 10);
@@ -80,6 +83,7 @@ async function runBackInStock() {
   );
 
   let sent = 0;
+  let failed = 0;
   for (const row of rows) {
     let variantLabel = null;
     if (row.variant_id) {
@@ -95,9 +99,51 @@ async function runBackInStock() {
       variantLabel,
       notificationId: row.id
     });
-    if (res.sent) sent++;
+    if (res.sent) { sent++; continue; }
+
+    // The UPDATE above claims the row BEFORE the send, which is what stops two
+    // concurrent runs mailing the same person twice. The cost is that a failed
+    // send would otherwise stay marked as notified forever: the admin console
+    // shows it delivered, this job exits 0, and a customer who explicitly asked
+    // to be told about this product is never told. Releasing the claim on a
+    // retryable failure is what makes the claim-then-send pattern safe.
+    //
+    // A duplicate re-send is a far smaller harm than a promise silently dropped,
+    // so anything not in TERMINAL_SKIP_REASONS is retried on the next run.
+    //
+    // THE RETRY IS DELIBERATELY UNBOUNDED, and that is a judgement call worth
+    // knowing about. An address that fails permanently would be retried every
+    // ten minutes forever, growing email_log and holding this job's exit code at
+    // 1 — and a job that is always red is a job nobody reads.
+    //
+    // It is left unbounded because the realistic failures here are all transient
+    // and self-healing: a provider outage, a network blip, or the daily sending
+    // quota, each of which SHOULD keep retrying until it clears. Permanent
+    // failures are rare by construction — the capture endpoint validates the
+    // address with isEmail(), and a relay like Brevo accepts a valid-but-dead
+    // mailbox at SMTP time and bounces it asynchronously, so this code sees a
+    // success rather than an error.
+    //
+    // Revisit if `npm run email:log -- --failed` ever shows the same recipient
+    // and template failing repeatedly over days. The fix then is a retry cap
+    // counted from email_log, not removing the retry.
+    if (TERMINAL_SKIP_REASONS.has(res.reason)) continue;
+
+    failed++;
+    try {
+      await db.query('UPDATE stock_notifications SET notified_at = NULL WHERE id = $1', [row.id]);
+      logger.warn('Back-in-stock send failed; claim released for retry', {
+        notificationId: row.id, reason: res.reason
+      });
+    } catch (err) {
+      // If the release itself fails the notification IS stranded. Say so
+      // explicitly — this is the one case where a customer silently loses out.
+      logger.error('Back-in-stock send failed AND the claim could not be released — this notification is now stranded', err, {
+        notificationId: row.id, reason: res.reason
+      });
+    }
   }
-  return { considered: rows.length, sent };
+  return { considered: rows.length, sent, failed };
 }
 
 // ---------------------------------------------------------------------------
@@ -115,6 +161,10 @@ async function runBackInStock() {
 async function runBookingReminders() {
   const hours = parseInt(await setting('booking_reminder_hours_before', '24'), 10);
   let sent = 0;
+  // No claim to release here: this job selects by date rather than marking rows,
+  // and sendMail's dedupeKey is what prevents a second reminder. So a failure
+  // only needs counting — the next run will pick the booking up again by itself.
+  let failed = 0;
 
   for (const [table, label] of [['puja_bookings', 'puja'], ['astrology_bookings', 'astrology consultation']]) {
     const { rows } = await db.query(
@@ -151,9 +201,10 @@ async function runBookingReminders() {
         bookingId: b.id
       });
       if (res.sent) sent++;
+      else if (!TERMINAL_SKIP_REASONS.has(res.reason)) failed++;
     }
   }
-  return { sent };
+  return { sent, failed };
 }
 
 // ---------------------------------------------------------------------------
@@ -190,13 +241,30 @@ async function runAbandonedCheckout() {
   );
 
   let sent = 0;
+  let failed = 0;
   for (const { id } of rows) {
     const forEmail = await loadOrderForEmail(id);
     if (!forEmail) continue;
     const res = await sendAbandonedCheckout(forEmail.order, forEmail.items);
-    if (res.sent) sent++;
+    if (res.sent) { sent++; continue; }
+    if (TERMINAL_SKIP_REASONS.has(res.reason)) continue;
+
+    // Same claim-then-send trade as the back-in-stock job above: the marker is
+    // written before the send so the ten-minutely sweep cannot mail the same
+    // order repeatedly. Releasing it on a retryable failure is what stops a
+    // transient SMTP error from permanently consuming the single recovery email
+    // this order will ever get.
+    failed++;
+    try {
+      await db.query('UPDATE orders SET recovery_email_sent_at = NULL WHERE id = $1', [id]);
+      logger.warn('Abandoned-checkout send failed; marker cleared for retry', { orderId: id, reason: res.reason });
+    } catch (err) {
+      logger.error('Abandoned-checkout send failed AND the marker could not be cleared — no recovery email will be sent for this order', err, {
+        orderId: id, reason: res.reason
+      });
+    }
   }
-  return { claimed: rows.length, sent };
+  return { claimed: rows.length, sent, failed };
 }
 
 // ---------------------------------------------------------------------------
@@ -250,7 +318,11 @@ async function runDailyDigest() {
     lowStock: Number(low.n || 0),
     failedEmails: Number(failed.n || 0)
   });
-  return { sent: res.sent === true, duplicate: res.duplicate === true };
+  return {
+    sent: res.sent === true,
+    duplicate: res.duplicate === true,
+    failed: (res.sent !== true && !TERMINAL_SKIP_REASONS.has(res.reason)) ? 1 : 0
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -269,16 +341,37 @@ async function main() {
     process.exit(2);
   }
 
-  let failures = 0;
+  // `crashed` counts jobs that threw; `sendFailures` counts individual emails
+  // that did not go out for a retryable reason. Both must affect the exit code.
+  //
+  // Previously only a thrown job counted, so every send could fail and this
+  // still exited 0 — the cron showed green, the admin console showed the
+  // notifications delivered, and nobody learned that no mail had left the
+  // building. A non-zero exit is the only signal a scheduler can act on, so it
+  // has to mean "mail did not go out", not merely "the script reached the end".
+  //
+  // Deliberate skips (duplicate, suppressed, no consent, marketing off) are NOT
+  // failures — see TERMINAL_SKIP_REASONS in email/engine.js. Counting those
+  // would make the job permanently red and train everyone to ignore it.
+  let crashed = 0;
+  let sendFailures = 0;
   const summary = {};
   for (const name of names) {
     try {
-      summary[name] = await JOBS[name]();
+      const result = await JOBS[name]();
+      summary[name] = result;
+      sendFailures += Number((result && result.failed) || 0);
     } catch (err) {
-      failures++;
+      crashed++;
       summary[name] = { error: err.message };
       logger.error(`Scheduled email job "${name}" failed`, err);
     }
+  }
+  const failures = crashed + sendFailures;
+  if (sendFailures) {
+    logger.error('Scheduled email run: some emails did not go out', null, {
+      sendFailures, hint: 'Run `npm run email:log -- --failed` for the SMTP error behind each one.'
+    });
   }
   logger.info('Scheduled email run complete', { summary });
   // Printed as well as logged: a cron log is the only place anyone looks after

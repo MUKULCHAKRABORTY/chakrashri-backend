@@ -1047,6 +1047,87 @@ section('[db-10] The marketing kill switch actually stops marketing');
 }
 
 // ============================================================
+section('[db-11] A failed send releases its claim instead of losing the customer');
+// ============================================================
+// THE FINDING: runBackInStock claims rows by setting notified_at BEFORE it
+// attempts the send — correct, because it is what stops two concurrent runs
+// mailing the same person twice. But the claim was never released when the send
+// failed. The admin console then showed the notification delivered, the cron
+// exited 0, and a customer who had explicitly asked to be told about a product
+// was never told and never retried.
+//
+// This forces a REAL send failure by pointing SMTP at a closed port. Mocking
+// sendMail would prove nothing here: the thing under test is the SQL that puts
+// notified_at back.
+{
+  const { resetTransporter } = require('../src/utils/email/engine');
+  const { runBackInStock } = require('../scripts/send-scheduled-emails');
+
+  async function withDeadSmtp(fn) {
+    const prevHost = process.env.SMTP_HOST;
+    const prevPort = process.env.SMTP_PORT;
+    // Port 1 on loopback refuses instantly. A bogus hostname would instead wait
+    // out the 10s connection timeout and make this suite crawl.
+    process.env.SMTP_HOST = '127.0.0.1';
+    process.env.SMTP_PORT = '1';
+    resetTransporter();
+    try {
+      return await fn();
+    } finally {
+      if (prevHost === undefined) delete process.env.SMTP_HOST; else process.env.SMTP_HOST = prevHost;
+      if (prevPort === undefined) delete process.env.SMTP_PORT; else process.env.SMTP_PORT = prevPort;
+      resetTransporter();
+    }
+  }
+
+  test('THE FINDING: a back-in-stock send that fails leaves notified_at NULL, so the next run retries it', async () => {
+    const productId = await makeProduct({ stock: 5 });
+    const email = `retry-${Date.now()}@example.invalid`;
+    const { rows: ins } = await db.query(
+      'INSERT INTO stock_notifications (product_id, email) VALUES ($1, $2) RETURNING id',
+      [productId, email]
+    );
+    const id = ins[0].id;
+
+    try {
+      const result = await withDeadSmtp(() => runBackInStock());
+
+      assert.ok(result.failed >= 1,
+        'the job did not count the failed send, so its exit code would still report success');
+
+      const { rows } = await db.query('SELECT notified_at FROM stock_notifications WHERE id = $1', [id]);
+      assert.strictEqual(rows[0].notified_at, null,
+        'notified_at stayed set after the send failed — this customer would be marked notified forever and never actually told');
+    } finally {
+      await db.query('DELETE FROM stock_notifications WHERE id = $1', [id]);
+      await db.query('DELETE FROM email_log WHERE recipient = $1', [email]);
+    }
+  });
+
+  test('the failure is recorded in email_log, so it can be diagnosed after the fact', async () => {
+    const productId = await makeProduct({ stock: 5 });
+    const email = `logged-${Date.now()}@example.invalid`;
+    const { rows: ins } = await db.query(
+      'INSERT INTO stock_notifications (product_id, email) VALUES ($1, $2) RETURNING id',
+      [productId, email]
+    );
+    try {
+      await withDeadSmtp(() => runBackInStock());
+      const { rows } = await db.query(
+        'SELECT status, error FROM email_log WHERE recipient = $1 ORDER BY created_at DESC LIMIT 1',
+        [email]
+      );
+      assert.strictEqual(rows.length, 1, 'the failed send left no trace in email_log');
+      assert.strictEqual(rows[0].status, 'failed');
+      assert.ok(rows[0].error, 'the SMTP error was not recorded, so `npm run email:log --failed` would show no reason');
+    } finally {
+      await db.query('DELETE FROM stock_notifications WHERE id = $1', [ins[0].id]);
+      await db.query('DELETE FROM email_log WHERE recipient = $1', [email]);
+    }
+  });
+}
+
+// ============================================================
 // Runner + cleanup
 // ============================================================
 (async () => {

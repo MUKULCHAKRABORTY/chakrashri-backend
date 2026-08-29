@@ -543,6 +543,60 @@ section('[fe-11] The settings screen exists and is wired to the settings API');
 }
 
 // ============================================================
+section('[fe-12] The storefront cannot silently show a truncated catalog');
+{
+  // THE FINDING: loadCatalog asked for `?limit=1000`. The API clamps limit to
+  // 100 — deliberately, as a DoS guard — and reports the real total in
+  // pagination.totalCount, which the storefront never read. So the 101st product
+  // would simply not appear: no error, no warning, and an HTTP 200. At the time
+  // this was found the catalog held 10 products, i.e. 90 of headroom before a
+  // silent, invisible failure.
+  const index = read('index.html');
+  const load = extractFunction(index, 'loadCatalog');
+
+  test('loadCatalog exists and no longer asks for a limit the server will silently clamp', () => {
+    assert.ok(load, 'loadCatalog is missing from index.html');
+    assert.ok(!/limit=1000/.test(load),
+      'still requesting limit=1000 — the server caps it at 100 and says nothing');
+  });
+
+  test('THE FINDING: it pages through the catalog instead of taking one response', () => {
+    assert.ok(/[?&]page=/.test(load), 'loadCatalog never requests a page beyond the first');
+    assert.ok(/limit=\$\{PAGE_SIZE\}|limit=100/.test(load),
+      'the page size should match the server cap so no request is silently clamped');
+  });
+
+  test('it compares what it received against the server\'s totalCount', () => {
+    assert.ok(/totalCount/.test(load),
+      'loadCatalog does not read pagination.totalCount, so it cannot know the catalog was truncated');
+  });
+
+  test('an incomplete catalog is reported, not swallowed', () => {
+    assert.ok(/console\.warn[\s\S]{0,200}INCOMPLETE/i.test(load),
+      'a short catalog is accepted silently — the failure this whole section exists to prevent');
+  });
+
+  test('the page loop is bounded, so a paging bug cannot hang the storefront', () => {
+    assert.ok(/page\s*<=\s*\d+/.test(load),
+      'the pagination loop has no upper bound; a server that always reports more would spin forever');
+  });
+
+  // Caught while reviewing the pagination fix above, which had introduced it.
+  // The original guard was `if (body && body.products)` — and an empty ARRAY is
+  // truthy, so an empty catalog from the API correctly won over local storage.
+  // Rewriting that as `if (rows.length)` silently changed the meaning: with every
+  // product deactivated the storefront would fall through to the cached copy and
+  // show customers items that are no longer for sale. That is worse than the
+  // truncation being fixed, because it invents inventory rather than hiding it.
+  test('an EMPTY catalog from the API is respected, not replaced with stale local data', () => {
+    assert.ok(!/if\s*\(\s*rows\.length\s*\)/.test(load),
+      'the API result is gated on rows.length — an empty catalog would fall through to the stale storage fallback and resurrect deleted products');
+    assert.ok(/apiAnswered/.test(load),
+      'loadCatalog does not distinguish "the API answered" from "the API returned products"; those are different questions and only the first should decide whether to use the fallback');
+  });
+}
+
+// ============================================================
 section('[fe-6] HYG-05 — no API key or direct model call in client code');
 // ============================================================
 {

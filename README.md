@@ -416,6 +416,97 @@ vendor/         # Self-hosted third-party assets, pinned by SRI hash. Marked `-t
 admin.html      # The admin console (10 views). index.html is the storefront.
 ```
 
+## Round 19 — Email Was Sending Perfectly and Nobody Was Receiving It
+
+**Every email was logged `sent`. Customers were not reading them.** They were in Spam and
+Promotions, and no amount of looking at the application would have shown why, because from the
+server's point of view nothing was wrong: SMTP accepted every message, `email_log` recorded
+`sent`, the cron exited 0.
+
+The cause was one environment variable:
+
+```
+SMTP_HOST=smtp-relay.brevo.com          ← relaying through Brevo, correctly
+FROM_EMAIL=Chakrashri<...@gmail.com>    ← while claiming to be a gmail.com user
+```
+
+Sending through one provider while putting another domain in `From` is, to every receiving mail
+server, indistinguishable from spoofing:
+
+- **SPF fails** — `gmail.com` authorises Google's servers, not Brevo's.
+- **DKIM cannot align** — Brevo signs as Brevo; nobody can sign for a domain they do not own.
+- **DMARC fails** — it needs SPF *or* DKIM aligned to the From domain, and neither was.
+
+Gmail is especially strict when the impersonated domain is `gmail.com` itself. Spam was the
+lenient outcome.
+
+**The fix was configuration, not code:** authenticate `chakrashri.com` in Brevo, add its DKIM
+records plus SPF and DMARC to DNS, and set `FROM_EMAIL` to an address at that domain. No deploy.
+
+**How to verify it, on any future change** — open a received message's headers. All three must
+name your domain:
+
+```
+from:       Chakrashri <orders@chakrashri.com>
+signed-by:  chakrashri.com          ← DKIM alignment, the decisive one
+mailed-by:  mail.chakrashri.com     ← Return-Path, for SPF alignment
+```
+
+If `signed-by` ever shows your provider instead of your domain, alignment is broken again and
+mail is silently going to Spam. **This cannot be caught by any test in this repo** — the
+application has no visibility into inbox placement. It is checked by reading headers, or not at
+all.
+
+### Three silent-failure defects found while diagnosing this — now fixed
+
+**1. A failed send was marked as delivered, forever.** `runBackInStock` claims rows by setting
+`notified_at` *before* attempting the send — correct, because it is what stops two concurrent runs
+mailing the same person twice. But the claim was never released when the send failed. The admin
+console showed the notification delivered, the cron exited 0, and a customer who explicitly asked
+to be told about a product was never told and never retried. `runAbandonedCheckout` had the
+identical bug with `recovery_email_sent_at`.
+
+Both now release the claim when the failure is retryable. "Retryable" means *not* in
+`TERMINAL_SKIP_REASONS` (exported from `email/engine.js`): duplicate, suppressed, no recipient, no
+consent, marketing disabled. Anything else — including an arbitrary SMTP error string, which
+cannot be enumerated — is retried. That default is deliberate: a duplicate email is a far smaller
+harm than a promise silently dropped.
+
+**2. The job's exit code ignored send failures.** `failures` incremented only when a job *threw*.
+Every individual send could fail and the script still exited 0 — cron green, console green,
+no mail. The exit code is now `crashed + sendFailures`, so a non-zero exit means "mail did not go
+out" rather than "the script reached the end". Deliberate skips are excluded, or the job would be
+permanently red and everyone would learn to ignore it.
+
+**3. The storefront could silently show a truncated catalog.** `loadCatalog` requested
+`?limit=1000`; the API clamps limit to 100 as a DoS guard and reports the real figure in
+`pagination.totalCount`, which the storefront never read. The 101st product would simply not
+appear — no error, no warning, HTTP 200. It now pages until `totalCount` is satisfied, warns
+loudly if it cannot, and bounds the loop at 50 pages so a paging bug cannot hang the browser.
+
+Locked by tests: `[fe-12]` asserts the storefront pages and checks `totalCount`; `[db-11]` forces
+a real SMTP failure (loopback port 1, which refuses instantly) and asserts `notified_at` returns
+to NULL and the error reaches `email_log`. Mocking would have proven nothing there — the thing
+under test is the SQL that releases the claim.
+
+### Original write-up of two of those defects, kept for context
+
+1. **`runBackInStock` sets `notified_at` before the send is attempted**, in the same
+   `UPDATE … RETURNING`, and never rolls it back. A failed send is marked delivered and never
+   retried — a customer who explicitly asked to be told would never be told.
+2. **The scheduled-email job's exit code ignores send failures.** `failures` increments only when
+   a job *throws*; per-send outcomes are counted into `sent` and discarded. `exit=0` means "the
+   job ran", not "the mail went out".
+
+Neither caused this incident, but together they meant a genuine SMTP outage would have looked
+identical to success in every place anyone would look. Both are fixed — see above.
+
+### Also worth knowing
+
+`npm run email:log` (and `-- --failed`) reads `email_log` and answers "why did that email not
+arrive?" — status, template, masked recipient and the SMTP error. It is the only tool that
+distinguishes *not sent* from *sent but not delivered*, which are entirely different problems.
+
 ## Round 18 — `render.yaml` Was Never In Effect, and Nothing Scheduled Had Ever Run
 
 **The finding: the live Render service was created by hand in the dashboard, so `render.yaml`

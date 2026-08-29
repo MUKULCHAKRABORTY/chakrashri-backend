@@ -27,6 +27,9 @@
     "jobs:status": "node scripts/jobs-trigger.js status",
     "jobs:run": "node scripts/jobs-trigger.js run",
 
+    "//email:log": "Reads email_log to answer 'why did that email not arrive?'. Read-only. `npm run email:log -- --failed` shows only the ones that did not go out, with the SMTP error. Recipient local-parts are masked; the domain is kept because that is what matters for diagnosis.",
+    "email:log": "node scripts/email-log.js",
+
     "setup:browser": "npx playwright install chromium",
 
     "//test": "Everything that runs with no external services. This is what CI gates on and what to run before every commit. The two browser suites (test:browser, test:browser-settings) need a Chromium binary that npm install does NOT fetch — run `npm run setup:browser` once per machine. Without it they skip (exit 0) and the chain continues; set REQUIRE_BROWSER_TESTS=true, as CI does, to turn that skip into a failure.",
