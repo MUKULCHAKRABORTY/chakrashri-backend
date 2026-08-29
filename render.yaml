@@ -131,3 +131,49 @@ services:
         value: "72"
       - key: LOG_LEVEL
         value: info
+
+  # =========================================================================
+  # Scheduled email dispatch
+  #
+  # Restock alerts, booking reminders, abandoned-checkout recovery and the daily
+  # admin digest. One service rather than four because every job is idempotent —
+  # each claims its rows before sending, so seeing the same due row ninety-six
+  # times a day costs nothing and sends nothing extra.
+  #
+  # Fifteen minutes is chosen by the tightest job: abandoned-checkout recovery
+  # has to land inside the window between "they have clearly stopped" and the
+  # expiry sweep releasing the stock.
+  # =========================================================================
+  - type: cron
+    name: chakrashri-scheduled-emails
+    runtime: node
+    region: ohio
+    plan: starter
+    schedule: "*/15 * * * *"
+    buildCommand: npm ci --omit=dev
+    startCommand: node scripts/send-scheduled-emails.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TZ
+        value: Asia/Kolkata
+      - key: DATABASE_URL
+        sync: false
+      - key: DB_SSL
+        value: "true"
+      - key: CLIENT_URL
+        sync: false # every link in every email is built from this
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: FROM_EMAIL
+        sync: false
+      - key: DIGEST_HOUR_IST
+        value: "8" # before this hour yesterday's numbers are not final enough to read
+      - key: LOG_LEVEL
+        value: info

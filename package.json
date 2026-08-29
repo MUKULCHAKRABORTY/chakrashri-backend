@@ -1,6 +1,6 @@
 {
   "name": "chakrashri-backend",
-  "version": "1.1.2",
+  "version": "1.2.0",
   "description": "Production backend API for Chakrashri e-commerce (sacred objects, puja booking, astrology consultations)",
   "main": "src/server.js",
   "type": "commonjs",
@@ -34,6 +34,8 @@
     "verify:full": "node scripts/verify-full.js",
 
     "reconcile": "node scripts/reconcile-payments.js",
+    "//emails": "The emails that are not triggered by a request: restock alerts, booking reminders, abandoned-checkout recovery and the daily digest. Every job is idempotent, so a duplicate run sends nothing. Runs as a Render cron every 15 minutes.",
+    "emails": "node scripts/send-scheduled-emails.js",
     "sweep": "node scripts/release-expired-orders.js",
     "keep-alive": "node scripts/keep-alive.js",
     "create-admin": "node scripts/create-admin.js"

@@ -50,6 +50,7 @@ const bookingServicesRoutes = require('./routes/bookingServices.routes');
 const couponRoutes = require('./routes/coupons.routes');
 const siteRoutes = require('./routes/site.routes');
 const supportRoutes = require('./routes/support.routes');
+const engagementRoutes = require('./routes/engagement.routes');
 const db = require('./config/db');
 const { normalizeOrigin } = require('./utils/cors');
 const { logger, requestContext, getRequestId } = require('./utils/logger');
@@ -200,6 +201,7 @@ app.use('/api/booking-services', bookingServicesRoutes);
 app.use('/api/coupons', couponRoutes);
 app.use('/api/site', siteRoutes);
 app.use('/api/support', supportRoutes);
+app.use('/api/engage', engagementRoutes);
 
 // ---------- 404 + error handling ----------
 app.use((req, res) => res.status(404).json({ error: 'Not found.' }));

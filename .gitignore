@@ -8,3 +8,6 @@ npm-debug.log*
 dist/
 build/
 coverage/
+
+# Claude Code session worktrees (local only)
+.claude/worktrees/

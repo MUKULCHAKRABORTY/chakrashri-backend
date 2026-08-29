@@ -6,7 +6,10 @@ const { asyncHandler } = require('../middleware/asyncHandler');
 const { validateUuidParam, handleValidation } = require('../middleware/validate');
 const { restoreOrderStock, restoreOrderStockInTransaction, STOCK_RESTORED_STATUSES } = require('../utils/stock');
 const { issueRefund } = require('../utils/refunds');
-const { sendOrderStatusUpdate } = require('../utils/mailer');
+const {
+  sendOrderStatusUpdate, sendRefundInitiated, sendAdminRefundIssued, sendReviewApproved
+} = require('../utils/mailer');
+const { loadOrderForEmail, fireAndForget } = require('../utils/orderEmails');
 const { getSettings, setSetting, DEFAULTS: SETTING_DEFAULTS } = require('../utils/settings');
 const { recomputeProductRating } = require('../utils/reviews');
 const { capabilitiesForRole } = require('../middleware/capabilities');
@@ -316,6 +319,37 @@ router.post('/orders/:id/refund', requireCapability(C.ORDERS_REFUND), asyncHandl
       restock: restock !== false,
       reason: reason || 'admin_initiated_refund'
     });
+    // A refund reaches the customer's bank in 5-7 working days. Without this
+    // email they watch an unchanged balance for a week and conclude nothing
+    // happened — which becomes a support ticket, and sometimes a chargeback
+    // for a refund that was already on its way.
+    //
+    // Sent AFTER the gateway call succeeded, never before: telling someone
+    // money is coming and then failing to send it is the one order of
+    // operations that must not happen.
+    const forEmail = await loadOrderForEmail(order.id);
+    if (forEmail) {
+      // issueRefund's real contract:
+      //   { refundId, ledgerId, amountPaise, totalRefundedPaise, fullyRefunded }
+      // amountPaise is THIS refund; fullyRefunded accounts for earlier partial
+      // refunds too, which is why the email uses it rather than comparing this
+      // one amount against the order total — a second partial refund that
+      // completes the order should not be described as partial.
+      fireAndForget(sendRefundInitiated({
+        order: forEmail.order,
+        amountPaise: result.amountPaise,
+        refundId: result.ledgerId,
+        isPartial: !result.fullyRefunded
+      }), { orderId: order.id, template: 'refund_initiated' });
+
+      fireAndForget(sendAdminRefundIssued({
+        order: forEmail.order,
+        amountPaise: result.amountPaise,
+        adminName: req.user && req.user.name,
+        refundId: result.ledgerId
+      }), { orderId: order.id, template: 'admin_refund_issued' });
+    }
+
     res.json(result);
   } catch (err) {
     if (err.status) return res.status(err.status).json({ error: err.message });
@@ -687,6 +721,33 @@ router.patch('/reviews/:id', requireCapability(C.REVIEWS_MODERATE), asyncHandler
     );
     return rows[0];
   });
+
+  // Only on approval, and only once. A rejection deliberately sends nothing:
+  // a "your review was hidden" email invites an argument with a customer over
+  // a judgement call, and the moderator's reason is recorded in the audit log
+  // where it belongs.
+  if (updated.is_approved) {
+    try {
+      const { rows: r } = await db.query(
+        `SELECT u.email, u.name, p.name AS product_name, p.slug
+           FROM product_reviews pr
+           JOIN users u ON u.id = pr.user_id
+           JOIN products p ON p.id = pr.product_id
+          WHERE pr.id = $1`,
+        [req.params.id]
+      );
+      if (r.length) {
+        fireAndForget(sendReviewApproved({
+          email: r[0].email, name: r[0].name,
+          productName: r[0].product_name, productSlug: r[0].slug,
+          reviewId: req.params.id
+        }), { reviewId: req.params.id, template: 'review_approved' });
+      }
+    } catch (err) {
+      logger.warn('Could not send review-approved email', { message: err.message });
+    }
+  }
+
   res.json({ review: updated });
 }));
 
@@ -738,6 +799,120 @@ router.get('/audit-log', requireCapability(C.AUDIT_READ), asyncHandler(async (re
     params
   );
   res.json({ entries: rows });
+}));
+
+
+// ===========================================================================
+// INBOXES — the three surfaces that used to throw customer input away
+// ===========================================================================
+// All four routes below read customer email addresses in bulk, which is
+// precisely the PII surface CUSTOMERS_READ exists to gate. Staff do not hold
+// it; that is the separation, not an oversight.
+
+// ---------- Contact messages ----------
+router.get('/contact-messages', requireCapability(C.CUSTOMERS_READ), asyncHandler(async (req, res) => {
+  const status = ['new', 'read', 'replied', 'archived'].includes(req.query.status) ? req.query.status : null;
+  const limit = Math.min(parseInt(req.query.limit, 10) || 50, 200);
+  const { rows } = await db.query(
+    `SELECT cm.id, cm.name, cm.email, cm.phone, cm.subject, cm.message, cm.status,
+            cm.admin_notes, cm.handled_at, cm.created_at,
+            h.name AS handled_by_name
+       FROM contact_messages cm
+       LEFT JOIN users h ON h.id = cm.handled_by
+      WHERE ($1::text IS NULL OR cm.status = $1)
+      ORDER BY cm.created_at DESC
+      LIMIT $2`,
+    [status, limit]
+  );
+  const { rows: counts } = await db.query(
+    "SELECT count(*) FILTER (WHERE status = 'new')::int AS unread, count(*)::int AS total FROM contact_messages"
+  );
+  res.json({ messages: rows, unread: counts[0].unread, total: counts[0].total });
+}));
+
+router.patch('/contact-messages/:id', requireCapability(C.CUSTOMERS_READ), asyncHandler(async (req, res) => {
+  const { status, adminNotes } = req.body;
+  if (status && !['new', 'read', 'replied', 'archived'].includes(status)) {
+    return res.status(400).json({ error: 'Status must be new, read, replied or archived.' });
+  }
+  const { rows } = await db.query(
+    `UPDATE contact_messages
+        SET status      = COALESCE($2, status),
+            admin_notes = COALESCE($3, admin_notes),
+            handled_by  = $4,
+            handled_at  = now()
+      WHERE id = $1
+      RETURNING id, status, admin_notes`,
+    [req.params.id, status || null, adminNotes || null, req.user.id]
+  );
+  if (!rows.length) return res.status(404).json({ error: 'Message not found.' });
+  res.json({ message: rows[0] });
+}));
+
+// ---------- Newsletter subscribers ----------
+router.get('/subscribers', requireCapability(C.CUSTOMERS_READ), asyncHandler(async (req, res) => {
+  const status = ['pending', 'confirmed', 'unsubscribed'].includes(req.query.status) ? req.query.status : null;
+  const { rows } = await db.query(
+    `SELECT email, status, source, consent_text, confirmed_at, unsubscribed_at, created_at
+       FROM email_subscriptions
+      WHERE ($1::text IS NULL OR status = $1)
+      ORDER BY created_at DESC LIMIT 500`,
+    [status]
+  );
+  const { rows: counts } = await db.query(
+    `SELECT count(*) FILTER (WHERE status = 'confirmed')::int   AS confirmed,
+            count(*) FILTER (WHERE status = 'pending')::int     AS pending,
+            count(*) FILTER (WHERE status = 'unsubscribed')::int AS unsubscribed
+       FROM email_subscriptions`
+  );
+  // consent_text is returned deliberately: if anyone ever asks what a
+  // subscriber agreed to, the answer has to be the wording they actually saw,
+  // not today's wording.
+  res.json({ subscribers: rows, counts: counts[0] });
+}));
+
+// ---------- Who is waiting for a restock ----------
+// Buying decisions, not marketing: twelve people waiting on one variant is the
+// clearest reorder signal a small shop gets, and it is invisible anywhere else.
+router.get('/stock-waitlist', requireCapability(C.CATALOG_READ), asyncHandler(async (req, res) => {
+  const { rows } = await db.query(
+    `SELECT p.id AS product_id, p.name, p.sku, p.stock_qty,
+            sn.variant_id, v.sku AS variant_sku,
+            count(*)::int AS waiting,
+            min(sn.created_at) AS waiting_since
+       FROM stock_notifications sn
+       JOIN products p ON p.id = sn.product_id
+       LEFT JOIN product_variants v ON v.id = sn.variant_id
+      WHERE sn.notified_at IS NULL
+      GROUP BY p.id, p.name, p.sku, p.stock_qty, sn.variant_id, v.sku
+      ORDER BY waiting DESC, waiting_since ASC
+      LIMIT 200`
+  );
+  res.json({ waitlist: rows });
+}));
+
+// ---------- Email delivery ----------
+// The question this answers is "did the customer actually get it?", which was
+// previously unanswerable. Failures first, because those are the ones that need
+// somebody to do something.
+router.get('/email-log', requireCapability(C.CUSTOMERS_READ), asyncHandler(async (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit, 10) || 100, 500);
+  const onlyFailed = req.query.failed === 'true';
+  const { rows } = await db.query(
+    `SELECT id, template, recipient, subject, status, error, created_at
+       FROM email_log
+      WHERE ($1::boolean IS NOT TRUE OR status = 'failed')
+      ORDER BY created_at DESC
+      LIMIT $2`,
+    [onlyFailed, limit]
+  );
+  const { rows: summary } = await db.query(
+    `SELECT status, count(*)::int AS n
+       FROM email_log
+      WHERE created_at > now() - interval '7 days'
+      GROUP BY status ORDER BY n DESC`
+  );
+  res.json({ emails: rows, last7Days: summary });
 }));
 
 module.exports = router;

@@ -8,7 +8,10 @@ const db = require('../config/db');
 const { requireAuth, invalidateTokenVersionCache } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/asyncHandler');
 const { handleValidation } = require('../middleware/validate');
-const { sendPasswordResetEmail, sendEmailVerification } = require('../utils/mailer');
+const {
+  sendPasswordResetEmail, sendEmailVerification, sendWelcome, sendPasswordChanged
+} = require('../utils/mailer');
+const { fireAndForget } = require('../utils/orderEmails');
 const { logger } = require('../utils/logger');
 const { passwordProblem } = require('../utils/passwordPolicy');
 
@@ -346,6 +349,27 @@ router.post(
     invalidateTokenVersionCache(userId);
     logger.info('Password reset completed; all sessions revoked', { userId });
 
+    // The other half of a password reset, and the half most systems forget.
+    //
+    // If an ATTACKER performed this reset, this email is the victim's only
+    // warning — the difference between finding out now and finding out when the
+    // account is already gone. It therefore sends on every reset, including the
+    // legitimate ones, where it is merely reassuring. No dedupe key: a second
+    // reset is a second event the owner needs to know about.
+    try {
+      const { rows: u } = await db.query('SELECT email, name FROM users WHERE id = $1', [userId]);
+      if (u.length) {
+        fireAndForget(sendPasswordChanged({
+          email: u[0].email,
+          name: u[0].name,
+          userId,
+          when: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })
+        }), { userId, template: 'password_changed' });
+      }
+    } catch (err) {
+      logger.warn('Could not send password-change notice', { message: err.message });
+    }
+
     res.json({ message: 'Password has been reset and you have been signed out on all devices. You can now log in with your new password.' });
   })
 );
@@ -376,6 +400,21 @@ router.post(
     if (!result) {
       return res.status(400).json({ error: 'This verification link is invalid or has expired. Request a new one from your account page.' });
     }
+
+    // Verification is the first moment the account is genuinely usable, so it
+    // is the right moment to say what it can do. Keyed on the user id, so a
+    // second verification (a re-issued link, a double-click) cannot send it
+    // twice.
+    try {
+      const { rows: u } = await db.query('SELECT email, name FROM users WHERE id = $1', [result.user_id]);
+      if (u.length) {
+        fireAndForget(sendWelcome({ email: u[0].email, name: u[0].name, userId: result.user_id }),
+          { userId: result.user_id, template: 'account_welcome' });
+      }
+    } catch (err) {
+      logger.warn('Could not send welcome email', { message: err.message });
+    }
+
     res.json({ message: 'Your email address has been verified.', verified: true });
   })
 );

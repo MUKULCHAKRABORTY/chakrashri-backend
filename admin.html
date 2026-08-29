@@ -435,6 +435,10 @@ code.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.78rem; 
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/></svg>
         Customers
       </button>
+      <button class="nav-btn" data-cap="customers:read" data-view="inbox" onclick="switchView('inbox')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 4h16v16H4z"/><path d="M4 7l8 6 8-6"/></svg>
+        Inbox <span id="inboxBadge" class="pill pill-warn" style="margin-left:auto;display:none;"></span>
+      </button>
       <button class="nav-btn" data-cap="audit:read" data-view="auditlog" onclick="switchView('auditlog')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 4h16v16H4z"/><path d="M8 9h8M8 13h8M8 17h5"/></svg>
         Audit Log
@@ -631,13 +635,53 @@ code.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.78rem; 
         </div>
         <div class="card" style="padding:0;">
           <div class="table-wrap"><table class="data">
-            <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Joined</th><th>Orders</th><th>Lifetime Value</th></tr></thead>
-            <tbody id="customersTbody"><tr><td colspan="6" class="loading-row"><span class="spinner"></span></td></tr></tbody>
+            <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Joined</th><th>Orders</th><th>Lifetime Value</th><th>Cash on Delivery</th></tr></thead>
+            <tbody id="customersTbody"><tr><td colspan="7" class="loading-row"><span class="spinner"></span></td></tr></tbody>
           </table></div>
         </div>
       </section>
 
       <!-- ============ AUDIT LOG ============ -->
+      <section class="view" id="view-inbox">
+        <div class="card" style="padding:14px;margin-bottom:14px;">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn btn-sm inbox-tab active" data-tab="messages"    onclick="switchInboxTab('messages')">Messages</button>
+            <button class="btn btn-sm inbox-tab"        data-tab="subscribers" onclick="switchInboxTab('subscribers')">Subscribers</button>
+            <button class="btn btn-sm inbox-tab"        data-tab="waitlist"    onclick="switchInboxTab('waitlist')">Restock waitlist</button>
+            <button class="btn btn-sm inbox-tab"        data-tab="email"       onclick="switchInboxTab('email')">Email delivery</button>
+          </div>
+        </div>
+
+        <div class="card inbox-panel" id="inbox-messages" style="padding:0;">
+          <div class="table-wrap"><table class="data">
+            <thead><tr><th>Received</th><th>From</th><th>Subject</th><th>Message</th><th>Status</th><th></th></tr></thead>
+            <tbody id="contactTbody"><tr><td colspan="6" class="loading-row"><span class="spinner"></span></td></tr></tbody>
+          </table></div>
+        </div>
+
+        <div class="card inbox-panel" id="inbox-subscribers" style="padding:0;display:none;">
+          <div class="table-wrap"><table class="data">
+            <thead><tr><th>Email</th><th>Status</th><th>Source</th><th>Confirmed</th><th>Consent given for</th></tr></thead>
+            <tbody id="subsTbody"><tr><td colspan="5" class="loading-row"><span class="spinner"></span></td></tr></tbody>
+          </table></div>
+        </div>
+
+        <div class="card inbox-panel" id="inbox-waitlist" style="padding:0;display:none;">
+          <div class="table-wrap"><table class="data">
+            <thead><tr><th>Product</th><th>SKU</th><th>Variant</th><th>In stock</th><th>People waiting</th><th>Waiting since</th></tr></thead>
+            <tbody id="waitTbody"><tr><td colspan="6" class="loading-row"><span class="spinner"></span></td></tr></tbody>
+          </table></div>
+        </div>
+
+        <div class="card inbox-panel" id="inbox-email" style="padding:0;display:none;">
+          <div style="padding:12px 14px;" id="emailSummary" class="muted"></div>
+          <div class="table-wrap"><table class="data">
+            <thead><tr><th>Sent</th><th>Template</th><th>To</th><th>Subject</th><th>Status</th></tr></thead>
+            <tbody id="emailTbody"><tr><td colspan="5" class="loading-row"><span class="spinner"></span></td></tr></tbody>
+          </table></div>
+        </div>
+      </section>
+
       <section class="view" id="view-auditlog">
         <div class="card" style="padding:0;">
           <div class="table-wrap"><table class="data">
@@ -1138,6 +1182,7 @@ const VIEW_META = {
   services:  { title: 'Booking Services', sub: 'Manage puja and astrology pricing — this is the only source of truth customers are charged from' },
   coupons:   { title: 'Coupons', sub: 'Create and manage discount codes — limits and expiry are enforced server-side at checkout' },
   customers: { title: 'Customers', sub: 'Everyone who has an account' },
+  inbox:     { title: 'Inbox', sub: 'Messages, subscribers, restock waitlist and email delivery' },
   auditlog:  { title: 'Audit Log', sub: 'Every admin action, for accountability' }
 };
 
@@ -1160,6 +1205,7 @@ function refreshCurrentView(){
   else if (currentView === 'services') loadBookingServicesAdmin();
   else if (currentView === 'coupons') loadCoupons();
   else if (currentView === 'customers') loadCustomers(1);
+  else if (currentView === 'inbox') loadInbox();
   else if (currentView === 'auditlog') loadAuditLog();
 }
 
@@ -2189,6 +2235,10 @@ function renderOrderDetail(o, items){
         <div class="hint">This calls Razorpay's real Refunds API — money actually moves back to the customer.</div>
       </div>
       <button class="btn btn-primary" style="width:100%;margin-top:10px;" onclick="submitOrderStatusUpdate()">Update Order</button>
+      ${o.payment_method === 'cod' && !o.rto_marked_at ? `
+        <button class="btn btn-ghost" style="width:100%;margin-top:8px;" onclick="markOrderRTO()">Mark Returned to Origin</button>
+        <div class="hint">The courier brought a Cash on Delivery parcel back undelivered. This returns the stock and counts against the customer's COD record — RTO runs 20–30% on COD in India, and a customer nobody tracks keeps costing you the round trip.</div>
+      ` : ''}
     `}
   `;
 
@@ -2519,13 +2569,13 @@ async function updateBookingStatus(type, id){
 const debounceLoadCustomers = debounce(() => loadCustomers(1), 350);
 async function loadCustomers(page){
   const tbody = qs('#customersTbody');
-  tbody.innerHTML = '<tr><td colspan="6" class="loading-row"><span class="spinner"></span></td></tr>';
+  tbody.innerHTML = '<tr><td colspan="7" class="loading-row"><span class="spinner"></span></td></tr>';
   const search = qs('#customerSearch').value.trim();
   const params = new URLSearchParams({ page: page || 1, limit: 50 });
   if (search) params.set('search', search);
   try {
     const body = await api('/api/admin/customers?' + params.toString());
-    if (!body.customers.length) { tbody.innerHTML = '<tr><td colspan="6"><div class="empty">No customers found.</div></td></tr>'; return; }
+    if (!body.customers.length) { tbody.innerHTML = '<tr><td colspan="7"><div class="empty">No customers found.</div></td></tr>'; return; }
     tbody.innerHTML = body.customers.map((c) => `<tr>
       <td><b>${esc(c.name)}</b></td>
       <td class="muted">${esc(c.email)}</td>
@@ -2533,8 +2583,53 @@ async function loadCustomers(page){
       <td class="muted">${fmtDate(c.created_at)}</td>
       <td>${c.completed_order_count}</td>
       <td>${paise(c.lifetime_value_paise)}</td>
+      <td style="white-space:nowrap;">
+        ${c.cod_blocked ? '<span class="pill pill-danger">COD blocked</span>' : (c.cod_rto_count > 0 ? '<span class="pill pill-warn">' + c.cod_rto_count + ' RTO</span>' : '<span class="muted">—</span>')}
+        <button class="btn btn-sm" onclick="toggleCodBlock('${c.id}', ${c.cod_blocked ? 'false' : 'true'})">${c.cod_blocked ? 'Unblock COD' : 'Block COD'}</button>
+      </td>
     </tr>`).join('');
-  } catch (err) { tbody.innerHTML = '<tr><td colspan="6"><div class="empty">Could not load customers.</div></td></tr>'; }
+  } catch (err) { tbody.innerHTML = '<tr><td colspan="7"><div class="empty">Could not load customers.</div></td></tr>'; }
+}
+
+/* The last two admin endpoints that existed with nothing calling them. Both
+   are COD-specific, and COD is where an Indian store loses money quietly: a
+   parcel that comes back costs the round trip and the restocking, and nothing
+   in the console recorded that it happened. */
+function markOrderRTO(){
+  confirmAction('Mark Returned to Origin',
+    'The courier returned this Cash on Delivery parcel undelivered. This returns the items to sellable stock and adds one RTO to the customer\u2019s record. It cannot be undone from here.',
+    async function(){
+      try {
+        const r = await api('/api/admin/orders/' + currentOrderId + '/mark-rto', { method: 'POST' });
+        toast(r && r.codBlocked
+          ? 'Marked as returned. This customer has now been blocked from Cash on Delivery.'
+          : 'Marked as returned to origin and stock restored.', 'ok');
+        closeDrawer();
+        loadOrders(ordersState.page);
+      } catch (err) {
+        toast((err && err.error) || 'Could not mark this order as returned.', 'err');
+      }
+    });
+}
+
+function toggleCodBlock(userId, block){
+  const blocking = String(block) === 'true';
+  confirmAction(blocking ? 'Block Cash on Delivery' : 'Allow Cash on Delivery',
+    blocking
+      ? 'This customer will only be able to pay online. Use it when returned parcels are costing more than their orders are worth.'
+      : 'This customer will be able to choose Cash on Delivery again.',
+    async function(){
+      try {
+        await api('/api/admin/customers/' + userId + '/cod-block', {
+          method: 'POST',
+          body: JSON.stringify({ blocked: blocking, reason: blocking ? 'Blocked from the admin console' : null })
+        });
+        toast(blocking ? 'Cash on Delivery blocked for this customer.' : 'Cash on Delivery re-enabled.', 'ok');
+        loadCustomers(1);
+      } catch (err) {
+        toast((err && err.error) || 'Could not update that customer.', 'err');
+      }
+    });
 }
 
 /* =========================================================================
@@ -2814,6 +2909,157 @@ function deactivateCouponConfirm(id, code){
 /* =========================================================================
    AUDIT LOG
    ========================================================================= */
+/* ==========================================================================
+   INBOX — the four surfaces that had nowhere to go
+   ==========================================================================
+   Contact messages, newsletter subscribers, the restock waitlist and email
+   delivery. The storefront collected the first two into nothing at all; the
+   last two did not exist. Every endpoint is gated on customers:read (the
+   waitlist on catalog:read), because all of them read customer email
+   addresses in bulk — that is the capability staff deliberately do not hold. */
+let inboxTab = 'messages';
+
+function switchInboxTab(tab){
+  inboxTab = tab;
+  qsa('.inbox-panel').forEach(function(el){ el.style.display = 'none'; });
+  const panel = qs('#inbox-' + tab);
+  if (panel) panel.style.display = '';
+  qsa('.inbox-tab').forEach(function(b){ b.classList.toggle('active', b.dataset.tab === tab); });
+  loadInbox();
+}
+
+async function loadInbox(){
+  if (inboxTab === 'subscribers') return loadSubscribers();
+  if (inboxTab === 'waitlist')    return loadStockWaitlist();
+  if (inboxTab === 'email')       return loadEmailLog();
+  return loadContactMessages();
+}
+
+const MSG_PILL = { new: 'pill-warn', read: 'pill-neutral', replied: 'pill-success', archived: 'pill-neutral' };
+
+async function loadContactMessages(){
+  const tbody = qs('#contactTbody');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="6" class="loading-row"><span class="spinner"></span></td></tr>';
+  try {
+    const body = await api('/api/admin/contact-messages?limit=100');
+    updateInboxBadge(body.unread);
+    if (!body.messages.length) { tbody.innerHTML = '<tr><td colspan="6"><div class="empty">No messages yet.</div></td></tr>'; return; }
+    tbody.innerHTML = body.messages.map(function(m){
+      return '<tr>'
+        + '<td class="muted">' + fmtDateTime(m.created_at) + '</td>'
+        + '<td><strong>' + esc(m.name) + '</strong><br><span class="muted">' + esc(m.email) + '</span>'
+          + (m.phone ? '<br><span class="muted">' + esc(m.phone) + '</span>' : '') + '</td>'
+        + '<td>' + esc(m.subject || '—') + '</td>'
+        + '<td style="max-width:380px;white-space:pre-wrap;">' + esc(m.message) + '</td>'
+        + '<td><span class="pill ' + (MSG_PILL[m.status] || 'pill-neutral') + '">' + esc(m.status) + '</span></td>'
+        /* The id goes in RAW, matching openOrderDetail elsewhere in this file.
+           esc() would be actively wrong here: it turns an apostrophe into
+           &#39;, and an HTML attribute is entity-decoded BEFORE the JavaScript
+           in it is parsed — so escaping would reconstruct the quote inside the
+           JS string rather than neutralise it. These ids are gen_random_uuid()
+           values and cannot contain a quote at all; the safety comes from the
+           type, not from escaping. */
+        + '<td style="white-space:nowrap;">'
+          + '<button class="btn btn-sm" onclick="setMessageStatus(\'' + m.id + '\',\'read\')">Read</button> '
+          + '<button class="btn btn-sm" onclick="setMessageStatus(\'' + m.id + '\',\'replied\')">Replied</button> '
+          + '<button class="btn btn-sm" onclick="setMessageStatus(\'' + m.id + '\',\'archived\')">Archive</button>'
+        + '</td></tr>';
+    }).join('');
+  } catch (err) {
+    tbody.innerHTML = '<tr><td colspan="6"><div class="empty">Could not load messages.</div></td></tr>';
+  }
+}
+
+async function setMessageStatus(id, status){
+  try {
+    await api('/api/admin/contact-messages/' + id, { method: 'PATCH', body: JSON.stringify({ status: status }) });
+    toast('Marked as ' + status + '.', 'ok');
+    loadContactMessages();
+  } catch (err) {
+    toast((err && err.error) || 'Could not update that message.', 'err');
+  }
+}
+
+/* The unread count rides on the nav item, so an unanswered customer is visible
+   from every screen rather than only from the one nobody has opened. */
+function updateInboxBadge(unread){
+  const badge = qs('#inboxBadge');
+  if (!badge) return;
+  if (unread > 0) { badge.textContent = unread; badge.style.display = ''; }
+  else { badge.style.display = 'none'; }
+}
+
+async function loadSubscribers(){
+  const tbody = qs('#subsTbody');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="5" class="loading-row"><span class="spinner"></span></td></tr>';
+  try {
+    const body = await api('/api/admin/subscribers');
+    if (!body.subscribers.length) { tbody.innerHTML = '<tr><td colspan="5"><div class="empty">Nobody has subscribed yet.</div></td></tr>'; return; }
+    const pill = { confirmed: 'pill-success', pending: 'pill-warn', unsubscribed: 'pill-neutral' };
+    tbody.innerHTML = body.subscribers.map(function(x){
+      return '<tr><td>' + esc(x.email) + '</td>'
+        + '<td><span class="pill ' + (pill[x.status] || 'pill-neutral') + '">' + esc(x.status) + '</span></td>'
+        + '<td class="muted">' + esc(x.source || '—') + '</td>'
+        + '<td class="muted">' + (x.confirmed_at ? fmtDateTime(x.confirmed_at) : '—') + '</td>'
+        + '<td class="muted" style="max-width:320px;">' + esc(x.consent_text || '—') + '</td></tr>';
+    }).join('');
+  } catch (err) {
+    tbody.innerHTML = '<tr><td colspan="5"><div class="empty">Could not load subscribers.</div></td></tr>';
+  }
+}
+
+/* Twelve people waiting on one variant is the clearest reorder signal a small
+   shop gets, and it was invisible everywhere before this. */
+async function loadStockWaitlist(){
+  const tbody = qs('#waitTbody');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="6" class="loading-row"><span class="spinner"></span></td></tr>';
+  try {
+    const body = await api('/api/admin/stock-waitlist');
+    if (!body.waitlist.length) { tbody.innerHTML = '<tr><td colspan="6"><div class="empty">Nobody is waiting on a restock.</div></td></tr>'; return; }
+    tbody.innerHTML = body.waitlist.map(function(w){
+      return '<tr><td>' + esc(w.name) + '</td>'
+        + '<td class="mono muted">' + esc(w.sku) + '</td>'
+        + '<td class="muted">' + esc(w.variant_sku || '—') + '</td>'
+        + '<td>' + esc(w.stock_qty) + '</td>'
+        + '<td><strong>' + esc(w.waiting) + '</strong></td>'
+        + '<td class="muted">' + fmtDateTime(w.waiting_since) + '</td></tr>';
+    }).join('');
+  } catch (err) {
+    tbody.innerHTML = '<tr><td colspan="6"><div class="empty">Could not load the waitlist.</div></td></tr>';
+  }
+}
+
+/* "Did the customer actually get their order confirmation?" was unanswerable
+   before this table existed. Failures are what matter, so the seven-day
+   summary sits above the rows rather than being buried among them. */
+async function loadEmailLog(){
+  const tbody = qs('#emailTbody');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="5" class="loading-row"><span class="spinner"></span></td></tr>';
+  try {
+    const body = await api('/api/admin/email-log?limit=150');
+    const parts = (body.last7Days || []).map(function(r){ return r.status + ': ' + r.n; });
+    const summaryEl = qs('#emailSummary');
+    if (summaryEl) summaryEl.textContent = parts.length ? 'Last 7 days — ' + parts.join(' · ') : 'Nothing sent in the last 7 days.';
+    if (!body.emails.length) { tbody.innerHTML = '<tr><td colspan="5"><div class="empty">No emails sent yet.</div></td></tr>'; return; }
+    const pill = { sent: 'pill-success', failed: 'pill-danger', pending: 'pill-warn' };
+    tbody.innerHTML = body.emails.map(function(e){
+      return '<tr><td class="muted">' + fmtDateTime(e.created_at) + '</td>'
+        + '<td class="mono">' + esc(e.template) + '</td>'
+        + '<td class="muted">' + esc(e.recipient) + '</td>'
+        + '<td style="max-width:280px;">' + esc(e.subject) + '</td>'
+        + '<td><span class="pill ' + (pill[e.status] || 'pill-neutral') + '">' + esc(e.status) + '</span>'
+          + (e.error ? '<br><span class="muted" style="font-size:.75rem;">' + esc(String(e.error).slice(0, 120)) + '</span>' : '')
+        + '</td></tr>';
+    }).join('');
+  } catch (err) {
+    tbody.innerHTML = '<tr><td colspan="5"><div class="empty">Could not load the email log.</div></td></tr>';
+  }
+}
+
 async function loadAuditLog(){
   const tbody = qs('#auditTbody');
   tbody.innerHTML = '<tr><td colspan="5" class="loading-row"><span class="spinner"></span></td></tr>';

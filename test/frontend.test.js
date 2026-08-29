@@ -365,6 +365,129 @@ section('[fe-7] AUTH-02 — capability gating cannot leak or lock out');
 }
 
 // ============================================================
+// ============================================================
+// FE-02 — every CSS class the JavaScript names must actually exist
+// ============================================================
+// A class name is a contract between two halves of the same file, and nothing
+// enforces it: `pill-ok` renders as unstyled text rather than throwing, so a
+// "confirmed" subscriber and a "sent" email simply lose their colour and no
+// test, linter or console message says a word. This was a real bug in the Inbox
+// view — the class is pill-success — and it is invisible until someone looks at
+// the right screen with the right data in it.
+section('[fe-8] FE-02 — class names used in JS exist in the stylesheet');
+{
+  const files = [['index.html', read('index.html')], ['admin.html', read('admin.html')]];
+  // Only the families where a wrong name is silent AND visually meaningful.
+  // (?<![\w-]) not \b: a hyphen is a non-word character, so \b fires between
+  // `hero-` and `badge-float` and the test reports a class that is really only
+  // the tail of `hero-badge-float`. Two false positives on the first run, which
+  // is exactly the failure mode that gets a useful test deleted.
+  const FAMILIES = /(?<![\w-])(pill|badge|status)-[a-z][a-z-]*\b/g;
+
+  for (const [name, html] of files) {
+    test(name + ': every pill/badge/status class named in code is defined in CSS', () => {
+      const styleBlocks = (html.match(/<style[\s\S]*?<\/style>/g) || []).join('\n');
+      const used = new Set(html.match(FAMILIES) || []);
+      const missing = [];
+      for (const cls of used) {
+        if (styleBlocks.indexOf('.' + cls) === -1) missing.push(cls);
+      }
+      assert.deepStrictEqual(missing, [],
+        'these class names are used but never styled, so they render as plain text: ' + missing.join(', '));
+    });
+  }
+}
+
+// ============================================================
+// The three forms that used to throw customer input away
+// ============================================================
+// Each of these showed a confirmation toast and made no request at all. The
+// test asserts the REQUEST, not the toast, because the toast is exactly what
+// was there before and exactly what made the bug invisible.
+// ============================================================
+// FE-03 — a table's header count must match its colspans
+// ============================================================
+// Adding a column to the rows and forgetting the <thead>, or forgetting the
+// colspan on the empty/loading row, produces a table that renders misaligned
+// and reports nothing. It happened twice while wiring the COD column into the
+// customers table. Silent, visual, and trivially checkable.
+section('[fe-10] FE-03 — table columns line up');
+{
+  for (const file of FILES) {
+    test(file + ': every data table\'s header count matches its colspans', () => {
+      const html = read(file);
+      const problems = [];
+      // Scoped to one <table> at a time. An earlier version of this check
+      // scanned a fixed window after each <thead>, spilled into the following
+      // table and reported twelve failures on correct markup — a check that
+      // cries wolf is a check somebody deletes.
+      for (const m of html.matchAll(/<table class="data">([\s\S]*?)<\/table>/g)) {
+        const inner = m[1];
+        const head = (inner.match(/<thead>[\s\S]*?<\/thead>/) || [''])[0];
+        const headers = (head.match(/<th[ >]/g) || []).length;
+        if (!headers) continue;
+        const spans = [...inner.matchAll(/colspan="(\d+)"/g)].map((x) => Number(x[1]));
+        const wrong = [...new Set(spans.filter((c) => c !== headers))];
+        if (wrong.length) {
+          const id = (inner.match(/id="([a-zA-Z]+)"/) || ['', 'unknown'])[1];
+          problems.push(id + ': ' + headers + ' headers but colspan ' + wrong.join(', '));
+        }
+      }
+      assert.deepStrictEqual(problems, [], 'misaligned tables: ' + problems.join(' | '));
+    });
+  }
+}
+
+section('[fe-9] The capture forms actually submit somewhere');
+{
+  const cases = [
+    ['back-in-stock waitlist', 'notifyStock', '/api/engage/stock-notify'],
+    ['newsletter subscribe', 'handleNewsletterSubmit', '/api/engage/newsletter'],
+    ['contact form', 'handleContactSubmit', '/api/engage/contact']
+  ];
+  for (const [label, fnName, endpoint] of cases) {
+    test('THE FINDING: ' + label + ' posts to ' + endpoint + ' instead of only showing a toast', () => {
+      const fn = extractFunction(read('index.html'), fnName);
+      assert.ok(fn, fnName + ' is missing from index.html');
+      assert.ok(fn.includes(endpoint), fnName + ' does not call ' + endpoint);
+      assert.ok(/apiFetch\s*\(/.test(fn), fnName + ' never issues a request');
+    });
+  }
+
+  test('the password reset flow is reachable — there is a link that requests one', () => {
+    assert.ok(/requestPasswordReset/.test(read('index.html')), 'no requestPasswordReset function');
+    assert.ok(/onclick="return requestPasswordReset\(\);"/.test(read('index.html')),
+      'the function exists but nothing in the markup calls it, which is how it was unreachable before');
+    assert.ok(read('index.html').includes('/api/auth/forgot-password'), 'nothing calls the forgot-password endpoint');
+  });
+
+  test('DPDP data export and sign-out-everywhere are reachable from the account panel', () => {
+    assert.ok(read('index.html').includes('/api/customer/me/data-export'), 'no caller for the data export endpoint');
+    assert.ok(read('index.html').includes('/api/auth/logout-all'), 'no caller for the logout-all endpoint');
+    assert.ok(/onclick="downloadMyData\(\);"/.test(read('index.html')), 'data export has no button');
+    assert.ok(/onclick="logoutEverywhere\(\);"/.test(read('index.html')), 'sign-out-everywhere has no button');
+  });
+
+  test('the two emailed links the storefront now has to handle are routed', () => {
+    for (const fn of ['handleNewsletterConfirmLink', 'handleUnsubscribeLink']) {
+      assert.ok(read('index.html').includes('async function ' + fn), fn + ' is missing');
+      assert.ok(read('index.html').includes('await ' + fn + '()'), fn + ' is defined but never dispatched at boot');
+    }
+  });
+}
+
+/** Pulls one function's source out of an HTML file, brace-balanced. */
+function extractFunction(html, name) {
+  const start = html.search(new RegExp('(async\\s+)?function\\s+' + name + '\\s*\\('));
+  if (start === -1) return null;
+  let depth = 0; let seen = false;
+  for (let i = start; i < html.length; i++) {
+    if (html[i] === '{') { depth++; seen = true; }
+    else if (html[i] === '}') { depth--; if (seen && depth === 0) return html.slice(start, i + 1); }
+  }
+  return null;
+}
+
 section('[fe-6] HYG-05 — no API key or direct model call in client code');
 // ============================================================
 {

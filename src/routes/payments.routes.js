@@ -10,7 +10,11 @@ const { handleValidation, isUuid } = require('../middleware/validate');
 const { restoreOrderStock } = require('../utils/stock');
 const { timingSafeEqualHex } = require('../utils/crypto');
 const { reserveStockAndCreateOrder } = require('../utils/orders');
-const { sendOrderConfirmation } = require('../utils/mailer');
+const {
+  sendOrderConfirmation, sendAdminNewOrder, sendPaymentUnderReview,
+  sendAdminPaymentReview, sendPaymentFailed
+} = require('../utils/mailer');
+const { loadOrderForEmail, fireAndForget } = require('../utils/orderEmails');
 const { verifyCapturedPayment, flagForReview, REASONS } = require('../utils/paymentVerification');
 const { getSettings } = require('../utils/settings');
 const { logger } = require('../utils/logger');
@@ -119,23 +123,13 @@ router.post('/create-order', requireAuth, checkoutLimiter, asyncHandler(async (r
 
   // ---------- Cash on Delivery: nothing more to do, order is placed ----------
   if (method === 'cod') {
-    try {
-      const { rows: fullOrder } = await db.query(
-        `SELECT o.order_number, o.total_paise, u.email AS customer_email, u.name AS customer_name
-         FROM orders o JOIN users u ON u.id = o.user_id WHERE o.id = $1`,
-        [orderId]
-      );
-      const { rows: orderItems } = await db.query(
-        'SELECT product_name_snapshot, quantity, line_total_paise FROM order_items WHERE order_id = $1',
-        [orderId]
-      );
-      if (fullOrder.length) {
-        sendOrderConfirmation(fullOrder[0], orderItems)
-          .catch((err) => logger.warn('COD confirmation email failed', { orderId, message: err.message }));
-      }
-    } catch (err) {
-      // Confirmation email failure must never fail an already-placed COD order.
-      logger.warn('Could not assemble COD confirmation email', { orderId, message: err.message });
+    // loadOrderForEmail rather than a bespoke four-column query: the templates
+    // now show a real money breakdown, and a query that omits subtotal_paise
+    // renders it as ₹NaN in the customer's receipt without erroring anywhere.
+    const forEmail = await loadOrderForEmail(orderId);
+    if (forEmail) {
+      fireAndForget(sendOrderConfirmation(forEmail.order, forEmail.items), { orderId, template: 'order_confirmation' });
+      fireAndForget(sendAdminNewOrder(forEmail.order, forEmail.items), { orderId, template: 'admin_new_order' });
     }
     return res.json({
       requiresRazorpay: false,
@@ -284,6 +278,16 @@ router.post('/verify', requireAuth, asyncHandler(async (req, res) => {
         reason: verification.reason, detail: verification.detail
       });
     });
+    // Tell BOTH sides. The customer must not be left watching an order that
+    // says nothing, and this state holds stock and possibly their money — an
+    // admin who never learns of it never clears it, because nothing else will.
+    const reviewEmail = await loadOrderForEmail(order.id);
+    if (reviewEmail) {
+      fireAndForget(sendPaymentUnderReview(reviewEmail.order), { orderId: order.id, template: 'order_payment_review' });
+      fireAndForget(sendAdminPaymentReview(reviewEmail.order, `${verification.reason}: ${verification.detail.message}`),
+        { orderId: order.id, template: 'admin_payment_review' });
+    }
+
     return res.status(202).json({
       pending: true,
       orderNumber: order.order_number,
@@ -310,22 +314,13 @@ router.post('/verify', requireAuth, asyncHandler(async (req, res) => {
 
   // Send confirmation email — failure here must never fail the response,
   // since the payment itself already succeeded.
-  try {
-    const { rows: fullOrder } = await db.query(
-      `SELECT o.order_number, o.total_paise, u.email AS customer_email, u.name AS customer_name
-       FROM orders o JOIN users u ON u.id = o.user_id WHERE o.id = $1`,
-      [rows[0].id]
-    );
-    const { rows: orderItems } = await db.query(
-      'SELECT product_name_snapshot, quantity, line_total_paise FROM order_items WHERE order_id = $1',
-      [rows[0].id]
-    );
-    if (fullOrder.length) {
-      sendOrderConfirmation(fullOrder[0], orderItems)
-        .catch((err) => logger.warn('Order confirmation email failed', { orderId: rows[0].id, message: err.message }));
-    }
-  } catch (err) {
-    logger.warn('Could not assemble order confirmation email', { orderId: rows[0].id, message: err.message });
+  // The dedupe key inside sendOrderConfirmation is what makes this safe to
+  // reach from here AND from the webhook AND from the reconciler: all three
+  // legitimately confirm the same order, and the customer must get one email.
+  const forEmail = await loadOrderForEmail(rows[0].id);
+  if (forEmail) {
+    fireAndForget(sendOrderConfirmation(forEmail.order, forEmail.items), { orderId: rows[0].id, template: 'order_confirmation' });
+    fireAndForget(sendAdminNewOrder(forEmail.order, forEmail.items), { orderId: rows[0].id, template: 'admin_new_order' });
   }
 
   return res.json({ success: true, orderNumber: rows[0].order_number });
@@ -465,14 +460,39 @@ async function handleWebhookEvent(event, eventId) {
           detail: { capturedPaise, expectedPaise: Number(order.total_paise), currency, eventId }
         });
       });
+      const reviewEmail = await loadOrderForEmail(order.id);
+      if (reviewEmail) {
+        fireAndForget(sendPaymentUnderReview(reviewEmail.order), { orderId: order.id, template: 'order_payment_review' });
+        fireAndForget(sendAdminPaymentReview(reviewEmail.order,
+          `amount_or_currency_mismatch: captured ${capturedPaise} ${currency}, expected ${order.total_paise} INR`),
+        { orderId: order.id, template: 'admin_payment_review' });
+      }
       return;
     }
 
-    await db.query(
+    const { rowCount: confirmed } = await db.query(
       `UPDATE orders SET status = 'paid', razorpay_payment_id = $2, updated_at = now()
        WHERE razorpay_order_id = $1 AND status = 'pending'`,
       [rzpOrderId, entity.id]
     );
+
+    // THE GAP THIS CLOSES: this path exists precisely for the customer who paid
+    // and then closed the tab, so the browser never called /verify. Their order
+    // was marked paid here and no confirmation email was ever sent — they paid
+    // and heard nothing. Sending is safe because the confirmation carries a
+    // dedupe key on the order, so the browser path and this one cannot both
+    // mail the same customer.
+    //
+    // rowCount guards the OTHER direction: a webhook retry for an order already
+    // moved on from 'pending' updates nothing, and must not then behave as if
+    // it had just been paid.
+    if (confirmed > 0) {
+      const forEmail = await loadOrderForEmail(order.id);
+      if (forEmail) {
+        fireAndForget(sendOrderConfirmation(forEmail.order, forEmail.items), { orderId: order.id, template: 'order_confirmation' });
+        fireAndForget(sendAdminNewOrder(forEmail.order, forEmail.items), { orderId: order.id, template: 'admin_new_order' });
+      }
+    }
     return;
   }
 
@@ -496,6 +516,15 @@ async function handleWebhookEvent(event, eventId) {
       // Restores stock reserved at order-creation time AND sets status to
       // 'payment_failed' in one atomic, idempotent step.
       await restoreOrderStock(rows[0].id, 'payment_failed', 'razorpay_payment_failed_webhook');
+
+      // A failed payment is the moment a customer decides whether to try again
+      // or give up, and silence reliably produces the second outcome. The email
+      // says plainly that nothing was charged, because the most common support
+      // ticket after a failure is "have you taken my money?".
+      const forEmail = await loadOrderForEmail(rows[0].id);
+      if (forEmail) {
+        fireAndForget(sendPaymentFailed(forEmail.order), { orderId: rows[0].id, template: 'order_payment_failed' });
+      }
     }
     return;
   }

@@ -3063,7 +3063,10 @@ a.p-media:focus-visible, a.p-name:focus-visible{ outline:2px solid var(--oxblood
         <div class="field"><label for="f-password">Password</label><input id="f-password" type="password" required placeholder="••••••••" autocomplete="current-password"></div>
         <button type="submit" class="btn btn-primary btn-block">Log In</button>
       </form>
-      <p style="text-align:center;font-size:.82rem;color:var(--text-mute);margin-top:14px;">
+      <p style="text-align:center;font-size:.82rem;margin-top:12px;">
+        <a href="#" onclick="return requestPasswordReset();" style="color:var(--text-mute);font-weight:600;">Forgotten your password?</a>
+      </p>
+      <p style="text-align:center;font-size:.82rem;color:var(--text-mute);margin-top:6px;">
         New to Chakrashri? <a href="#" onclick="switchAuthTab('signup');return false;" style="color:var(--oxblood);font-weight:600;">Create an account</a>
       </p>
     </div>
@@ -3101,6 +3104,16 @@ a.p-media:focus-visible, a.p-name:focus-visible{ outline:2px solid var(--oxblood
         <button class="account-action" onclick="openShopWithCategory('all'); closeModal('acctModal');">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M20 7L12 3 4 7v10l8 4 8-4V7z"/><path d="M4 7l8 4 8-4M12 11v10"/></svg>
           <span>Continue Shopping</span>
+          <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+        </button>
+        <button class="account-action" onclick="downloadMyData();">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M7 10l5 5 5-5M12 15V3"/></svg>
+          <span>Download My Data</span>
+          <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+        </button>
+        <button class="account-action" onclick="logoutEverywhere();">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg>
+          <span>Sign Out Everywhere</span>
           <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
         </button>
       </div>
@@ -4616,7 +4629,31 @@ function renderGridInto(containerId, list){
   el.innerHTML = list.map(function(p,i){ return productCardHTML(p,i); }).join('');
 }
 
-function notifyStock(id){ toast("We'll email you when this is back in stock."); }
+/* Back-in-stock waitlist.
+   This button used to show a toast promising an email and then do nothing at
+   all — no request, no record, nothing to send later. The customer stopped
+   watching for a restock that would never be announced. It now joins a real
+   waitlist; scripts/send-scheduled-emails.js sends exactly one email when the
+   stock actually returns. */
+async function notifyStock(id, variantId){
+  let email = (currentUser && currentUser.email) || '';
+  if(!email){
+    email = (window.prompt('Which email address should we notify?') || '').trim();
+    if(!email) return;
+  }
+  try{
+    const res = await apiFetch('/api/engage/stock-notify', {
+      method:'POST',
+      body: JSON.stringify({ productId: id, variantId: variantId || null, email: email })
+    });
+    toast((res && res.message) || "You're on the list.");
+  }catch(err){
+    /* An in-stock item is not an error the customer should see as one — it is
+       good news, and the server says so. */
+    if(err && err.inStock){ toast(err.error || 'This is in stock right now.'); return; }
+    toast((err && err.error) ? err.error : 'Could not add you to the list. Please try again.', 'err');
+  }
+}
 
 /* ---------- Featured products (home page tabs) ---------- */
 let featuredTab = 'featured';
@@ -5307,6 +5344,52 @@ async function handleEmailVerificationLink(){
 
 /* Same for the password-reset link the backend has always emailed. It pointed at
    /reset-password?token=… and nothing on the site handled that path either. */
+/* The confirmation link from the double opt-in email. Without a handler the
+   link lands on the home page and the subscription stays pending forever —
+   which looks to the customer exactly like a subscription that worked. */
+async function handleNewsletterConfirmLink(){
+  let token = null;
+  try { token = new URLSearchParams(location.search || '').get('token'); } catch(e){ return false; }
+  if(!token) return false;
+  const path = (location.pathname || '').replace(/\/+$/, '');
+  if(path !== '/newsletter/confirm') return false;
+
+  try{
+    const res = await apiFetch('/api/engage/newsletter/confirm', { method:'POST', body: JSON.stringify({ token: token }) });
+    toast((res && res.message) || "You're subscribed. Welcome.", 'ok');
+  }catch(err){
+    toast((err && err.error) ? err.error : 'That confirmation link is invalid or has expired.', 'err');
+  }
+  try { history.replaceState(null, '', '/'); } catch(e){ /* file:// */ }
+  navigateTo('home', { replace: true });
+  return true;
+}
+
+/* One-click unsubscribe. No sign-in, no confirmation step, no "are you sure" —
+   DPDP Act 2023 requires withdrawing consent to be as easy as giving it, and
+   every extra step here is a step towards the recipient marking the message as
+   spam instead, which costs the sending domain far more than the subscriber. */
+async function handleUnsubscribeLink(){
+  let token = null;
+  try { token = new URLSearchParams(location.search || '').get('token'); } catch(e){ return false; }
+  if(!token) return false;
+  const path = (location.pathname || '').replace(/\/+$/, '');
+  if(path !== '/unsubscribe') return false;
+
+  try{
+    const res = await apiFetch('/api/engage/newsletter/unsubscribe', { method:'POST', body: JSON.stringify({ token: token }) });
+    toast((res && res.message) || "You've been unsubscribed.", 'ok');
+  }catch(err){
+    /* Deliberately still reassuring on failure: someone clicking unsubscribe
+       needs to believe it worked, and the server treats unknown tokens as
+       already-unsubscribed for the same reason. */
+    toast("You've been unsubscribed. You won't receive marketing emails from us again.", 'ok');
+  }
+  try { history.replaceState(null, '', '/'); } catch(e){ /* file:// */ }
+  navigateTo('home', { replace: true });
+  return true;
+}
+
 async function handlePasswordResetLink(){
   let token = null;
   try { token = new URLSearchParams(location.search || '').get('token'); } catch(e){ return false; }
@@ -6675,17 +6758,116 @@ function handleMobileSearchSubmit(e){
   navigateTo('shop');
   return false;
 }
-function handleNewsletterSubmit(e){
+/* Newsletter — double opt-in.
+   The old version congratulated the visitor on subscribing to a list that did
+   not exist. Subscribing now creates a PENDING record and sends a confirmation
+   link; nobody is added to a mailing list without clicking it. That is both the
+   DPDP Act 2023 position on consent and the reason mailbox providers keep
+   delivering our mail to the inbox. */
+async function handleNewsletterSubmit(e){
   e.preventDefault();
-  toast('Thanks for subscribing! Watch your inbox for panchang updates.');
-  e.target.reset();
+  const input = e.target.querySelector('input[type="email"]');
+  const email = (input && input.value || '').trim();
+  if(!email){ toast('Please enter your email address.', 'err'); return false; }
+  const btn = e.target.querySelector('button[type="submit"]');
+  if(btn){ btn.disabled = true; }
+  try{
+    const res = await apiFetch('/api/engage/newsletter', { method:'POST', body: JSON.stringify({ email: email }) });
+    toast((res && res.message) || 'Check your inbox to confirm.');
+    e.target.reset();
+  }catch(err){
+    toast((err && err.error) ? err.error : 'Could not subscribe right now. Please try again.', 'err');
+  }finally{
+    if(btn){ btn.disabled = false; }
+  }
   return false;
 }
-function handleContactSubmit(e){
+
+/* Contact — stored, not emailed.
+   An alert email that bounces is a customer who never hears back AND no record
+   that they wrote. The message goes into a table the admin console reads, and
+   the daily digest counts what is still unread, so an unanswered message gets
+   louder rather than quieter. */
+async function handleContactSubmit(e){
   e.preventDefault();
-  toast("Message sent — we'll get back to you within a day.");
-  e.target.reset();
+  const val = function(id){ const el = document.getElementById(id); return (el && el.value || '').trim(); };
+  const payload = {
+    name: val('f-full-name'),
+    email: val('f-email-address'),
+    subject: val('f-subject'),
+    message: val('f-message')
+  };
+  const btn = e.target.querySelector('button[type="submit"]');
+  if(btn){ btn.disabled = true; }
+  try{
+    const res = await apiFetch('/api/engage/contact', { method:'POST', body: JSON.stringify(payload) });
+    toast((res && res.message) || 'Thank you — your message is with our team.');
+    e.target.reset();
+  }catch(err){
+    toast((err && err.error) ? err.error : 'Could not send your message. Please try again.', 'err');
+  }finally{
+    if(btn){ btn.disabled = false; }
+  }
   return false;
+}
+
+/* Ask for a password-reset link.
+   The endpoint and the email have existed since the audit; the storefront had
+   no way to trigger either, so a customer who forgot their password had no
+   route back into their account at all. The response is deliberately identical
+   whether or not the address has an account — anything else turns this box into
+   a "does this person shop here?" oracle. */
+async function requestPasswordReset(){
+  const field = document.getElementById('f-email-address-2');
+  const prefill = (field && field.value || '').trim();
+  const email = (window.prompt('Enter the email address on your account and we will send you a reset link:', prefill) || '').trim();
+  if(!email) return false;
+  try{
+    const res = await apiFetch('/api/auth/forgot-password', { method:'POST', body: JSON.stringify({ email: email }) });
+    toast((res && res.message) || 'If that address has an account, a reset link is on its way.');
+  }catch(err){
+    toast((err && err.error) ? err.error : 'Could not send a reset link right now. Please try again.', 'err');
+  }
+  return false;
+}
+
+/* Sign out everywhere — AUTH-03's customer-facing half.
+   Bumping token_version invalidates every access token issued before now. The
+   endpoint has existed since the audit with nothing calling it, which meant a
+   customer who suspected someone was in their account could change their
+   password but could not end a session on a device they no longer hold. */
+async function logoutEverywhere(){
+  if(!window.confirm('Sign out of Chakrashri on every device, including this one?')) return;
+  try{
+    await apiFetch('/api/auth/logout-all', { method:'POST' });
+  }catch(err){ /* the local sign-out below must happen either way */ }
+  setAuthToken(null);
+  currentUser = null;
+  updateAccountUI();
+  closeModal('acctModal');
+  toast('Signed out on all devices.');
+}
+
+/* Download my data — DPDP Act 2023, s.11.
+   The right of access is not optional, and an export endpoint nothing can reach
+   does not satisfy it. Saves a JSON file rather than rendering it, because the
+   point is that the customer keeps a copy. */
+async function downloadMyData(){
+  try{
+    const data = await apiFetch('/api/customer/me/data-export');
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type:'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'chakrashri-my-data.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+    toast('Your data has been downloaded.');
+  }catch(err){
+    toast((err && err.error) ? err.error : 'Could not prepare your data right now.', 'err');
+  }
 }
 
 function debounce(fn, wait){
@@ -6806,6 +6988,8 @@ async function init(){
   // arriving from an inbox does the thing the email promised instead of landing
   // on a 404-ish home page. Both strip their token from the URL afterwards.
   if(await handlePasswordResetLink()) { refreshReveal(); return; }
+  if(await handleNewsletterConfirmLink()) { refreshReveal(); return; }
+  if(await handleUnsubscribeLink()) { refreshReveal(); return; }
   await handleEmailVerificationLink();
 
   const parsed = routeFromLocation();
