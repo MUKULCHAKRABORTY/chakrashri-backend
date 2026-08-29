@@ -24,32 +24,59 @@ npm start                # production
 
 ## Verifying against your real database and Razorpay account
 
-**Important context:** the environment used to build this backend has no general outbound
-network access (it can't reach the npm registry, the Razorpay API, or a raw Postgres port) — so
-none of this has been tested against your real Neon database or Razorpay keys yet, only against
-pure logic (21 unit tests, see `test/unit.test.js`) and static analysis. The steps below are how
-*you* verify it for real, in an environment that does have network access (your own machine, a
-cloud shell, or directly on your hosting provider).
+**Status:** as of the 1.2.0 pre-deploy gate, the whole suite has been run green against a real
+Neon database and real Razorpay test keys — **270 tests across six suites plus two browser
+suites, nothing skipped**. (Earlier revisions of this README said none of it had been run against
+a live database; that is no longer true.)
 
 ```bash
 npm install
-cp .env.example .env        # then paste in your real DATABASE_URL, JWT_SECRET, RAZORPAY_* keys
-npm run migrate              # applies the schema to your Neon database (safe to re-run — idempotent)
-npm run verify                # runs unit tests + a real DB connectivity check + a real Razorpay check
+npm run setup:browser        # ONE TIME PER MACHINE — downloads the Chromium the browser tests need
+cp .env.example .env         # then paste in your real DATABASE_URL, JWT_SECRET, RAZORPAY_* keys
+npm run migrate              # applies the schema to your database (safe to re-run — idempotent)
+npm run verify:full          # THE PRE-DEPLOY GATE — see below
 ```
 
-`npm run verify` runs, in order:
-1. **`test:unit`** — the 21 pure-logic tests (signature verification, GST/shipping math, stock-restoration idempotency).
-2. **`test:db`** — connects to your real Neon database and checks: connection succeeds, SSL is
-   actually in use, all 11 expected tables exist (i.e. the migration applied), the `pgcrypto`
-   extension is enabled, write/delete permissions work, and row-level locking (`FOR UPDATE`,
-   which the stock-reservation logic depends on) works.
-3. **`test:razorpay`** — creates a real ₹1 test-mode order against your Razorpay test keys,
-   fetches it back, and validates the signature-generation logic — confirming your keys actually
-   authenticate, without needing a browser or test card.
+### `test` vs `verify` vs `verify:full` — they make different promises
 
-If any check fails, it prints exactly which one and why (not just a stack trace) — paste that
-output back for a fix rather than guessing.
+Read this before trusting a green run. The difference is the whole point.
+
+| Command | What it covers | Can a suite skip itself? |
+|---|---|---|
+| `npm test` | Offline only — no database, no network. What CI gates on. | Yes: the browser suites skip without Chromium |
+| `npm run verify` | The offline suite **plus** integration + live connectivity | Yes: browser *and* database can skip, and it still reports success |
+| `npm run verify:full` | Identical to `verify`, but **nothing is allowed to skip** | **No** — a missing browser or test database is a *failure* |
+
+**Use `verify:full` as the pre-deploy gate.** `verify` is the developer command: it tells you
+loudly when a suite removed itself, but it still exits 0, so its green does not mean everything
+ran. This distinction exists because it went wrong for real — a run once reported success while
+the browser suite had crashed and 29 database tests had silently skipped.
+
+`verify:full` needs `TEST_DATABASE_URL` pointing at a **disposable** database (a Neon branch, or
+a second database named e.g. `chakrashri_test`) — never production, because these tests create
+and delete rows. A guard refuses to run them against a URL that does not look disposable, and it
+decides on the host and database name only, never on the credentials.
+
+Apply the migrations to that throwaway database once. `npm run migrate` reads `DATABASE_URL`, not
+`TEST_DATABASE_URL`, so point it there for that one command only:
+
+```bash
+DATABASE_URL="$TEST_DATABASE_URL" npm run migrate
+```
+
+### What the live checks actually tell you
+
+- **`test:db`** — connects to whatever `DATABASE_URL` names and checks SSL is really in use, the
+  `pgcrypto` extension is enabled, writes and deletes work, and `FOR UPDATE` row locking works
+  (the stock-reservation logic depends on it). It also checks every table this build expects,
+  grouped by the migration that creates it, so it can tell two different things apart: a database
+  that is merely **behind** (missing tables whose migration has not run — expected before any
+  deploy that adds one, reported loudly but not a failure), and genuine **schema drift** (tables
+  missing even though `_migrations` says they were applied — a real failure).
+- **`test:razorpay`** — creates a real ₹1 test-mode order, fetches it back and validates signature
+  generation, confirming your keys authenticate without needing a browser or test card.
+
+If a check fails it prints which one and why, not a stack trace.
 
 ### Manual end-to-end test (before go-live)
 
@@ -221,15 +248,140 @@ relevant files rather than guessed at:
 ```
 src/
   config/       # db + razorpay clients
-  middleware/   # auth (JWT + RBAC)
-  routes/       # auth, products, payments, bookings, admin, customer
-  utils/        # stock.js, orders.js, crypto.js, cors.js, mailer.js — see "Round 4" below
+  middleware/   # auth (JWT + RBAC), capabilities.js (AUTH-02 capability gating), validate.js
+  routes/       # auth, products, payments, bookings, admin, customer, engagement, site, support
+  utils/        # stock.js, orders.js, crypto.js, cors.js, settings.js — see "Round 4" below
+    email/      # engine.js (consent, suppression, dedupe, send) + templates.js (the 24 emails)
   server.js
-migrations/     # SQL schema (001 initial, 002 constraints + refund columns, 003 password reset)
-scripts/        # create-admin.js, run-migrations.js, test-db-connection.js,
-                # test-razorpay-connection.js, release-expired-orders.js
-test/           # unit.test.js — tests against the REAL application modules, see "Round 4" below
+migrations/     # 001-015, applied in filename order and tracked in the _migrations table.
+                # 013 security/integrity, 014 CONCURRENTLY indexes (non-transactional),
+                # 015 the email system + the three storefront capture surfaces.
+                # NEVER edit an applied migration — CI fails the build if you do, because the
+                # runner tracks by filename and will not re-run a file it has already recorded.
+scripts/        # run-migrations.js, verify-full.js (THE pre-deploy gate), create-admin.js,
+                # test-db-connection.js, test-razorpay-connection.js, reconcile-payments.js,
+                # release-expired-orders.js, send-scheduled-emails.js, check-syntax.js
+test/           # Every suite runs the REAL application modules — no reimplementations.
+                #   unit / coupons / http / security  — offline logic and middleware
+                #   frontend            — parses index.html + admin.html: CSP, SRI, XSS,
+                #                         accessible names, capability gating
+                #   browser-cards       — renders a product card in Chromium and clicks it
+                #   browser-settings    — renders the admin settings screen in Chromium
+                #   db-integration      — real Postgres: concurrency, refunds, constraints
+vendor/         # Self-hosted third-party assets, pinned by SRI hash. Marked `-text` in
+                # .gitattributes — see Round 17 before touching anything in here.
+admin.html      # The admin console (10 views). index.html is the storefront.
 ```
+
+## Round 17 — Running the 1.2.0 Pre-Deploy Gate Found Eight Defects, and the Gate Itself Was One
+
+**The headline: `npm run verify:full` had never successfully run.** Not "was not run" — *could
+not* run. Everything below was found by fixing that first and then letting the suite work.
+
+### 1. The gate could not start (`scripts/verify-full.js`)
+
+It checked `process.env.TEST_DATABASE_URL` and **never called `require('dotenv').config()`**, so
+it inspected a bare environment, found nothing, and refused to run — while printing instructions
+telling you to put `TEST_DATABASE_URL` in the `.env` file it had just declined to read. Every
+other script that reads env config loads dotenv; the one guarding them did not. That is why the
+value had been sitting correctly in `.env` the whole time and the gate still said it was missing.
+
+### 2. `vendor/**` needed `-text`, or Windows breaks the Chart.js SRI hash
+
+`core.autocrlf=true` (the Git for Windows default) rewrote `vendor/chart.umd.js` on checkout —
+205475 bytes becomes 205489, exactly 14 line endings — which changes its SHA-384 so it no longer
+matched the `integrity` attribute in `admin.html`.
+
+**The trap, and please remember it:** this looks like a production bug ("the browser refuses the
+script and the dashboard charts vanish") but production was always fine — Netlify builds from the
+LF blob in git, where the hash matches. Only the Windows working copy was wrong. **Rewriting the
+`integrity` attribute to match the local file would have made the test pass and broken the admin
+dashboard for every real visitor.** The fix is `vendor/** -text` in `.gitattributes`.
+
+Diagnosing any future hash failure — compare the working copy against the committed blob:
+
+```bash
+openssl dgst -sha384 -binary vendor/chart.umd.js | openssl base64 -A
+git show HEAD:vendor/chart.umd.js | openssl dgst -sha384 -binary | openssl base64 -A
+```
+
+Different values mean line-ending conversion, not tampering.
+
+### 3–5. Migration 015's settings were seeded, documented, and unusable
+
+`setSetting()` refuses any key absent from `DEFAULTS` in `src/utils/settings.js`. All six settings
+migration 015 seeds were missing from it, so `PUT /api/admin/settings/admin_alert_email` answered
+`400 Unknown setting` and `GET /settings` never returned them. The release notes listed "set
+`admin_alert_email` in the admin console" as a required step; it was not possible to do.
+
+Two more surfaced from the same area:
+
+- **`email_marketing_enabled` was read by nothing.** An admin could switch marketing off, watch it
+  save, and every campaign kept sending. `sendMail()` now consults it before the consent check and
+  records `skipped_marketing_disabled`, so the log distinguishes "this list is switched off" from
+  "this person never opted in".
+- **Booleans were stored as raw input.** `setSetting` accepts `'0'` for false, but `templates.js`
+  and `engine.js` read the row directly and test `value !== 'false'` — so `'0'` read as *off* in
+  the settings API and *on* in the mail engine. Booleans and emails are now stored canonically.
+
+`admin_alert_email` is validated on write because it becomes a `To:` header: CR, LF, `<`, `>`,
+comma and semicolon are refused. A malformed address otherwise fails at the moment an alert is
+being sent, which is precisely when nobody notices — the thing that was lost *was* the alert.
+
+### 6. `test:db` validated a table list frozen at migration 011
+
+It reported `ALL CHECKS PASSED — 21/21 found` against a production database that could be missing
+the entire refunds ledger and the entire email system. A check that cannot fail is worse than no
+check. The list is now grouped by migration (see the table in "Verifying" above).
+
+### 7. CI never ran `test:frontend`
+
+CI invokes the suites one by one rather than `npm test`, and that step was simply never added. So
+the CSP assertions, the XSS-escaping checks, the accessible-name checks, the capability-gating
+checks — and **the SRI check that catches defect #2** — were absent from the gate while every
+other suite was present. It existed, it worked, and no pipeline ran it. `.github/workflows/ci.yml`
+now runs it.
+
+> **If you add a test suite, add it to `ci.yml` as well.** A list of steps kept in sync by hand
+> drifts silently, and this is what that drift looked like.
+
+### 8. The settings screen, and a data-loss bug its own test caught
+
+The admin console had nine views and no settings screen — `admin.html` contained the string
+"settings" zero times, while migration 015's comment described these values as editable in "the
+admin console's settings screen". There now is one (a tenth view, gated on `settings:write`).
+
+It renders whatever the server reports as `editable` rather than a hardcoded list, so a setting
+added to `DEFAULTS` appears with no frontend change — a hardcoded list is how the six went missing
+in the first place. Controls are built with DOM calls, not interpolated HTML strings: values are
+assigned as properties (no attribute-escaping question) and the a11y suite's static scan is not
+fed a `for` attribute containing a template placeholder.
+
+`test/browser-settings.test.js` renders the real screen against a stubbed API. It earned its place
+immediately by catching a bug in that screen before it shipped: a setting present in `DEFAULTS` but
+absent from `SETTING_META` fell through to a **number** input, which silently discards a value it
+cannot parse — so a string setting rendered blank, counted as changed the instant the screen
+loaded, and would have been overwritten with `''` on the next save. Unknown types now render as
+text.
+
+### Verified
+
+`verify:full` green: 60 unit + 17 coupons + 24 http + 83 security + 51 frontend + 35 integration
+= **270 tests**, both browser suites, live Neon and Razorpay connectivity, nothing skipped.
+34 tests were added across the four suites.
+
+### Still outstanding — these need a human
+
+1. **Rotate the Neon test-database password.** A live connection string was committed in
+   `APPLY-THIS.md`. The file is redacted now, but the value remains in pushed git history, and
+   redaction is not unpublication.
+2. **Production is behind on migration 015.** `render.yaml` runs `npm run migrate` as its
+   `preDeployCommand`, so the next deploy applies it. `test:db` reports this state explicitly.
+3. `REQUIRE_TOKEN_VERSION=true` seven days after deploying.
+4. The manual ₹1 Razorpay end-to-end test — `test:razorpay` proves the keys authenticate; it
+   cannot prove the webhook lands.
+5. **Note on permissions:** `staff` holds `ANALYTICS_READ`, so a staff account can *read* the six
+   email settings via `GET /api/admin/settings`. Only `admin` (`SETTINGS_WRITE`) can change them.
 
 ## Round 16 — I Broke position:sticky While Fixing the Checkout Overflow
 
