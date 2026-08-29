@@ -41,9 +41,29 @@ function maskEmail(addr) {
   return `${local[0]}${'*'.repeat(Math.max(2, local.length - 1))}@${s.slice(at + 1)}`;
 }
 
+/**
+ * Neon's free tier suspends the compute when idle, and the first connection
+ * after that wakes it — which takes longer than DB_CONNECT_TIMEOUT_MS allows,
+ * so attempt one fails with a bare "Connection terminated due to connection
+ * timeout" and no hint that simply trying again would work. That is a miserable
+ * thing to hand somebody who is already debugging a missing email.
+ *
+ * One retry is enough: the failed attempt is itself what starts the wake-up.
+ */
+async function queryWithWake(sql, params) {
+  try {
+    return await db.query(sql, params);
+  } catch (err) {
+    if (!/timeout|ECONNRESET|terminated/i.test(err.message)) throw err;
+    console.log('  (database was asleep — waking it and retrying once)');
+    await new Promise((r) => setTimeout(r, 3000));
+    return db.query(sql, params);
+  }
+}
+
 (async () => {
   try {
-    const { rows: summary } = await db.query(
+    const { rows: summary } = await queryWithWake(
       `SELECT status, count(*)::int AS n
          FROM email_log
         WHERE created_at > now() - interval '7 days'
@@ -87,7 +107,14 @@ function maskEmail(addr) {
       console.log('');
     }
   } catch (err) {
-    console.error('\n[email-log] Could not read email_log: ' + err.message + '\n');
+    console.error('\n[email-log] Could not read email_log: ' + err.message);
+    if (/timeout|terminated/i.test(err.message)) {
+      console.error('\n  This is a connection problem, NOT evidence that anything is wrong with');
+      console.error('  your email. A suspended Neon compute can take longer to wake than the');
+      console.error('  configured timeout allows, and this already retried once. Run it again,');
+      console.error('  or run `npm run test:db` to confirm the database itself is reachable.');
+    }
+    console.error('');
     process.exitCode = 1;
   } finally {
     await db.pool.end().catch(() => {});
