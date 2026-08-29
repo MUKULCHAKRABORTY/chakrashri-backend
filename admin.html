@@ -443,6 +443,10 @@ code.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.78rem; 
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 4h16v16H4z"/><path d="M8 9h8M8 13h8M8 17h5"/></svg>
         Audit Log
       </button>
+      <button class="nav-btn" data-cap="settings:write" data-view="settings" onclick="switchView('settings')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 008 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+        Settings
+      </button>
       <button class="nav-btn" onclick="window.open(SANITY_STUDIO_URL, '_blank')" title="Opens the Sanity Studio in a new tab">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
         Journal <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-left:auto;opacity:.6;"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><path d="M15 3h6v6M10 14L21 3"/></svg>
@@ -688,6 +692,24 @@ code.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.78rem; 
             <thead><tr><th>Time</th><th>Admin</th><th>Action</th><th>Entity</th><th>Detail</th></tr></thead>
             <tbody id="auditTbody"><tr><td colspan="5" class="loading-row"><span class="spinner"></span></td></tr></tbody>
           </table></div>
+        </div>
+      </section>
+
+      <!-- ============ SETTINGS ============
+           Migration 015 seeds six email settings and documents them as "the
+           admin console's settings screen". There was no settings screen — the
+           API had GET/PUT /api/admin/settings and nothing in this file called
+           either. Every value below was changeable only by hand-writing SQL. -->
+      <section class="view" id="view-settings">
+        <div class="card" style="padding:0;">
+          <div id="settingsBody" style="padding:20px;">
+            <div class="loading-row" style="padding:24px;text-align:center;"><span class="spinner"></span></div>
+          </div>
+          <div id="settingsFooter" style="padding:16px 20px;border-top:1.5px solid var(--parchment-2);align-items:center;gap:12px;flex-wrap:wrap;display:none;">
+            <span id="settingsDirty" style="font-size:.8rem;color:#8a7768;">No unsaved changes</span>
+            <button class="btn btn-primary btn-sm" style="margin-left:auto;" id="settingsSaveBtn" onclick="saveSettings()" disabled>Save changes</button>
+            <button class="btn btn-sm" onclick="loadSettings()">Discard</button>
+          </div>
         </div>
       </section>
 
@@ -1183,7 +1205,8 @@ const VIEW_META = {
   coupons:   { title: 'Coupons', sub: 'Create and manage discount codes — limits and expiry are enforced server-side at checkout' },
   customers: { title: 'Customers', sub: 'Everyone who has an account' },
   inbox:     { title: 'Inbox', sub: 'Messages, subscribers, restock waitlist and email delivery' },
-  auditlog:  { title: 'Audit Log', sub: 'Every admin action, for accountability' }
+  auditlog:  { title: 'Audit Log', sub: 'Every admin action, for accountability' },
+  settings:  { title: 'Settings', sub: 'Shipping, COD and email behaviour — changes take effect within seconds, no deploy' }
 };
 
 function switchView(view){
@@ -1207,6 +1230,7 @@ function refreshCurrentView(){
   else if (currentView === 'customers') loadCustomers(1);
   else if (currentView === 'inbox') loadInbox();
   else if (currentView === 'auditlog') loadAuditLog();
+  else if (currentView === 'settings') loadSettings();
 }
 
 /* #18 — bumps a shared content version. Every visitor's browser compares it
@@ -3074,6 +3098,228 @@ async function loadAuditLog(){
       <td><code class="mono">${esc(e.detail ? JSON.stringify(e.detail) : '—')}</code></td>
     </tr>`).join('');
   } catch (err) { tbody.innerHTML = '<tr><td colspan="5"><div class="empty">Could not load audit log.</div></td></tr>'; }
+}
+
+/* ---------------------------------------------------------------------------
+   SETTINGS
+
+   The server owns validation — setSetting() refuses an unknown key, a
+   non-integer where an integer belongs, and an alert address that could inject
+   a mail header. This screen therefore does not re-implement any of it; it
+   renders the right control for each type and reports what the server said.
+   Duplicating the rules here would only create a second place for them to drift.
+
+   `editable` comes from the API rather than being hardcoded, so a setting added
+   to DEFAULTS server-side appears here on the next load with no frontend change.
+   Anything without an entry in SETTING_META still renders, with its key
+   humanised — an unlabelled control beats a missing one.
+--------------------------------------------------------------------------- */
+const SETTING_META = {
+  free_shipping_threshold_paise:     { group: 'Shipping', label: 'Free shipping threshold', type: 'paise', hint: 'Orders at or above this subtotal ship free.' },
+  shipping_flat_paise:               { group: 'Shipping', label: 'Flat shipping charge', type: 'paise', hint: 'Applied below the free-shipping threshold.' },
+  cod_enabled:                       { group: 'Cash on delivery', label: 'Cash on delivery offered', type: 'bool' },
+  cod_max_order_paise:               { group: 'Cash on delivery', label: 'Maximum COD order value', type: 'paise', hint: 'Above this, COD is not offered at checkout.' },
+  cod_requires_verified_contact:     { group: 'Cash on delivery', label: 'Require a verified phone or email', type: 'bool', hint: 'Turn on once OTP delivery is wired up.' },
+  max_cod_rto_before_block:          { group: 'Cash on delivery', label: 'Failed COD deliveries before blocking', type: 'int', hint: 'Returned-to-origin COD orders a customer may accumulate before COD is withdrawn from them.' },
+  order_reservation_expiry_minutes:  { group: 'Orders & reviews', label: 'Hold unpaid stock for (minutes)', type: 'int', hint: 'How long an unpaid order keeps its stock reserved before the sweep releases it.' },
+  reviews_require_approval:          { group: 'Orders & reviews', label: 'Reviews need approval before showing', type: 'bool' },
+  admin_alert_email:                 { group: 'Email', label: 'Operational alert address', type: 'email', hint: 'Where low-stock and failure alerts go. One plain address, no display name. Leave empty to fall back to FROM_EMAIL.' },
+  email_admin_alerts_enabled:        { group: 'Email', label: 'Send operational alerts', type: 'bool' },
+  email_marketing_enabled:           { group: 'Email', label: 'Send marketing email', type: 'bool', hint: 'Master switch. Off stops every campaign regardless of individual consent; it never affects order confirmations or other transactional mail.' },
+  abandoned_cart_email_after_minutes:{ group: 'Email', label: 'Abandoned checkout email after (minutes)', type: 'int', hint: 'Must stay below the stock-hold window above, or the order is cancelled before the reminder is sent.' },
+  booking_reminder_hours_before:     { group: 'Email', label: 'Booking reminder (hours before)', type: 'int' },
+  low_stock_alert_threshold:         { group: 'Email', label: 'Low-stock alert at or below', type: 'int', hint: 'Units remaining that trigger a restock alert in the daily digest.' }
+};
+
+const SETTING_GROUP_ORDER = ['Shipping', 'Cash on delivery', 'Orders & reviews', 'Email'];
+
+let settingsLoaded = {};   // key -> value as the server last reported it
+
+function humaniseKey(key){ return key.replace(/_paise$/, '').replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase()); }
+
+/* Built with DOM calls rather than a template string, for two reasons.
+   Values are assigned as properties, so no attribute-escaping question arises
+   at all — and the a11y suite scans this file's markup statically, so a label
+   whose "for" attribute is written as an interpolation reads to it as a label
+   pointing at a control literally named after the placeholder. Generating these
+   controls as text would have meant either a false failure or loosening a check
+   that is doing its job. (This comment avoids spelling that markup out, for the
+   same reason.) */
+function settingControl(key, value){
+  const meta = SETTING_META[key] || {};
+  const id = 'set_' + key;
+  let el;
+  if (meta.type === 'bool') {
+    el = document.createElement('select');
+    const on = value === true || value === 'true' || value === '1';
+    [['true', 'Yes'], ['false', 'No']].forEach(([v, text]) => {
+      const opt = document.createElement('option');
+      opt.value = v;
+      opt.textContent = text;
+      if ((v === 'true') === on) opt.selected = true;
+      el.appendChild(opt);
+    });
+    el.addEventListener('change', markSettingsDirty);
+  } else {
+    el = document.createElement('input');
+    if (meta.type === 'email') {
+      el.type = 'email';
+      el.inputMode = 'email';
+      el.autocomplete = 'off';
+      el.placeholder = 'alerts@yourdomain.com';
+    } else if (meta.type === 'int' || meta.type === 'paise') {
+      // paise and int are both non-negative integers to the server; only the hint differs.
+      el.type = 'number';
+      el.min = '0';
+      el.step = '1';
+    } else {
+      // Unknown type — a setting added to DEFAULTS server-side that has no entry
+      // here yet. It MUST be text: a number input silently discards a value it
+      // cannot parse, so a string setting would render blank, count as changed
+      // the instant the screen loaded, and be overwritten with '' by the next
+      // save. Defaulting to number destroys exactly the settings this screen
+      // knows least about.
+      el.type = 'text';
+    }
+    el.value = value == null ? '' : String(value);
+    el.addEventListener('input', markSettingsDirty);
+  }
+  el.id = id;
+  el.dataset.setting = key;
+  return el;
+}
+
+async function loadSettings(){
+  const holder = qs('#settingsBody');
+  const footer = qs('#settingsFooter');
+  footer.style.display = 'none';
+  holder.innerHTML = '<div class="loading-row" style="padding:24px;text-align:center;"><span class="spinner"></span></div>';
+  try {
+    const body = await api('/api/admin/settings');
+    const editable = body.editable || Object.keys(body.settings || {});
+    settingsLoaded = {};
+    editable.forEach((k) => { settingsLoaded[k] = body.settings ? body.settings[k] : null; });
+
+    // Group, preserving SETTING_GROUP_ORDER and putting anything unrecognised last.
+    const groups = new Map();
+    SETTING_GROUP_ORDER.forEach((g) => groups.set(g, []));
+    editable.forEach((key) => {
+      const g = (SETTING_META[key] && SETTING_META[key].group) || 'Other';
+      if (!groups.has(g)) groups.set(g, []);
+      groups.get(g).push(key);
+    });
+
+    const frag = document.createDocumentFragment();
+    let rendered = 0;
+    for (const [group, keys] of groups) {
+      if (!keys.length) continue;
+      const h = document.createElement('h3');
+      h.style.cssText = 'font-size:.72rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--oxblood);margin:22px 0 12px;';
+      h.textContent = group;
+      frag.appendChild(h);
+
+      const grid = document.createElement('div');
+      grid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:0 24px;';
+      for (const key of keys) {
+        const meta = SETTING_META[key] || {};
+        const value = settingsLoaded[key];
+
+        const field = document.createElement('div');
+        field.className = 'field';
+
+        const label = document.createElement('label');
+        label.htmlFor = 'set_' + key;
+        label.textContent = meta.label || humaniseKey(key);
+        field.appendChild(label);
+        field.appendChild(settingControl(key, value));
+
+        let hint = meta.hint || '';
+        if (meta.type === 'paise') {
+          // Stored and sent in paise; showing only paise invites a 100x mistake.
+          hint = (hint ? hint + ' ' : '') + 'Entered in paise — ' + paise(value) + '.';
+        }
+        if (hint) {
+          const hintEl = document.createElement('div');
+          hintEl.className = 'hint';
+          hintEl.textContent = hint;
+          field.appendChild(hintEl);
+        }
+        grid.appendChild(field);
+        rendered++;
+      }
+      frag.appendChild(grid);
+    }
+
+    holder.innerHTML = '';
+    if (rendered) {
+      holder.appendChild(frag);
+    } else {
+      holder.innerHTML = '<div class="empty">No editable settings returned.</div>';
+    }
+    footer.style.display = 'flex';
+    markSettingsDirty();
+  } catch (err) {
+    holder.innerHTML = '<div class="empty">Could not load settings.</div>';
+  }
+}
+
+/** Which controls differ from what the server last told us. */
+function changedSettings(){
+  const changed = [];
+  qsa('[data-setting]').forEach((el) => {
+    const key = el.dataset.setting;
+    const current = String(el.value);
+    const original = settingsLoaded[key] === null || settingsLoaded[key] === undefined ? '' : String(settingsLoaded[key]);
+    if (current !== original) changed.push({ key, value: current });
+  });
+  return changed;
+}
+
+function markSettingsDirty(){
+  const changed = changedSettings();
+  const btn = qs('#settingsSaveBtn');
+  const label = qs('#settingsDirty');
+  btn.disabled = changed.length === 0;
+  label.textContent = changed.length === 0
+    ? 'No unsaved changes'
+    : changed.length + (changed.length === 1 ? ' unsaved change' : ' unsaved changes');
+}
+
+async function saveSettings(){
+  const changed = changedSettings();
+  if (!changed.length) return;
+  const btn = qs('#settingsSaveBtn');
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+
+  // One PUT per key, sequentially: the endpoint is per-key, and a failure part
+  // way through must leave the earlier saves standing rather than being hidden
+  // behind a single rolled-up error. Each key reports its own outcome.
+  let saved = 0;
+  const failures = [];
+  for (const { key, value } of changed) {
+    try {
+      await api('/api/admin/settings/' + encodeURIComponent(key), {
+        method: 'PUT',
+        body: JSON.stringify({ value })
+      });
+      saved++;
+    } catch (err) {
+      // Show what the server actually said. Its messages are specific — "must be
+      // a single email address with no display name" tells the admin how to fix
+      // it; "could not save" tells them nothing.
+      const label = (SETTING_META[key] && SETTING_META[key].label) || key;
+      failures.push(label + ': ' + ((err && err.error) || 'request failed'));
+    }
+  }
+
+  btn.textContent = 'Save changes';
+  if (saved) toast(saved + (saved === 1 ? ' setting saved' : ' settings saved'), 'ok');
+  failures.forEach((f) => toast(f, 'err'));
+  // Re-read rather than trusting local state: the server canonicalises what it
+  // stores (booleans to true/false, an address trimmed), so this is the only
+  // way the screen reflects what is actually in the database.
+  await loadSettings();
 }
 </script>
 </body>

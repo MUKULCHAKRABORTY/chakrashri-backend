@@ -104,7 +104,23 @@ jobs:
       - name: Security and regression tests
         run: npm run test:security
 
-      - name: Install Chromium for the browser regression test
+      - name: Frontend tests
+        # This step was missing, and it is the one that would have caught the
+        # defect that prompted this change: the vendored Chart.js no longer
+        # matched the SRI hash in its own script tag, which in production means
+        # the browser refuses the file and the dashboard charts silently vanish.
+        #
+        # `npm test` has always included test:frontend. CI does not run `npm
+        # test` — it runs the suites one by one, and this one was never added.
+        # So the Content-Security-Policy assertions, the SRI check, the XSS
+        # escaping checks, the accessible-name checks and the capability-gating
+        # checks — 51 tests over the two files that are served directly to every
+        # customer and every admin — were absent from the gate while every other
+        # suite was present. A list of steps that has to be kept in sync by hand
+        # drifts silently; this is what that drift looked like.
+        run: npm run test:frontend
+
+      - name: Install Chromium for the browser regression tests
         run: npx playwright install --with-deps chromium
 
       - name: Browser regression tests
@@ -124,6 +140,17 @@ jobs:
         env:
           REQUIRE_BROWSER_TESTS: 'true'
         run: npm run test:browser
+
+      - name: Admin settings screen — browser test
+        # The settings screen is built with DOM calls and its labels are
+        # associated at runtime, so only a browser can confirm an admin sees
+        # labelled controls holding the right values. It already earned its
+        # place: it caught a setting with no SETTING_META entry rendering as a
+        # number input, which discarded its string value and would have
+        # overwritten it with '' on the next save.
+        env:
+          REQUIRE_BROWSER_TESTS: 'true'
+        run: npm run test:browser-settings
 
       - name: Database integration tests
         # These run against the live Postgres service above and cover the things

@@ -488,6 +488,61 @@ function extractFunction(html, name) {
   return null;
 }
 
+section('[fe-11] The settings screen exists and is wired to the settings API');
+{
+  // THE FINDING: migration 015 seeded six email settings and its own comment
+  // described them as self-documenting in "the admin console's settings
+  // screen". There was no settings screen. The API had GET and PUT
+  // /api/admin/settings and admin.html contained the string "settings" exactly
+  // zero times, so every one of these values was reachable only by hand-written
+  // SQL — including admin_alert_email, which the release notes listed as a
+  // required post-deploy step.
+  const admin = read('admin.html');
+
+  test('THE FINDING: the admin console has a settings view at all', () => {
+    assert.ok(admin.includes('id="view-settings"'), 'no settings view section');
+    assert.ok(/data-view="settings"/.test(admin), 'no nav button that opens it');
+    assert.ok(/settings:\s*\{\s*title:/.test(admin), 'settings has no VIEW_META entry, so switchView would throw on the title lookup');
+  });
+
+  test('opening the view actually loads it — a nav button that renders an empty pane is the bug being fixed', () => {
+    const refresh = extractFunction(admin, 'refreshCurrentView');
+    assert.ok(refresh, 'refreshCurrentView is missing');
+    assert.ok(/currentView === 'settings'/.test(refresh) && /loadSettings\(\)/.test(refresh),
+      'refreshCurrentView never calls loadSettings, so the view would stay on its spinner');
+  });
+
+  test('it reads and writes the real endpoints', () => {
+    const load = extractFunction(admin, 'loadSettings');
+    const save = extractFunction(admin, 'saveSettings');
+    assert.ok(load && load.includes('/api/admin/settings'), 'loadSettings does not GET /api/admin/settings');
+    assert.ok(save && save.includes('/api/admin/settings/'), 'saveSettings does not PUT to the per-key endpoint');
+    assert.ok(/method:\s*'PUT'/.test(save), 'saveSettings never issues a PUT');
+  });
+
+  test('the editable list comes from the server, so a setting added to DEFAULTS appears without a frontend change', () => {
+    const load = extractFunction(admin, 'loadSettings');
+    assert.ok(/body\.editable/.test(load),
+      'loadSettings does not use the API\'s `editable` list — a hardcoded list is how these six settings went missing in the first place');
+  });
+
+  test('the screen is gated on settings:write, hidden by default like every other gated control', () => {
+    assert.ok(/data-cap="settings:write"[^>]*data-view="settings"|data-view="settings"[^>]*data-cap="settings:write"/.test(admin),
+      'the settings nav button is not capability-gated');
+  });
+
+  test('every setting migration 015 seeds has a label in the console', () => {
+    for (const key of [
+      'admin_alert_email', 'email_admin_alerts_enabled', 'email_marketing_enabled',
+      'abandoned_cart_email_after_minutes', 'booking_reminder_hours_before',
+      'low_stock_alert_threshold'
+    ]) {
+      assert.ok(admin.includes(key + ':'), `${key} has no SETTING_META entry, so it renders with a raw database key as its label`);
+    }
+  });
+}
+
+// ============================================================
 section('[fe-6] HYG-05 — no API key or direct model call in client code');
 // ============================================================
 {

@@ -17,6 +17,7 @@
     "test:security": "node test/security.test.js",
     "test:frontend": "node test/frontend.test.js",
     "test:browser": "node test/browser-cards.test.js",
+    "test:browser-settings": "node test/browser-settings.test.js",
     "test:db-integration": "node test/db-integration.test.js",
 
     "test:db": "node scripts/test-db-connection.js",
@@ -24,8 +25,8 @@
 
     "setup:browser": "npx playwright install chromium",
 
-    "//test": "Everything that runs with no external services. This is what CI gates on and what to run before every commit. test:browser needs a Chromium binary that npm install does NOT fetch — run `npm run setup:browser` once per machine. Without it the test skips (exit 0) and the chain continues; set REQUIRE_BROWSER_TESTS=true, as CI does, to turn that skip into a failure.",
-    "test": "npm run check:syntax && npm run test:unit && npm run test:coupons && npm run test:http && npm run test:security && npm run test:frontend && npm run test:browser",
+    "//test": "Everything that runs with no external services. This is what CI gates on and what to run before every commit. The two browser suites (test:browser, test:browser-settings) need a Chromium binary that npm install does NOT fetch — run `npm run setup:browser` once per machine. Without it they skip (exit 0) and the chain continues; set REQUIRE_BROWSER_TESTS=true, as CI does, to turn that skip into a failure.",
+    "test": "npm run check:syntax && npm run test:unit && npm run test:coupons && npm run test:http && npm run test:security && npm run test:frontend && npm run test:browser && npm run test:browser-settings",
 
     "//verify": "The offline suite plus the integration tests and live connectivity checks. Two suites here CAN skip themselves: test:browser without a Chromium binary, and test:db-integration without a throwaway database. Both say so loudly, but a skip still leaves verify green — so this is the developer command, not the gate.",
     "verify": "npm run test && npm run test:db-integration && npm run test:db && npm run test:razorpay",
