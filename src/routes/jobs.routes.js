@@ -124,9 +124,26 @@ function requireToken(req, res, next) {
       error: 'Job trigger is not configured. Set JOBS_TRIGGER_TOKEN (32+ characters) to enable it.'
     });
   }
-  if (!tokenMatches(presentedToken(req))) {
-    logger.warn('Job trigger rejected a bad token', { ip: req.ip });
-    return res.status(401).json({ error: 'Invalid job trigger token.' });
+  // "No token arrived" and "the wrong token arrived" are the same 401 to a
+  // caller, but they are completely different problems to fix — a scheduler
+  // whose header was never saved versus one holding a stale value. Saying which
+  // leaks nothing about the correct token and turns a guessing game into a
+  // one-line diagnosis. (This distinction is here because a real cron-job.org
+  // schedule returned 401 every ten minutes and the message could not say why.)
+  const presented = presentedToken(req);
+  if (!presented) {
+    logger.warn('Job trigger called with no token header', { ip: req.ip });
+    return res.status(401).json({
+      error: 'No job trigger token was presented. Send it as the header "X-Jobs-Token", or as "Authorization: Bearer <token>".'
+    });
+  }
+  if (!tokenMatches(presented)) {
+    // Length is logged, never the value: it is the single most useful clue for
+    // a truncated copy-paste, and on its own it reveals nothing usable.
+    logger.warn('Job trigger rejected a bad token', { ip: req.ip, presentedLength: presented.length });
+    return res.status(401).json({
+      error: 'Invalid job trigger token. The value sent does not match JOBS_TRIGGER_TOKEN on the server.'
+    });
   }
   return next();
 }

@@ -432,6 +432,25 @@ section('[http-7] Free-plan job trigger — the guard, never the jobs');
       assert.strictEqual(res.status, 401);
     }));
 
+  // A scheduler that never saved its header and one holding a stale value both
+  // see 401 every ten minutes. The messages must differ or the operator cannot
+  // tell which to fix — this is a real debugging session encoded as a test.
+  test('a MISSING token and a WRONG token give different messages, without revealing the real one', () =>
+    withToken(GOOD, async () => {
+      const missing = await req(PORT, '/api/internal/jobs/run', { method: 'POST' });
+      const wrong = await req(PORT, '/api/internal/jobs/run', {
+        method: 'POST', headers: { 'X-Jobs-Token': 'q'.repeat(40) }
+      });
+      assert.strictEqual(missing.status, 401);
+      assert.strictEqual(wrong.status, 401);
+      assert.match(missing.json.error, /No job trigger token was presented/);
+      assert.match(wrong.json.error, /does not match/);
+      assert.notStrictEqual(missing.json.error, wrong.json.error);
+      for (const body of [missing.json.error, wrong.json.error]) {
+        assert.ok(!body.includes(GOOD), 'the response leaked the real token');
+      }
+    }));
+
   test('a wrong token is rejected, whether it is longer or shorter than the real one', () =>
     withToken(GOOD, async () => {
       for (const bad of ['x'.repeat(40), 'j'.repeat(39), 'j'.repeat(41), '']) {
