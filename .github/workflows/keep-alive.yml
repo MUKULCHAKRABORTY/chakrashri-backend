@@ -1,5 +1,29 @@
 # Keeps the Render free-tier API warm (#20).
 #
+# =============================================================================
+# ⚠️  DISABLE THIS BEFORE MAKING THE REPOSITORY PRIVATE.
+# =============================================================================
+# Actions minutes are unlimited on PUBLIC repositories and capped at 2,000 per
+# month on a private one. Every 10 minutes is ~4,300 runs a month, and GitHub
+# bills each run rounded UP to a whole minute — so on a private repo this single
+# workflow is roughly double the entire free allowance. It would stop partway
+# through each month, taking the keep-alive with it, and it would also starve
+# CI and the migration workflow of minutes.
+#
+# The replacement is already in place and costs nothing: point a free external
+# scheduler (cron-job.org, UptimeRobot, Better Stack) at
+#
+#   POST https://chakrashri-api.onrender.com/api/internal/jobs/run
+#   Header: X-Jobs-Token: <JOBS_TRIGGER_TOKEN>
+#
+# every 10 minutes. That call runs the three jobs Render's free plan cannot
+# schedule AND keeps the instance warm, so it replaces this workflow rather than
+# adding to it. See README → "Running on the free plan".
+#
+# Once that is set up: disable this workflow (Actions tab → this workflow →
+# "Disable workflow"), or delete the file.
+# =============================================================================
+#
 # GitHub Actions runs this on GitHub's infrastructure, so it works even when
 # your own machine is off — unlike running scripts/keep-alive.js locally.
 #

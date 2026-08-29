@@ -51,6 +51,7 @@ const couponRoutes = require('./routes/coupons.routes');
 const siteRoutes = require('./routes/site.routes');
 const supportRoutes = require('./routes/support.routes');
 const engagementRoutes = require('./routes/engagement.routes');
+const jobsRoutes = require('./routes/jobs.routes');
 const db = require('./config/db');
 const { normalizeOrigin } = require('./utils/cors');
 const { logger, requestContext, getRequestId } = require('./utils/logger');
@@ -202,6 +203,11 @@ app.use('/api/coupons', couponRoutes);
 app.use('/api/site', siteRoutes);
 app.use('/api/support', supportRoutes);
 app.use('/api/engage', engagementRoutes);
+
+// Free-plan stand-in for the three cron services in render.yaml, which Render's
+// free tier does not provide. Token-guarded, and inert until JOBS_TRIGGER_TOKEN
+// is set. Left under the rate limiter above on purpose — see jobs.routes.js.
+app.use('/api/internal/jobs', jobsRoutes);
 
 // ---------- 404 + error handling ----------
 app.use((req, res) => res.status(404).json({ error: 'Not found.' }));

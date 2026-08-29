@@ -1,0 +1,93 @@
+# Applies database migrations when main is deployed.
+#
+# WHY THIS EXISTS
+# render.yaml declares `preDeployCommand: npm run migrate`, which would run this
+# automatically before each new instance serves traffic. Render's FREE plan has
+# no pre-deploy command, so on the free plan that line does nothing and new code
+# meets an old schema. That is not hypothetical — 1.2.0 shipped to production
+# against a database still missing migration 015, so the three storefront
+# capture forms returned errors until it was applied by hand.
+#
+# WHEN YOU MOVE TO THE PAID PLAN
+# Delete this file. Render's preDeployCommand does the same job at the right
+# moment in the deploy, and running both is pointless (harmless, since the
+# runner tracks applied migrations by filename and skips them — but pointless).
+#
+# ORDERING, AND WHY IT IS SAFE
+# This workflow and Render's build start from the same push, so the migration
+# may land slightly before or after the new code. That is fine BECAUSE every
+# migration in this project is additive and re-runnable: new columns default to
+# a value that reproduces the old behaviour, so old code runs happily against
+# the new schema. If you ever write a destructive or non-backwards-compatible
+# migration, this assumption breaks and you must deploy it deliberately in two
+# stages instead.
+#
+# COST: roughly one run per push to main — a few minutes of Actions time per
+# month. Unlike the every-10-minutes keep-alive workflow, this is nowhere near
+# the 2,000-minute free allowance for a private repository.
+name: Apply migrations to production
+
+on:
+  push:
+    branches: [main]
+    # Only when something that can change the schema moves. A README-only commit
+    # does not need a database connection opened against production.
+    paths:
+      - 'migrations/**'
+      - 'scripts/run-migrations.js'
+      - 'src/config/db.js'
+      - '.github/workflows/migrate-on-deploy.yml'
+  workflow_dispatch:        # run it by hand from the Actions tab
+
+# Never let two migration runs overlap. `cancel-in-progress: false` because
+# cancelling a half-applied migration is worse than queueing behind it.
+concurrency:
+  group: migrate-production
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    name: npm run migrate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install production dependencies
+        # --omit=dev matches what Render installs. The migration runner needs pg
+        # and dotenv, both production dependencies.
+        run: npm ci --omit=dev
+
+      - name: Fail early if the secret is missing
+        # Deliberately a failure, not a skip. A migration step that silently does
+        # nothing is exactly the failure mode this whole workflow exists to fix:
+        # you would see a green tick and an unmigrated database.
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::DATABASE_URL is not set as a repository secret."
+            echo "Add it: GitHub → Settings → Secrets and variables → Actions → New repository secret."
+            echo "Use the same value Render has, including ?sslmode=verify-full."
+            echo "If you would rather run migrations by hand, delete this workflow file instead"
+            echo "of leaving it failing — but then 'npm run migrate' after every deploy is on you."
+            exit 1
+          fi
+
+      - name: Apply migrations
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DB_SSL: 'true'
+        run: npm run migrate
+
+      - name: Confirm the schema matches this build
+        # migrate exiting 0 says the files ran; this says the database actually
+        # has what the code expects. It reports "behind" vs real schema drift.
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DB_SSL: 'true'
+        run: npm run test:db

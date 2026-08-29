@@ -196,9 +196,15 @@ async function main() {
       // Loud, though — this is the difference between "the deploy will fix it"
       // and nobody noticing that production never got the schema.
       const list = behind.map((b) => `${b.migration} (${b.missing.join(', ')})`).join('; ');
+      // Deliberately does NOT say "a deploy will apply this". It said that until
+      // 1.2.0 shipped and nothing applied it: render.yaml's preDeployCommand only
+      // runs for a service created FROM that blueprint, and on Render's free plan
+      // there is no pre-deploy command at all. Telling someone to wait for a
+      // deploy that will never do it is worse than saying nothing.
       report('All expected tables exist', true,
         `every applied migration's tables are present. THIS DATABASE IS BEHIND — not yet applied: ${list}. `
-        + 'Render runs "npm run migrate" as its preDeployCommand, so a deploy applies it; run it by hand to apply it now.');
+        + 'Apply it with "npm run migrate". Do NOT assume a deploy will: that only happens on a paid '
+        + 'Render plan with a Blueprint-managed service (see README → "Running on the free plan").');
     } else {
       report('All expected tables exist', true, `${EXPECTED_TABLES.length}/${EXPECTED_TABLES.length} found`);
     }

@@ -1,3 +1,49 @@
+# =============================================================================
+# ⚠️  THIS FILE IS NOT CURRENTLY IN EFFECT. READ BEFORE TRUSTING ANYTHING IN IT.
+# =============================================================================
+#
+# This is the TARGET configuration for when the project moves to Render's paid
+# Starter plan. It is kept here, complete and ready, deliberately — do not
+# delete it to "clean up". Today it describes infrastructure that does not
+# exist.
+#
+# HOW WE KNOW IT IS INERT (checked 2026-08-29, not assumed):
+#   • The live service runs in region OREGON. This file says `region: ohio`.
+#     A Blueprint-managed service cannot disagree with its own blueprint.
+#   • The Render dashboard lists ONE service, under "Ungrouped Services" rather
+#     than a Blueprint project. The three cron services below do not exist.
+#   • A deploy went from "==> Deploying..." straight to "==> Running 'npm start'"
+#     with no migrate step, and production was still missing migration 015
+#     afterwards — so `preDeployCommand` never ran.
+#
+# The service was created by hand in the Render dashboard. A render.yaml only
+# governs services created FROM it as a Blueprint; for a hand-made service it is
+# an inert text file, however correct its contents are.
+#
+# WHAT THE FREE PLAN CANNOT DO, so you know what you are actually buying:
+#   • No cron services      → the three jobs below simply do not run.
+#   • No pre-deploy command → migrations are NOT applied on deploy.
+#   • Spins down after ~15 min idle → a Razorpay webhook can hit a sleeping
+#     instance and time out. See scripts/keep-alive.js.
+#
+# UNTIL YOU UPGRADE, these are yours to do — nothing here does them for you:
+#   1. Run `npm run migrate` by hand after any deploy that adds a migration.
+#      Check with `npm run test:db`, which says outright when the database is
+#      behind.
+#   2. Arrange the three scheduled jobs some other way. Skipping them is not
+#      cosmetic — see each service's own comment below for what breaks. The
+#      payment reconciler in particular is the safety net for "customer paid,
+#      webhook was throttled", which is MORE likely on free-tier cold starts,
+#      not less.
+#
+# WHEN YOU DO UPGRADE:
+#   Render dashboard → Blueprints → New Blueprint Instance → point it at this
+#   repo. Then delete the hand-made service, or Render will run two of them.
+#   Re-enter every `sync: false` secret, and confirm the region change is what
+#   you want (moving to ohio matches the Neon database and cuts per-query
+#   latency; it also means a new service URL unless you migrate it deliberately).
+# =============================================================================
+
 services:
   # =========================================================================
   # API
@@ -65,6 +111,14 @@ services:
       - key: SMTP_PASS
         sync: false
       - key: FROM_EMAIL
+        sync: false
+      - key: JOBS_TRIGGER_TOKEN
+        # FREE-PLAN ONLY. Lets an external scheduler start the three jobs below
+        # over HTTP, because the free tier has no cron services. Once these cron
+        # services actually exist (i.e. once this blueprint is in effect on a
+        # paid plan) it is redundant — remove it then, so there is not a second,
+        # unnecessary way to trigger background work on production.
+        # Empty or under 32 characters = the endpoint stays disabled.
         sync: false
 
   # =========================================================================

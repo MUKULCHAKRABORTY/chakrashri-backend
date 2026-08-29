@@ -382,6 +382,128 @@ section('[http-6] Body parsing & security headers');
   });
 }
 
+// ============================================================
+section('[http-7] Free-plan job trigger — the guard, never the jobs');
+// ============================================================
+// !!! DO NOT ADD A TEST THAT POSTS TO /run OR /run/:job WITH A VALID TOKEN. !!!
+//
+// That endpoint spawns scripts/release-expired-orders.js and
+// scripts/reconcile-payments.js as real child processes. Those scripts call
+// dotenv.config() themselves, so they would load the REAL .env, connect to the
+// PRODUCTION database, and cancel real orders and release real stock — while
+// this suite's db mock sat unused, because the mock only replaces the module
+// inside THIS process, not inside a child.
+//
+// Every test below therefore stops at the guard: 503 before configuration, 401
+// on a bad token, and 404 for an unknown job name — which is reached only after
+// the token check passes, so it proves authentication works without running
+// anything. GET /status never spawns.
+{
+  const GOOD = 'j'.repeat(40); // 32+ chars, as the route requires
+
+  function withToken(value, fn) {
+    const prev = process.env.JOBS_TRIGGER_TOKEN;
+    if (value === null) delete process.env.JOBS_TRIGGER_TOKEN;
+    else process.env.JOBS_TRIGGER_TOKEN = value;
+    return Promise.resolve()
+      .then(fn)
+      .finally(() => {
+        if (prev === undefined) delete process.env.JOBS_TRIGGER_TOKEN;
+        else process.env.JOBS_TRIGGER_TOKEN = prev;
+      });
+  }
+
+  test('THE FINDING: with no token configured the trigger is inert (503), not open', () =>
+    withToken(null, async () => {
+      const res = await req(PORT, '/api/internal/jobs/run', { method: 'POST' });
+      assert.strictEqual(res.status, 503, 'an unconfigured job trigger must refuse, never run');
+      assert.match(res.json.error, /JOBS_TRIGGER_TOKEN/);
+    }));
+
+  test('a token shorter than 32 characters is treated as unconfigured, not as a weak password', () =>
+    withToken('short', async () => {
+      const res = await req(PORT, '/api/internal/jobs/run', { method: 'POST' });
+      assert.strictEqual(res.status, 503);
+    }));
+
+  test('a configured trigger rejects a request with no token at all', () =>
+    withToken(GOOD, async () => {
+      const res = await req(PORT, '/api/internal/jobs/run', { method: 'POST' });
+      assert.strictEqual(res.status, 401);
+    }));
+
+  test('a wrong token is rejected, whether it is longer or shorter than the real one', () =>
+    withToken(GOOD, async () => {
+      for (const bad of ['x'.repeat(40), 'j'.repeat(39), 'j'.repeat(41), '']) {
+        const res = await req(PORT, '/api/internal/jobs/run', {
+          method: 'POST', headers: { 'X-Jobs-Token': bad }
+        });
+        assert.strictEqual(res.status, 401, `token ${JSON.stringify(bad.slice(0, 8))}… was accepted`);
+      }
+    }));
+
+  test('a valid token reaches routing — an unknown job name is a 404, and nothing is spawned', () =>
+    withToken(GOOD, async () => {
+      const res = await req(PORT, '/api/internal/jobs/run/not-a-real-job', {
+        method: 'POST', headers: { 'X-Jobs-Token': GOOD }
+      });
+      assert.strictEqual(res.status, 404, 'the token was not accepted, so this proves nothing');
+      assert.ok(Array.isArray(res.json.known), 'the 404 should name the jobs that do exist');
+      assert.ok(res.json.known.includes('payment-reconcile'));
+    }));
+
+  test('Authorization: Bearer is accepted as well as X-Jobs-Token', () =>
+    withToken(GOOD, async () => {
+      const res = await req(PORT, '/api/internal/jobs/run/not-a-real-job', {
+        method: 'POST', headers: { Authorization: `Bearer ${GOOD}` }
+      });
+      assert.strictEqual(res.status, 404, 'Bearer form was not accepted');
+    }));
+
+  test('status reports what the last run did, and is itself token-guarded', () =>
+    withToken(GOOD, async () => {
+      const denied = await req(PORT, '/api/internal/jobs/status');
+      assert.strictEqual(denied.status, 401, 'status leaked without a token');
+
+      const res = await req(PORT, '/api/internal/jobs/status', { headers: { 'X-Jobs-Token': GOOD } });
+      assert.strictEqual(res.status, 200);
+      assert.strictEqual(res.json.running, false);
+      assert.deepStrictEqual(res.json.known.sort(), ['expiry-sweep', 'payment-reconcile', 'scheduled-emails']);
+    }));
+
+  // These two are pure lookups against the route module's own tables — no
+  // request, no spawn. They exist because both failures are invisible until a
+  // job is actually due, which is the worst possible moment to discover them.
+  test('every job in the run order is a job that exists', () => {
+    const { JOBS, RUN_ORDER } = require('../src/routes/jobs.routes').__internals;
+    for (const name of RUN_ORDER) {
+      assert.ok(Object.prototype.hasOwnProperty.call(JOBS, name),
+        `RUN_ORDER lists "${name}", which is not in JOBS — the trigger would try to spawn undefined`);
+    }
+    assert.strictEqual(RUN_ORDER.length, Object.keys(JOBS).length,
+      'a job is defined but never runs in the "run everything" sequence');
+  });
+
+  test('every job points at a script that is actually on disk', () => {
+    const fs = require('fs');
+    const p = require('path');
+    const { JOBS } = require('../src/routes/jobs.routes').__internals;
+    for (const [name, file] of Object.entries(JOBS)) {
+      const full = p.join(__dirname, '..', 'scripts', file);
+      assert.ok(fs.existsSync(full),
+        `job "${name}" points at scripts/${file}, which does not exist — renaming a script would break the schedule silently`);
+    }
+  });
+
+  test('the token never appears in a URL, so it cannot be written to the request log', () => {
+    const src = require('fs').readFileSync(
+      require('path').join(__dirname, '..', 'src', 'routes', 'jobs.routes.js'), 'utf8'
+    );
+    assert.ok(!/req\.query/.test(src),
+      'the trigger reads the token from req.query somewhere — morgan logs every URL, so that writes the credential to the log on every run');
+  });
+}
+
 (async () => {
   // Resolve the ephemeral port Node actually bound to. server.js only exports
   // `app`, so the listening net.Server is found via Node's internal handle

@@ -78,6 +78,32 @@ DATABASE_URL="$TEST_DATABASE_URL" npm run migrate
 
 If a check fails it prints which one and why, not a stack trace.
 
+### One known flake, and why it is not "fixed"
+
+Running `verify:full` from a laptop against a remote Neon database occasionally fails this test:
+
+```
+FAIL - THE CORE INVARIANT: two simultaneous checkouts for the LAST unit — exactly one wins
+       The input did not match the regular expression /stock|out of stock/i. Input:
+       'timeout exceeded when trying to connect'
+```
+
+That is a connection timeout, not an oversell. The test deliberately asserts *why* the losing
+checkout failed: if the loser was rejected because it could not get a database connection, then
+nothing about the stock invariant was actually proven, and the test says so rather than passing
+for the wrong reason. **That behaviour is correct and should not be softened** — a test that
+accepts any failure from the loser would still pass on a day when the guard is genuinely broken.
+
+Re-run the suite. It is a remote-connection artifact and does not appear in CI, where Postgres
+runs as a service container next to the job:
+
+```bash
+npm run test:db-integration
+```
+
+If it fails twice in a row with the same message, that is no longer a flake — look at
+`DB_CONNECT_TIMEOUT_MS`, and at whether the Neon endpoint is throttling or asleep.
+
 ### Manual end-to-end test (before go-live)
 
 The scripts above can't fully simulate a browser completing Razorpay Checkout. Once the backend
@@ -97,9 +123,105 @@ data lands in that database.
 
 ## Deploying to Render
 
-This repo includes `render.yaml`, a Blueprint that defines both the API and the stock-expiry
-cron job in one file — Render reads it automatically once your repo is connected, so you don't
-manually configure two separate services by hand.
+This repo includes `render.yaml`, a Blueprint defining the API plus three cron services.
+
+> ### ⚠️ `render.yaml` is NOT currently in effect
+>
+> The live service was created **by hand in the Render dashboard**, and a `render.yaml` only
+> governs services created *from* it as a Blueprint. For a hand-made service it is an inert text
+> file no matter how correct it is. Verified 2026-08-29: the file says `region: ohio`, the live
+> service runs in **Oregon**; the dashboard shows one service under "Ungrouped Services" and none
+> of the three cron services exist.
+>
+> The file is kept complete and ready **on purpose** — it is the target configuration for the paid
+> Starter plan. Do not delete it to tidy up. Read the header comment inside it before changing
+> anything there.
+
+### Running on the free plan
+
+Render's free tier has no cron services and no pre-deploy command, so four things `render.yaml`
+promises do not happen. Each has a free replacement, already in the repo:
+
+| Missing on free tier | If ignored | Free replacement |
+|---|---|---|
+| `preDeployCommand: npm run migrate` | New code meets an old schema | `.github/workflows/migrate-on-deploy.yml` |
+| `chakrashri-expiry-sweep` (10 min) | Abandoned checkouts hold stock forever | external cron → job trigger |
+| `chakrashri-payment-reconcile` (15 min) | "Paid, webhook throttled" → order cancelled **and money captured** | external cron → job trigger |
+| `chakrashri-scheduled-emails` (15 min) | No restock alerts, reminders, recovery mail or digest | external cron → job trigger |
+
+The reconciler matters **more** here, not less: a free instance sleeps after ~15 minutes, so a
+Razorpay webhook can reach a cold instance and time out. Keeping it warm reduces that; only the
+reconciler catches a payment whose webhook was genuinely lost.
+
+#### Setup — three steps, once
+
+**1. Migrations.** Add your production connection string as a repository secret named
+`DATABASE_URL` (GitHub → Settings → Secrets and variables → Actions). `migrate-on-deploy.yml`
+then applies migrations on every push to `main` that touches `migrations/`, and fails loudly if
+the secret is missing rather than skipping silently. Delete that workflow when you upgrade —
+Render's `preDeployCommand` does the same job at a better moment.
+
+**2. Generate a job-trigger token** and set it as `JOBS_TRIGGER_TOKEN` in the Render dashboard
+(Environment → Add Environment Variable), then redeploy:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+Until it is set, the endpoint answers `503` and runs nothing. That is deliberate — a blank
+setting must never mean "no authentication required".
+
+**3. Point a free scheduler at the trigger.** [cron-job.org](https://cron-job.org),
+UptimeRobot and Better Stack all do this on their free tiers. Configure:
+
+- URL — `https://chakrashri-api.onrender.com/api/internal/jobs/run`
+- Method — `POST`
+- Header — `X-Jobs-Token: <the token from step 2>` (`Authorization: Bearer <token>` also works)
+- Every 10 minutes
+
+The token goes in a **header, never the query string** — the request logger records every URL, so
+`?token=…` would write the credential into the log on every single run.
+
+This one call runs all three jobs in sequence *and* keeps the instance warm, so it replaces
+`.github/workflows/keep-alive.yml`. **Disable that workflow once this is working** — see its
+header comment: at every 10 minutes it costs roughly double the free Actions allowance on a
+private repository.
+
+#### Checking it works
+
+The trigger returns `202` as soon as the run starts, because an external scheduler will time out
+long before the jobs finish (cron-job.org allows 30s; a cold start alone can take ~50s). `202`
+therefore means *started*, not *succeeded*. Ask for the outcome separately:
+
+> **Expect occasional timeouts in the scheduler's history, and don't chase them.** If the instance
+> had gone to sleep, waking it takes longer than the scheduler is willing to wait — so it records a
+> timeout even though your server received the request and ran the jobs anyway. Set the scheduler's
+> timeout to its maximum, and treat `/status` (below) as the source of truth for whether work
+> actually happened, not the cron dashboard's red ticks.
+
+```bash
+curl -s -H "X-Jobs-Token: $JOBS_TRIGGER_TOKEN" https://chakrashri-api.onrender.com/api/internal/jobs/status
+```
+
+You can also run one job on its own — useful when debugging, and what to reach for if a payment
+looks stuck:
+
+```bash
+curl -s -X POST -H "X-Jobs-Token: $JOBS_TRIGGER_TOKEN" https://chakrashri-api.onrender.com/api/internal/jobs/run/payment-reconcile
+```
+
+Valid names: `expiry-sweep`, `payment-reconcile`, `scheduled-emails`.
+
+**Design note worth knowing before you change it:** the trigger runs each script as its own
+child process, exactly as Render's cron would — it does not `require()` them. Two of the three
+call `main()` at import time and then `db.pool.end()` and `process.exit()`, so importing either
+into the web process would close the pool the API is serving from and shut the server down. See
+the header of `src/routes/jobs.routes.js`.
+
+**When you upgrade to Starter:** Render dashboard → Blueprints → New Blueprint Instance → point it
+at this repo, then delete the hand-made service so you aren't billed for two. Re-enter every
+`sync: false` secret. Then remove `migrate-on-deploy.yml`, delete the external cron schedule, and
+drop `JOBS_TRIGGER_TOKEN` — the real cron services take over all of it.
 
 ### 1. Push this code to GitHub
 Render deploys from a Git repository, not a zip upload.
@@ -272,6 +394,59 @@ vendor/         # Self-hosted third-party assets, pinned by SRI hash. Marked `-t
                 # .gitattributes — see Round 17 before touching anything in here.
 admin.html      # The admin console (10 views). index.html is the storefront.
 ```
+
+## Round 18 — `render.yaml` Was Never In Effect, and Nothing Scheduled Had Ever Run
+
+**The finding: the live Render service was created by hand in the dashboard, so `render.yaml`
+has never governed anything.** A blueprint file only applies to services created *from* it. The
+proof was in the region — the file says `region: ohio`, the running service is in **Oregon** —
+plus a dashboard showing one service under "Ungrouped Services" and a deploy log going straight
+from `==> Deploying...` to `==> Running 'npm start'` with no migrate step.
+
+Consequences, all live at the time:
+
+- Migration 015 never reached production, so 1.2.0 served a schema without `email_log`,
+  `stock_notifications`, `email_subscriptions` or `contact_messages`. The three storefront
+  capture forms were returning errors, and order-confirmation dedupe was silently disabled —
+  meaning a browser-confirmed *and* webhook-confirmed order could mail the customer twice.
+- **None of the three cron services existed.** No expiry sweep (abandoned checkouts held stock
+  permanently), no payment reconciliation (the safety net for "customer paid, webhook throttled",
+  which ends with the order cancelled and the money captured), no scheduled email.
+
+Render's free plan offers neither cron services nor a pre-deploy command, so these were replaced
+rather than fixed in place. `render.yaml` is kept intact for the eventual upgrade and now opens
+with a header stating plainly that it is inert, how that was determined, and what to do on
+upgrade. Full setup lives in "Running on the free plan" above.
+
+**`.github/workflows/migrate-on-deploy.yml`** replaces `preDeployCommand`. It fails loudly when
+`DATABASE_URL` is absent instead of skipping — a migration step that silently does nothing is the
+exact failure being fixed. It runs only on pushes touching `migrations/`, so it costs a few
+Actions minutes a month.
+
+**`src/routes/jobs.routes.js`** replaces the three cron services: one token-guarded endpoint a
+free external scheduler calls every 10 minutes, which also keeps the instance warm.
+
+Two decisions in it are load-bearing:
+
+- **It spawns child processes rather than importing the scripts.** `release-expired-orders.js`
+  and `reconcile-payments.js` call `main()` at import time and then `db.pool.end()` and
+  `process.exit()` — requiring either from the web process would close the pool the API is
+  serving from and shut the server down. (`send-scheduled-emails.js` *is* import-safe, which is
+  precisely the kind of asymmetry that becomes a 3am outage.) Spawning is also what Render's cron
+  does, so exit codes and pool lifetimes stay exactly as designed.
+- **The token is read from a header, never a query string.** morgan logs `:url` on every request,
+  so `?token=…` would write the credential into the log on every run. A test asserts `req.query`
+  never appears in that file.
+
+It fails closed: with `JOBS_TRIGGER_TOKEN` unset or under 32 characters the endpoint answers 503
+and runs nothing. Eight tests cover the guard; **none of them ever POST to `/run` with a valid
+token**, because that spawns the real scripts, which load the real `.env` and would operate on
+the production database — the suite's db mock does not reach into a child process. There is a
+comment saying so above them.
+
+`.github/workflows/keep-alive.yml` now carries a warning to disable it before the repository goes
+private: at every 10 minutes it is ~4,300 runs a month against a 2,000-minute free allowance, so
+it would starve CI and the migration workflow. The external scheduler above replaces it.
 
 ## Round 17 — Running the 1.2.0 Pre-Deploy Gate Found Eight Defects, and the Gate Itself Was One
 
