@@ -71,9 +71,21 @@
 </script>
 <!-- Rewritten per view by injectProductJsonLd(); empty until a product page renders. -->
 <script type="application/ld+json" id="ldPage"></script>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700;800&amp;family=Poppins:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&amp;display=swap" rel="stylesheet">
+<!-- ORDER MATTERS HERE, and it is not obvious.
+
+     This block sits ABOVE the Google Fonts stylesheet on purpose. An inline
+     script element is blocked until every stylesheet before it has loaded — the
+     browser has to assume the script might read computed styles — so with the
+     font sheet first, the wake-up call below waited on fonts.googleapis.com
+     before it was even sent. On a slow mobile connection that is hundreds of
+     milliseconds added to a 30-60 second cold start, for nothing.
+
+     (The tag name is spelled out rather than written literally: several checks
+     in this repo find inline scripts by scanning the source, and a comment that
+     mentions the tag would be counted as one.)
+
+     Moved here, the knock is the FIRST request the page makes. Do not reorder
+     these two without re-reading this. -->
 <!-- ===================================================================
      COLD START — first of three places this is handled.
      ===================================================================
@@ -99,6 +111,18 @@
 
   window.__BOOT__ = (function(){
     var boot = { t0: Date.now(), awakeAt: null };
+
+    /* Already greeted in this session? Then this is a second page load, not an
+       arrival — mark the document before the body is parsed so the welcome is
+       never painted at all. Setting the class here rather than removing the
+       element later is what avoids a flash of it on every subsequent page.
+
+       This is where most of the performance win lives: a shopper opening six
+       products sees the greeting once, and the other five loads carry no
+       overlay and no Largest Contentful Paint penalty. */
+    try{
+      if(sessionStorage.getItem('chakrashri_welcomed')) document.documentElement.classList.add('welcomed');
+    }catch(e){ /* private mode — greet again, which is the safe direction */ }
 
     /* TWO knocks, because there are TWO things asleep and they wake
        independently.
@@ -142,6 +166,9 @@
     return boot;
   })();
 </script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700;800&amp;family=Poppins:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&amp;display=swap" rel="stylesheet">
 <style>
 
 /* ============================================================
@@ -538,7 +565,7 @@ p{ color: var(--text-soft); }
 .mini-cart{ display:flex; flex-direction:column; height:100%; }
 .mini-cart-items{ flex:1; overflow-y:auto; padding:10px 20px; }
 .mc-row{ display:flex; gap:13px; padding:16px 0; border-bottom:1px solid var(--line); }
-.mc-thumb{ width:64px; height:64px; border-radius:var(--radius-sm); flex-shrink:0; }
+.mc-thumb{ width:64px; height:64px; border-radius:var(--radius-sm); flex-shrink:0; overflow:hidden; }
 .mc-info{ flex:1; min-width:0; }
 .mc-info .n{ font-size:.86rem; font-weight:600; color:var(--ink); display:block; margin-bottom:3px; }
 .mc-info .meta{ font-size:.76rem; color:var(--text-mute); }
@@ -1395,7 +1422,7 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
 .cart-row{ display:grid; grid-template-columns:2.4fr .9fr 1fr .8fr .5fr; gap:var(--sp-4); align-items:center; padding:20px 22px; border-bottom:1px solid var(--line); }
 .cart-row:last-child{ border-bottom:none; }
 .cart-prod{ display:flex; align-items:center; gap:14px; }
-.cart-thumb{ width:70px; height:70px; border-radius:var(--radius-sm); flex-shrink:0; }
+.cart-thumb{ width:70px; height:70px; border-radius:var(--radius-sm); flex-shrink:0; overflow:hidden; }
 .cart-prod .n{ font-size:.9rem; font-weight:600; color:var(--ink); margin-bottom:4px; }
 .cart-prod .meta{ font-size:.78rem; color:var(--text-mute); }
 .cart-remove-x{ font-size:.76rem; color:var(--danger); margin-top:6px; display:inline-flex; align-items:center; gap:4px; }
@@ -1464,7 +1491,7 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
 
 .order-review-item{ display:flex; gap:12px; padding:12px 0; border-bottom:1px solid var(--line); align-items:center; }
 .order-review-item:last-child{ border-bottom:none; }
-.order-review-item .thumb{ width:50px; height:50px; border-radius:var(--radius-sm); flex-shrink:0; }
+.order-review-item .thumb{ width:50px; height:50px; border-radius:var(--radius-sm); flex-shrink:0; overflow:hidden; }
 .order-review-item .n{ flex:1; font-size:.82rem; color:var(--text); }
 .order-review-item .n b{ color:var(--ink); display:block; font-size:.85rem; }
 .order-review-item .amt{ font-size:.85rem; font-weight:700; color:var(--ink); }
@@ -1523,7 +1550,10 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
 .wait-suggest-sub{ font-size:.85rem; color:var(--text); margin:0 0 14px; line-height:1.5; }
 .wait-items{ display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:12px; }
 .wait-item{ border:1px solid var(--line); border-radius:var(--radius-sm); padding:10px; display:flex; flex-direction:column; gap:8px; background:#fff; }
-.wait-item .thumb{ aspect-ratio:1/1; border-radius:var(--radius-sm); display:flex; align-items:center; justify-content:center; }
+/* overflow:hidden is what makes the border-radius actually clip the photo.
+   Without it a square image renders hard-cornered inside a rounded frame —
+   which was true of every thumb on the site, not only this one. */
+.wait-item .thumb{ aspect-ratio:1/1; border-radius:var(--radius-sm); display:flex; align-items:center; justify-content:center; overflow:hidden; }
 .wait-item .thumb svg{ width:52%; height:52%; }
 .wait-item .nm{ font-size:.8rem; color:var(--ink); font-weight:600; line-height:1.3; }
 .wait-item .pr{ font-size:.86rem; color:var(--oxblood); font-weight:700; }
@@ -1835,6 +1865,10 @@ a.p-media:focus-visible, a.p-name:focus-visible{ outline:2px solid var(--oxblood
      =================================================================== -->
 <div id="awakenScreen" role="status" aria-live="polite" aria-label="Loading Chakrashri">
   <style>
+    /* Set by the head boot script when this session has already been greeted.
+       display:none rather than opacity so nothing is painted, measured, or
+       animated on a repeat load. */
+    html.welcomed #awakenScreen{ display:none !important; }
     #awakenScreen{ position:fixed; inset:0; z-index:99999; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:26px;
       background:radial-gradient(circle at 50% 45%, #3A1019 0%, #2B0A12 70%); color:#F1E2C8;
       transition:opacity .55s ease, visibility .55s ease; }
@@ -1842,14 +1876,65 @@ a.p-media:focus-visible, a.p-name:focus-visible{ outline:2px solid var(--oxblood
     #awakenScreen svg{ width:min(46vw, 190px); height:auto; overflow:visible; }
     #awakenScreen .awaken-spin{ transform-origin:250px 250px; animation:awakenSpin 24s linear infinite; }
     #awakenScreen .awaken-bindu{ transform-origin:250px 250px; animation:awakenPulse 1.6s ease-in-out infinite; }
-    #awakenScreen .awaken-word{ font-family:Cinzel, Georgia, serif; letter-spacing:.34em; text-indent:.34em; font-size:.82rem; text-transform:uppercase; color:#C9A227; }
-    #awakenScreen .awaken-sub{ font-family:Poppins, system-ui, sans-serif; font-size:.74rem; color:rgba(241,226,200,.62); margin-top:-16px; min-height:1.2em; }
+    #awakenScreen .awaken-welcome{ display:flex; flex-direction:column; align-items:center; gap:.55em; text-align:center; padding:0 6vw; max-width:100%; }
+    /* clamp() rather than a breakpoint: this is one line of text whose only job
+       is to fit, and it has to look deliberate on a 320px phone and a 1600px
+       desktop alike. */
+    #awakenScreen .awaken-greet{ font-family:Poppins, system-ui, sans-serif; font-size:clamp(.62rem,2.6vw,.78rem);
+      letter-spacing:.42em; text-indent:.42em; text-transform:uppercase; color:rgba(241,226,200,.66);
+      opacity:0; animation:awakenGreetIn .8s ease .15s forwards; }
+    #awakenScreen .awaken-brand{ display:block; font-family:Cinzel, Georgia, serif; font-weight:700;
+      font-size:clamp(1.75rem,8.5vw,3.5rem); letter-spacing:.1em; text-indent:.1em; line-height:1.05;
+      white-space:nowrap;
+      /* Fallback FIRST. If background-clip:text is unsupported the gradient
+         below never paints, and a transparent colour would render the brand
+         name invisible — the one thing this screen exists to show. */
+      color:#E8CE86; }
+    @supports ((-webkit-background-clip:text) or (background-clip:text)){
+      #awakenScreen .awaken-brand{
+        background:linear-gradient(100deg,#B8901F 0%,#F3DFA6 22%,#FFF6DC 38%,#E8CE86 52%,#F3DFA6 68%,#B8901F 100%);
+        background-size:260% 100%;
+        -webkit-background-clip:text; background-clip:text;
+        -webkit-text-fill-color:transparent; color:transparent;
+        animation:awakenSheen 3.6s ease-in-out .9s infinite; }
+    }
+    /* Each letter rises in turn. Staggered with nth-child rather than inline
+       styles so the markup stays clean and the CSP needs no exception. */
+    #awakenScreen .awaken-brand > span{ display:inline-block; opacity:0; transform:translateY(.5em);
+      animation:awakenLetterIn .62s cubic-bezier(.22,1,.36,1) forwards; }
+    #awakenScreen .awaken-brand > span:nth-child(1){ animation-delay:.28s; }
+    #awakenScreen .awaken-brand > span:nth-child(2){ animation-delay:.35s; }
+    #awakenScreen .awaken-brand > span:nth-child(3){ animation-delay:.42s; }
+    #awakenScreen .awaken-brand > span:nth-child(4){ animation-delay:.49s; }
+    #awakenScreen .awaken-brand > span:nth-child(5){ animation-delay:.56s; }
+    #awakenScreen .awaken-brand > span:nth-child(6){ animation-delay:.63s; }
+    #awakenScreen .awaken-brand > span:nth-child(7){ animation-delay:.70s; }
+    #awakenScreen .awaken-brand > span:nth-child(8){ animation-delay:.77s; }
+    #awakenScreen .awaken-brand > span:nth-child(9){ animation-delay:.84s; }
+    #awakenScreen .awaken-brand > span:nth-child(10){ animation-delay:.91s; }
+    #awakenScreen .awaken-sub{ font-family:Poppins, system-ui, sans-serif; font-size:clamp(.68rem,2.4vw,.76rem);
+      color:rgba(241,226,200,.6); min-height:1.2em; text-align:center; padding:0 8vw; }
+    @keyframes awakenGreetIn{ from{ opacity:0; transform:translateY(6px); } to{ opacity:1; transform:none; } }
+    @keyframes awakenLetterIn{ to{ opacity:1; transform:none; } }
+    @keyframes awakenSheen{ 0%{ background-position:140% 50%; } 100%{ background-position:-40% 50%; } }
     @keyframes awakenSpin{ to{ transform:rotate(360deg); } }
     @keyframes awakenPulse{ 0%,100%{ opacity:.35; r:4; } 50%{ opacity:1; r:7; } }
     /* An animation that cannot be turned off is an accessibility failure, and
        this one covers the whole viewport. The mark still reads as a mark. */
+    /* Reduced motion must still show the FINISHED state, never the starting
+       one: cancelling the animation without this would leave every letter at
+       opacity 0 and the brand name would simply never appear. */
     @media (prefers-reduced-motion:reduce){
       #awakenScreen .awaken-spin, #awakenScreen .awaken-bindu{ animation:none; }
+      #awakenScreen .awaken-brand{ animation:none; }
+      #awakenScreen .awaken-greet{ animation:none; opacity:1; }
+      #awakenScreen .awaken-brand > span{ animation:none; opacity:1; transform:none; }
+    }
+    /* A short viewport (landscape phone) must not clip the mark or the name. */
+    @media (max-height:520px){
+      #awakenScreen{ gap:14px; }
+      #awakenScreen svg{ width:min(26vh,120px); }
+      #awakenScreen .awaken-brand{ font-size:clamp(1.4rem,6vh,2.2rem); }
     }
   </style>
   <svg viewBox="0 0 500 500" aria-hidden="true">
@@ -1876,7 +1961,13 @@ a.p-media:focus-visible, a.p-name:focus-visible{ outline:2px solid var(--oxblood
     </g>
     <circle class="awaken-bindu" cx="250" cy="250" r="5.5" fill="#F1E2C8"/>
   </svg>
-  <div class="awaken-word">Chakrashri</div>
+  <div class="awaken-welcome">
+    <span class="awaken-greet">Welcome to</span>
+    <!-- One span per letter so each can rise in turn. aria-label carries the
+         whole word, and the letters are hidden from assistive tech, so a screen
+         reader hears "Chakrashri" rather than ten separate characters. -->
+    <span class="awaken-brand" role="text" aria-label="Chakrashri"><span aria-hidden="true">C</span><span aria-hidden="true">H</span><span aria-hidden="true">A</span><span aria-hidden="true">K</span><span aria-hidden="true">R</span><span aria-hidden="true">A</span><span aria-hidden="true">S</span><span aria-hidden="true">H</span><span aria-hidden="true">R</span><span aria-hidden="true">I</span></span>
+  </div>
   <div class="awaken-sub" id="awakenSub"></div>
 </div>
 
@@ -3247,7 +3338,7 @@ a.p-media:focus-visible, a.p-name:focus-visible{ outline:2px solid var(--oxblood
       </div>
       <div>
         <h3 id="waitTitle">Preparing your secure checkout</h3>
-        <p class="wait-status" id="waitStatus">Connecting to our payment service…</p>
+        <p class="wait-status" id="waitStatus">Setting up your secure payment…</p>
       </div>
     </div>
     <div class="wait-progress"><div class="wait-progress-bar" id="waitBar"></div></div>
@@ -3549,8 +3640,16 @@ async function apiFetch(path, opts){
       }
     }
     if(networkError){
-      throw { error: attempts > 1
-        ? 'Could not reach the server — it may be starting up. Please try again in a moment.'
+      // `transport: true` is the machine-readable fact; the text beside it is
+      // for the customer and is free to change.
+      //
+      // THE TRAP THIS CLOSES: isTransportFailure used to decide by pattern-
+      // matching this very sentence. Rewording it for tone — which is exactly
+      // what happened — silently stopped queued actions being recognised as
+      // retryable, so the outbox would have thrown them away instead of
+      // saving them. Copy and control flow must never share a source of truth.
+      throw { transport: true, error: attempts > 1
+        ? 'That did not go through just now. Please try again in a moment.'
         : 'The server did not respond, so this may not have gone through. Please check before trying again.' };
     }
     // Any answer at all — including a 4xx — proves the process and its route
@@ -5231,7 +5330,7 @@ function renderGridInto(containerId, list){
     el.innerHTML = '<div class="empty-state" style="grid-column:1/-1;">' +
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M12 9v4"/><path d="M12 17h.01"/><circle cx="12" cy="12" r="9"/></svg>' +
       '<h3>We could not load the collection</h3>' +
-      '<p>This is on us, not on you — our storefront is waking up. Please try again in a moment.</p>' +
+      '<p>We are refreshing the collection. Please try again in a moment.</p>' +
       '<button class="btn btn-primary" onclick="retryCatalogLoad()">Try Again</button>' +
     '</div>';
     return;
@@ -5297,10 +5396,15 @@ function renderDealGrid(){
 function findCartLine(id, variant){
   return cart.find(function(l){ return l.id === id && (l.variant || '') === (variant || ''); });
 }
-function addToCart(id, qty, variant, variantId, variantImage){
+/* unitPrice is the EFFECTIVE per-unit price in rupees for THIS line — the
+   chosen variant's price when there is one, otherwise the base product price.
+   Callers that add a plain product may omit it. Display only: the server
+   recomputes every amount from the database at checkout. */
+function addToCart(id, qty, variant, variantId, variantImage, unitPrice){
   qty = qty || 1;
   const p = getProduct(id);
   if(!p || !p.stock) return;
+  const effectivePrice = Number.isFinite(Number(unitPrice)) ? Number(unitPrice) : (p ? p.price : 0);
   const line = findCartLine(id, variant);
   if(line){
     line.qty += qty;
@@ -5308,10 +5412,13 @@ function addToCart(id, qty, variant, variantId, variantImage){
     // before variants existed, or a line added from a view that didn't know it).
     if(variantId && !line.variantId) line.variantId = variantId;
     if(variantImage && !line.variantImage) line.variantImage = variantImage;
+    // Refresh the price too: the variant may have been repriced since this line
+    // was created, and the number on screen should follow what we last saw.
+    line.unitPrice = effectivePrice;
   } else {
     // snap: what this line needs to render itself when the catalog is not
     // available — see the comment on getCartLinesWithProducts.
-    cart.push({ id:id, qty:qty, variant: variant || '', variantId: variantId || null, variantImage: variantImage || null, snap: cartLineSnapshot(p) });
+    cart.push({ id:id, qty:qty, variant: variant || '', variantId: variantId || null, variantImage: variantImage || null, unitPrice: effectivePrice, snap: cartLineSnapshot(p) });
   }
   saveCart();
   updateCartUI();
@@ -5368,6 +5475,58 @@ function changeCartQty(id, variant, delta){
    server and never used to compute what anyone pays. cartHasUnresolvedLines()
    below is what stops a customer paying against a total we are not sure of.
    --------------------------------------------------------------------------- */
+/* ---------------------------------------------------------------------------
+   THE VARIANT PRICE BUG.
+   ---------------------------------------------------------------------------
+   A product with variants can price each variant differently — a 3-inch
+   shivling is not the price of the 2-inch one. The server knows this and uses
+   it: utils/orders.js reads `variant.price_paise != null ? variant.price_paise
+   : product.price_paise` when it builds the order.
+
+   The cart did not. addToCart recorded the variantId and the variant image but
+   NOT its price, so every price the customer saw — the mini-cart unit price,
+   the cart page price and line total, the checkout line total, and the
+   subtotal that drives shipping and the final total — was the BASE product
+   price. A customer choosing a dearer variant was quoted the cheaper number
+   all the way to the payment sheet, and then charged correctly.
+
+   The order was never wrong. Only the number the customer agreed to was.
+
+   The fix is to record the effective unit price on the line at the moment it
+   is added, and to read it through this one function everywhere a cart price
+   is rendered. Legacy lines saved before this existed have no unitPrice and
+   fall back to the base price — exactly what they did before, so nothing
+   regresses — and refreshCartVariantPrices below repairs them as soon as the
+   product detail that knows the real price is loaded. */
+function cartUnitPrice(line, product){
+  const stored = line && Number(line.unitPrice);
+  if(Number.isFinite(stored) && stored >= 0) return stored;
+  return (product && Number(product.price)) || 0;
+}
+
+/* Repairs cart lines whose variant price we did not know when they were added.
+   renderProductDetail fetches the full variant list for the product being
+   viewed, which is the only place those prices become available on the client,
+   so this is called from there. Silent and idempotent: it writes only when a
+   price actually differs from what the line already carries. */
+function refreshCartVariantPrices(productId, variants){
+  if(!Array.isArray(variants) || !variants.length) return false;
+  let changed = false;
+  cart.forEach(function(l){
+    if(String(l.id) !== String(productId) || !l.variantId) return;
+    const v = variants.find(function(x){ return String(x.id) === String(l.variantId); });
+    if(!v) return;
+    const base = getProduct(l.id);
+    const price = (v.price_paise !== null && v.price_paise !== undefined)
+      ? Number(v.price_paise) / 100
+      : (base ? base.price : null);
+    if(price === null || !Number.isFinite(price)) return;
+    if(l.unitPrice !== price){ l.unitPrice = price; changed = true; }
+  });
+  if(changed){ saveCart(); updateCartUI(); }
+  return changed;
+}
+
 function cartLineSnapshot(p){
   if(!p) return null;
   return {
@@ -5390,7 +5549,9 @@ function productFromCartLine(l){
     slug: l.snap.slug,
     name: l.snap.name,
     cat: l.snap.cat || 'lingam',
-    price: Number(l.snap.price) || 0,
+    // The line's own unitPrice wins over the snapshot: for a variant line the
+    // snapshot holds the BASE product price, which is the wrong number.
+    price: (Number.isFinite(Number(l.unitPrice)) ? Number(l.unitPrice) : Number(l.snap.price)) || 0,
     mrp: Number(l.snap.mrp) || Number(l.snap.price) || 0,
     rating: null,
     reviews: 0,
@@ -5445,7 +5606,7 @@ function backfillCartSnapshots(){
 }
 function getCartCount(){ return cart.reduce(function(s,l){ return s + l.qty; }, 0); }
 function getCartSubtotal(){
-  return getCartLinesWithProducts().reduce(function(s,x){ return s + x.product.price * x.line.qty; }, 0);
+  return getCartLinesWithProducts().reduce(function(s,x){ return s + cartUnitPrice(x.line, x.product) * x.line.qty; }, 0);
 }
 function getShippingCost(subtotal){ return subtotal >= 999 || subtotal === 0 ? 0 : 79; }
 
@@ -5476,7 +5637,7 @@ function miniCartRowHTML(x){
     '<div class="mc-thumb" style="' + mediaStyle(p.cat,0) + 'display:flex;align-items:center;justify-content:center;">' + productThumbInnerHTML(p, l) + '</div>' +
     '<div class="mc-info">' +
       '<span class="n">' + escapeHtml(p.name) + '</span>' +
-      '<span class="meta">' + (l.variant ? l.variant + ' &middot; ' : '') + formatINR(p.price) + '</span>' +
+      '<span class="meta">' + (l.variant ? l.variant + ' &middot; ' : '') + formatINR(cartUnitPrice(l, p)) + '</span>' +
       '<div class="price-row">' +
         '<div class="mc-qty">' +
           '<button onclick="changeCartQty(\'' + p.id + '\',\'' + l.variant + '\',-1)" aria-label="Decrease quantity">−</button>' +
@@ -5940,6 +6101,10 @@ async function renderProductDetail(id){
     p.properties = detail.properties || [];
     p.variantOptions = detail.options || [];
     p.variants = detail.variants || [];
+    // This fetch is the only place variant prices reach the client. Use it to
+    // repair any cart line for this product that was saved before its variant
+    // price was recorded, or whose variant has since been repriced.
+    refreshCartVariantPrices(p.id, p.variants);
     qs('#pdtab-spec').innerHTML = specTableHTML(p);
     renderVariantSelector(p);
     renderVariantsTab(p);
@@ -6384,12 +6549,25 @@ function pdBuyNow(id){
   const label = pdSelectedVariant
     ? (pdSelectedVariant.option_values || []).map(function(x){ return x.option + ': ' + x.value; }).join(' / ')
     : '';
-  addToCart(id, pdQty, label, pdSelectedVariant ? pdSelectedVariant.id : null,
-            pdSelectedVariant ? pdSelectedVariant.image_url : null);
+  addToCart(id, pdQty, label,
+            pdSelectedVariant ? pdSelectedVariant.id : null,
+            pdSelectedVariant ? pdSelectedVariant.image_url : null,
+            variantUnitPrice(p, pdSelectedVariant));
   pdQty = 1;
   const disp = qs('#pdQtyDisplay');
   if(disp) disp.textContent = 1;
   navigateTo('checkout');
+}
+
+/* The price a chosen variant actually sells at. Mirrors the server's rule in
+   utils/orders.js exactly: a variant with its own price_paise overrides the
+   base product, and a NULL price_paise means "inherit the base". Written once
+   so Add to Cart and Buy Now cannot drift apart. */
+function variantUnitPrice(product, variant){
+  if(variant && variant.price_paise !== null && variant.price_paise !== undefined){
+    return Number(variant.price_paise) / 100;
+  }
+  return product ? product.price : 0;
 }
 
 function pdAddToCart(id){
@@ -6409,7 +6587,10 @@ function pdAddToCart(id){
   const label = pdSelectedVariant
     ? (pdSelectedVariant.option_values || []).map(function(x){ return x.option + ': ' + x.value; }).join(' / ')
     : '';
-  addToCart(id, pdQty, label, pdSelectedVariant ? pdSelectedVariant.id : null, pdSelectedVariant ? pdSelectedVariant.image_url : null);
+  addToCart(id, pdQty, label,
+    pdSelectedVariant ? pdSelectedVariant.id : null,
+    pdSelectedVariant ? pdSelectedVariant.image_url : null,
+    variantUnitPrice(p, pdSelectedVariant));
   pdQty = 1;
   const disp = qs('#pdQtyDisplay');
   if(disp) disp.textContent = 1;
@@ -6527,9 +6708,9 @@ function renderCartPage(){
           '<span class="cart-remove-x" onclick="removeFromCart(\'' + p.id + '\',\'' + l.variant + '\')"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg> Remove</span>' +
         '</div>' +
       '</div>' +
-      '<div class="cart-price-col" data-label="Price">' + formatINR(p.price) + '</div>' +
+      '<div class="cart-price-col" data-label="Price">' + formatINR(cartUnitPrice(l, p)) + '</div>' +
       '<div data-label="Quantity"><div class="mc-qty" style="border:1px solid var(--line);border-radius:var(--radius-full);width:fit-content;"><button onclick="changeCartQty(\'' + p.id + '\',\'' + l.variant + '\',-1)">−</button><span style="padding:0 6px;">' + l.qty + '</span><button onclick="changeCartQty(\'' + p.id + '\',\'' + l.variant + '\',1)">+</button></div></div>' +
-      '<div class="cart-sub-col" data-label="Subtotal">' + formatINR(p.price * l.qty) + '</div>' +
+      '<div class="cart-sub-col" data-label="Subtotal">' + formatINR(cartUnitPrice(l, p) * l.qty) + '</div>' +
       '<div><button class="cart-del-btn" onclick="removeFromCart(\'' + p.id + '\',\'' + l.variant + '\')" aria-label="Remove item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg></button></div>' +
     '</div>';
   }).join('');
@@ -6671,7 +6852,7 @@ function renderCheckoutPage(){
   if(emptyEl) emptyEl.style.display = 'none';
   qs('#checkoutOrderItems').innerHTML = items.map(function(x){
     const p = x.product, l = x.line;
-    return '<div class="order-review-item"><div class="thumb" style="' + mediaStyle(p.cat,0) + 'display:flex;align-items:center;justify-content:center;">' + productThumbInnerHTML(p, l) + '</div><div class="n"><b>' + escapeHtml(p.name) + '</b>' + (l.variant?escapeHtml(l.variant)+' &middot; ':'') + 'Qty ' + l.qty + '</div><div class="amt">' + formatINR(p.price*l.qty) + '</div></div>';
+    return '<div class="order-review-item"><div class="thumb" style="' + mediaStyle(p.cat,0) + 'display:flex;align-items:center;justify-content:center;">' + productThumbInnerHTML(p, l) + '</div><div class="n"><b>' + escapeHtml(p.name) + '</b>' + (l.variant?escapeHtml(l.variant)+' &middot; ':'') + 'Qty ' + l.qty + '</div><div class="amt">' + formatINR(cartUnitPrice(l, p) * l.qty) + '</div></div>';
   }).join('');
   updateCheckoutTotals();
 }
@@ -6744,7 +6925,7 @@ async function placeOrder(){
 
   return withBackendReady(placeOrderNow, {
     title: 'Preparing your secure checkout',
-    status: 'Connecting to our payment service…',
+    status: 'Setting up your secure payment…',
     note: 'Your cart is saved. Nothing has been charged.',
     busyButton: '#placeOrderBtn'
   });
@@ -7949,9 +8130,15 @@ async function queuedPost(path, payload, opts){
    what separates "try again later" from "this was refused". */
 function isTransportFailure(err){
   if(!err) return true;
+  // The explicit flag set by apiFetch. Authoritative, and immune to copy edits.
+  if(err.transport === true) return true;
+  // A response the SERVER produced is a real answer, never a transport failure.
   if(err.status || err.statusCode) return false;
+  // Legacy fallback only: covers a throw from somewhere that predates the flag,
+  // and the browser's own TypeError from a dead connection. Never the primary
+  // test — see the note on the throw in apiFetch.
   const msg = String((err && err.error) || err.message || err);
-  return /could not reach|did not respond|starting up|failed to fetch|network/i.test(msg);
+  return /could not reach|did not respond|starting up|failed to fetch|networkerror|network error/i.test(msg);
 }
 
 let outboxFlushing = false;
@@ -8111,7 +8298,26 @@ function waitMarkStrategySeen(id){
 
 function cartProductIds(){ return cart.map(function(l){ return String(l.id); }); }
 function notInCart(p){ return cartProductIds().indexOf(String(p.id)) === -1; }
-function buyable(p){ return p && p.stock && notInCart(p); }
+/* Whether a product can be added straight from a suggestion card.
+
+   THE BUG THIS FIXES: this used to be stock + not-already-in-cart, which let a
+   product WITH VARIANTS be suggested. A suggestion card has no size selector,
+   so "Add" put it in the cart with no variantId — and the server refuses to
+   sell a variant product without one (utils/orders.js). The customer would have
+   added it during the wait, watched the backend wake, and had their order
+   rejected at the moment of payment: the exact failure this whole screen exists
+   to prevent, caused by the screen itself.
+
+   qvAddToCart solves the same problem by bouncing the customer to the product
+   page to choose an option. That is wrong HERE — it would abandon the waiting
+   screen and discard the pending payment intent. So variant products are simply
+   never suggested. */
+function buyable(p){
+  if(!p || !p.stock || !notInCart(p)) return false;
+  if(p.hasVariants) return false;
+  if(Array.isArray(p.variantOptions) && p.variantOptions.length) return false;
+  return true;
+}
 
 /* Each strategy returns null when it has nothing genuinely useful to say, and
    the picker moves on. A strategy that pads itself out with whatever is left
@@ -8124,12 +8330,42 @@ const WAIT_STRATEGIES = [
       cart.forEach(function(l){ const p = getProduct(l.id); if(p && p.cat) cats[p.cat] = true; });
       const wanted = [];
       Object.keys(cats).forEach(function(c){ (RITUAL_PAIRS[c] || []).forEach(function(w){ if(wanted.indexOf(w) === -1) wanted.push(w); }); });
+
+      // RITUAL_PAIRS is keyed by the canonical category slugs, but categories
+      // are admin-created and free-form: this catalog uses "book" (not
+      // "books"), "dhoti" and "sphatik", none of which the map knows. Returning
+      // null there meant this strategy almost never fired, quietly cutting the
+      // variety of the waiting screen by a third — and it would have failed the
+      // same way for every new category added from now on.
+      //
+      // So when the map has nothing to say, fall back to categories the
+      // customer does NOT already have in their cart. That is a weaker claim,
+      // so it gets weaker wording: calling something a ritual pairing when all
+      // we know is that it is a different category would be the same small
+      // untruth as labelling unrelated products "Related".
+      const knownPairing = wanted.length > 0;
+      if(!knownPairing){
+        PRODUCTS.forEach(function(p){
+          if(p.cat && !cats[p.cat] && wanted.indexOf(p.cat) === -1) wanted.push(p.cat);
+        });
+      }
       if(!wanted.length) return null;
-      const items = PRODUCTS.filter(function(p){ return buyable(p) && wanted.indexOf(p.cat) > -1; }).slice(0, 3);
+
+      // Bestsellers and best-reviewed first, so the fallback is still a
+      // recommendation rather than whatever happens to be first in the array.
+      const items = PRODUCTS.filter(function(p){ return buyable(p) && wanted.indexOf(p.cat) > -1; })
+        .sort(function(a, b){
+          const badge = (b.badge === 'bestseller' ? 1 : 0) - (a.badge === 'bestseller' ? 1 : 0);
+          if(badge) return badge;
+          return (Number(b.reviews) || 0) - (Number(a.reviews) || 0);
+        })
+        .slice(0, 3);
       if(items.length < 2) return null;
       return {
-        title: 'Complete the ritual',
-        sub: 'These are what people most often set up alongside what you have chosen.',
+        title: knownPairing ? 'Complete the ritual' : 'Also in the collection',
+        sub: knownPairing
+          ? 'These are what people most often set up alongside what you have chosen.'
+          : 'Pieces from parts of the collection you have not looked at yet.',
         items: items
       };
     }
@@ -8156,8 +8392,11 @@ const WAIT_STRATEGIES = [
   {
     id: 'small-additions',
     build: function(){
-      const items = PRODUCTS.filter(function(p){ return buyable(p) && p.price > 0 && p.price <= 500; })
-        .sort(function(a, b){ return (Number(b.reviews) || 0) - (Number(a.reviews) || 0); }).slice(0, 3);
+      // Relevance first, then popularity: a customer buying a lingam should be
+      // offered what goes WITH it, not whatever happens to be cheap.
+      const items = waitRelevanceSort(
+        PRODUCTS.filter(function(p){ return buyable(p) && p.price > 0 && p.price <= 500; })
+      ).slice(0, 3);
       if(items.length < 2) return null;
       return {
         title: 'Small things worth having',
@@ -8169,8 +8408,9 @@ const WAIT_STRATEGIES = [
   {
     id: 'bestsellers',
     build: function(){
-      const items = PRODUCTS.filter(function(p){ return buyable(p) && p.badge === 'bestseller'; })
-        .sort(function(a, b){ return (Number(b.reviews) || 0) - (Number(a.reviews) || 0); }).slice(0, 3);
+      const items = waitRelevanceSort(
+        PRODUCTS.filter(function(p){ return buyable(p) && p.badge === 'bestseller'; })
+      ).slice(0, 3);
       if(items.length < 2) return null;
       return {
         title: 'Most chosen this season',
@@ -8248,10 +8488,54 @@ function pickWaitStrategy(){
   return chosen;
 }
 
+/* Orders candidate suggestions by how well they relate to what is already in
+   the cart, then by popularity.
+
+   WHY: small-additions and bestsellers picked purely on price and badge, so a
+   customer buying a lingam could be offered a dhoti. The suggestion is only
+   worth the wait if it is plausibly for them — and RITUAL_PAIRS already
+   encodes which categories genuinely go together, so use it rather than
+   guessing.
+
+   Same category scores highest, a known ritual pairing next, everything else
+   last. Ties break on bestseller badge and review count, so the fallback is
+   still the shop's strongest items rather than array order. */
+function waitRelevanceSort(items){
+  const cartCats = {};
+  const paired = {};
+  cart.forEach(function(l){
+    const p = getProduct(l.id);
+    if(!p || !p.cat) return;
+    cartCats[p.cat] = true;
+    (RITUAL_PAIRS[p.cat] || []).forEach(function(c){ paired[c] = true; });
+  });
+  function score(p){
+    if(cartCats[p.cat]) return 2;
+    if(paired[p.cat]) return 3;   // a genuine pairing beats "more of the same"
+    return 1;
+  }
+  return items.slice().sort(function(a, b){
+    const s = score(b) - score(a);
+    if(s) return s;
+    const badge = (b.badge === 'bestseller' ? 1 : 0) - (a.badge === 'bestseller' ? 1 : 0);
+    if(badge) return badge;
+    return (Number(b.reviews) || 0) - (Number(a.reviews) || 0);
+  });
+}
+
 function waitItemHTML(p){
   const id = escapeHtml(String(p.id));
+  // productThumbInnerHTML, not productMediaSVG: the second draws the generic
+  // category glyph, so every suggestion card rendered the same faceless
+  // placeholder even though the catalog carries a real photo for most
+  // products. A suggestion the customer cannot SEE is not a suggestion — it is
+  // the weakest possible moment to show a drawing of nothing.
+  //
+  // This is the same helper the cart, checkout and mini-cart already use, so
+  // the picture here matches the one they will see on the next screen, and it
+  // carries the onerror fallback for a dead image URL.
   return '<div class="wait-item" data-wait-item="' + id + '">' +
-    '<div class="thumb" style="' + mediaStyle(p.cat, 0) + '">' + productMediaSVG(p.cat) + '</div>' +
+    '<div class="thumb" style="' + mediaStyle(p.cat, 0) + '">' + productThumbInnerHTML(p, null) + '</div>' +
     '<div class="nm">' + escapeHtml(p.name) + '</div>' +
     '<div class="pr">' + formatINR(p.price) + '</div>' +
     '<button class="btn btn-outline btn-sm" onclick="waitAddSuggestion(\'' + id + '\')">Add</button>' +
@@ -8325,7 +8609,7 @@ function openWaitingExperience(context){
 
   const title = qs('#waitTitle');
   if(title) title.textContent = context.title || 'Preparing your secure checkout';
-  setWaitStatus(context.status || 'Connecting to our payment service…');
+  setWaitStatus(context.status || 'Setting up your secure payment…');
   const note = qs('#waitNote');
   if(note) note.textContent = context.note || 'Your cart is saved. Nothing has been charged.';
 
@@ -8405,9 +8689,15 @@ async function runWithBackendReady(intent, context){
     cancelled: function(){ return waitState.cancelled; },
     onTick: function(attempt){
       const secs = Math.round((Date.now() - started) / 1000);
-      if(secs < 12) setWaitStatus('Connecting to our payment service…');
-      else if(secs < 30) setWaitStatus('Our server is waking up — this happens on the first order after a quiet spell.');
-      else setWaitStatus('Almost there. Thank you for your patience — we are nearly connected.');
+      // Every line here is TRUE and none of it is about us. "Our server is
+      // waking up" told the customer, at the exact moment they were about to
+      // pay, that our infrastructure is unreliable — an odd thing to volunteer
+      // while asking for money. These describe what is genuinely happening to
+      // THEIR order instead: the secure session is being established, the
+      // items confirmed, the checkout finalised.
+      if(secs < 12) setWaitStatus('Setting up your secure payment…');
+      else if(secs < 30) setWaitStatus('Confirming availability and preparing your order…');
+      else setWaitStatus('Thank you for your patience — finalising your secure checkout.');
     }
   });
 
@@ -8448,13 +8738,52 @@ async function runWithBackendReady(intent, context){
 
    The timer starts at document parse (window.__BOOT__.t0), not when this
    script runs, so the floor measures what the visitor actually experienced. */
-const AWAKEN_MIN_MS = 900;
-const AWAKEN_MAX_MS = 4000;
+/* ---------------------------------------------------------------------------
+   HOW LONG THE WELCOME RUNS, AND WHY IT IS THIS NUMBER
+   ---------------------------------------------------------------------------
+   2600ms, shown once per session. Both halves of that matter.
+
+   WHY NOT LONGER. The storefront renders from the catalog snapshot in roughly
+   300ms, so for almost every visit this screen is not masking work — it is
+   holding a finished page back. Three thresholds bound it:
+
+     - Largest Contentful Paint. A full-viewport overlay defers the real LCP
+       element until it lifts, so the dismissal time IS the LCP. Google rates
+       <=2.5s good and >4s poor; 5s scored poor on every page of the site.
+     - Mobile abandonment rises sharply past ~3s, which is the connection this
+       market actually shops on.
+     - A product page opened from a shared WhatsApp link is the highest-intent
+       arrival there is. Gating the price behind five seconds is the worst
+       possible place to spend them.
+
+   WHY NOT SHORTER. The letter stagger finishes at 1.53s and the gold sheen
+   begins at 0.9s. Below ~2.4s the animation is cut mid-sweep and reads as a
+   glitch rather than a greeting. 2600ms lands just past it: the welcome
+   completes, settles for a beat, and lifts.
+
+   ONCE PER SESSION is the larger win and is what brand-led storefronts
+   actually ship. A shopper who opens six products should be greeted once, not
+   six times — after the first view the screen is skipped outright (see the
+   head boot script), so every later page is at full speed with no overlay and
+   no LCP penalty at all.
+
+   MAX stays deliberately ABOVE MIN. It is the unconditional net for a boot
+   that throws before releaseAwakeningScreen() is reached; equal values leave
+   no margin for the normal release, and a loading screen that can become the
+   site is the one failure this must never have.
+   --------------------------------------------------------------------------- */
+const AWAKEN_MIN_MS = 2600;
+const AWAKEN_MAX_MS = 4500;
+const AWAKEN_SESSION_KEY = 'chakrashri_welcomed';
 let awakenHidden = false;
 
 function hideAwakeningScreen(){
   if(awakenHidden) return;
   awakenHidden = true;
+  // Remember that this visitor has been greeted, so the rest of the session
+  // loads at full speed. sessionStorage, not localStorage: a returning
+  // customer tomorrow is a new arrival and should be welcomed again.
+  try{ sessionStorage.setItem(AWAKEN_SESSION_KEY, String(Date.now())); }catch(e){ /* private mode */ }
   const el = qs('#awakenScreen');
   if(!el) return;
   el.classList.add('awaken-done');
@@ -8467,6 +8796,12 @@ function hideAwakeningScreen(){
 /* Called once the route has rendered. Waits out the remainder of the floor if
    the page beat it, and is force-dismissed by the ceiling below regardless. */
 function releaseAwakeningScreen(){
+  // Already greeted this session: the screen was never painted, so there is no
+  // floor to wait out. Waiting anyway would delay nothing visible and hold the
+  // reveal of a page that is already on screen.
+  try{
+    if(sessionStorage.getItem(AWAKEN_SESSION_KEY)){ hideAwakeningScreen(); return; }
+  }catch(e){ /* fall through to the normal path */ }
   const started = (window.__BOOT__ && window.__BOOT__.t0) || Date.now();
   const elapsed = Date.now() - started;
   if(elapsed >= AWAKEN_MIN_MS) hideAwakeningScreen();
@@ -8478,6 +8813,18 @@ function releaseAwakeningScreen(){
    later edit, a browser that fails one of the APIs above — the visitor must
    still get their site. Never let a loading screen be able to become the site. */
 setTimeout(hideAwakeningScreen, AWAKEN_MAX_MS);
+
+/* Anyone who wants to get on with it can. A greeting that cannot be dismissed
+   is an obstacle, and someone tapping the screen has told us they are ready. */
+(function(){
+  const el = document.getElementById('awakenScreen');
+  if(!el) return;
+  el.addEventListener('click', hideAwakeningScreen);
+  el.style.cursor = 'pointer';
+  window.addEventListener('keydown', function(e){
+    if(e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') hideAwakeningScreen();
+  }, { once: true });
+})();
 
 /* Second and third lines of defence, on the same principle. If anything in the
    boot path fails, the overlay comes off at once rather than holding the
@@ -8493,10 +8840,13 @@ window.addEventListener('unhandledrejection', function(){ hideAwakeningScreen();
 /* Only speaks when the wait is long enough to be worth explaining. Silence for
    the first two seconds is correct — narrating a wait that is not happening
    invents a problem the visitor did not have. */
+/* Held back until the welcome has played, so the two never compete for
+   attention. Silent before this: there is nothing to explain in the first two
+   seconds, and narrating a wait that is not happening invents a problem. */
 setTimeout(function(){
   const sub = qs('#awakenSub');
-  if(sub && !awakenHidden) sub.textContent = 'Waking the server — first visit after a quiet spell';
-}, 2000);
+  if(sub && !awakenHidden) sub.textContent = 'Sacred objects, chosen with care.';
+}, 2200);
 
 /* Product-card skeletons. Deliberately the same box model as a real card so
    the grid does not reflow when the real ones replace them. */
@@ -8587,8 +8937,8 @@ function beginApiWait(){
   apiWaitDepth++;
   if(wakingTimers.length) return;
   wakingTimers.push(
-    setTimeout(function(){ showWakingNotice('Just a moment — fetching the latest details…'); }, 4000),
-    setTimeout(function(){ showWakingNotice('Our server is waking up. This happens on the first visit after a quiet spell and takes a few seconds.'); }, 15000)
+    setTimeout(function(){ showWakingNotice('Just a moment — bringing you the latest prices.'); }, 4000),
+    setTimeout(function(){ showWakingNotice('Almost there — thank you for your patience.'); }, 15000)
   );
 }
 

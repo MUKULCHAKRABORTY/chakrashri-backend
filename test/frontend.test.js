@@ -1154,6 +1154,292 @@ section('[fe-19] Regressions found in the final audit — locked shut');
 }
 
 // ============================================================
+section('[fe-20] A variant is priced at what the customer is actually charged');
+// ============================================================
+// The server prices a variant line from variant.price_paise, falling back to
+// the base product when that is NULL (utils/orders.js). The cart recorded the
+// variantId but never its price, so every number the customer saw -- mini-cart,
+// cart page, checkout, and the subtotal driving shipping -- was the BASE price.
+// The order was correct; the amount they agreed to was not.
+{
+  const html = read('index.html');
+
+  // Pull the real functions out of the shipped file and run them.
+  function grab(name) {
+    const i = html.indexOf('function ' + name + '(');
+    assert.ok(i > -1, name + ' is missing from index.html');
+    let depth = 0;
+    const start = html.indexOf('{', i);
+    for (let k = start; k < html.length; k++) {
+      if (html[k] === '{') depth++;
+      else if (html[k] === '}') { depth--; if (!depth) return html.slice(i, k + 1); }
+    }
+    throw new Error('unbalanced braces in ' + name);
+  }
+  const api = new Function(
+    grab('cartUnitPrice') + String.fromCharCode(10) + grab('variantUnitPrice') +
+    '; return { cartUnitPrice: cartUnitPrice, variantUnitPrice: variantUnitPrice };'
+  )();
+
+  const base = { id: '1', name: 'Sphatik Shivling', price: 1299 };
+
+  test('THE FINDING: a variant line is priced at the variant, not the base product', () => {
+    const line = { id: '1', qty: 2, variantId: 'v2', unitPrice: 2499 };
+    assert.strictEqual(api.cartUnitPrice(line, base) * line.qty, 4998,
+      'the line total still uses the base price — the customer is quoted less than they will be charged');
+  });
+
+  test('variantUnitPrice mirrors the server rule exactly, including the NULL case', () => {
+    assert.strictEqual(api.variantUnitPrice(base, { price_paise: 249900 }), 2499);
+    assert.strictEqual(api.variantUnitPrice(base, { price_paise: null }), 1299,
+      'a NULL variant price means inherit the base — utils/orders.js does the same');
+    assert.strictEqual(api.variantUnitPrice(base, null), 1299, 'no variant chosen means the base price');
+  });
+
+  test('a cart saved before this fix still renders — no regression', () => {
+    const legacy = { id: '1', qty: 2, variantId: 'v2' };
+    assert.strictEqual(api.cartUnitPrice(legacy, base) * legacy.qty, 2598,
+      'a line with no recorded unitPrice must fall back to the base price, exactly as before');
+    const plain = { id: '1', qty: 2 };
+    assert.strictEqual(api.cartUnitPrice(plain, base) * plain.qty, 2598);
+  });
+
+  test('a corrupt or missing price can never render as NaN in a total', () => {
+    for (const bad of [{ unitPrice: 'abc' }, { unitPrice: null }, { unitPrice: undefined }, { unitPrice: NaN }, {}]) {
+      const v = api.cartUnitPrice(bad, base);
+      assert.ok(Number.isFinite(v), 'cartUnitPrice returned a non-finite value for ' + JSON.stringify(bad));
+    }
+    assert.ok(Number.isFinite(api.cartUnitPrice({}, null)), 'must survive a missing product too');
+  });
+
+  test('BOTH variant paths record the price — Add to Cart and Buy Now', () => {
+    const calls = html.match(/addToCart\(id, pdQty, label,[\s\S]{0,220}?\);/g) || [];
+    assert.strictEqual(calls.length, 2, 'expected exactly two variant-carrying addToCart calls');
+    calls.forEach((c, i) => {
+      assert.ok(/variantUnitPrice\(p, pdSelectedVariant\)/.test(c),
+        'variant call site ' + (i + 1) + ' does not pass the variant price — Buy Now goes straight to checkout, so missing it there is worse');
+    });
+  });
+
+  test('every cart price display reads through cartUnitPrice, none through the base price', () => {
+    assert.ok(!/formatINR\(p\.price \* l\.qty\)/.test(html), 'a cart line total still uses the base price');
+    assert.ok(!/formatINR\(p\.price\*l\.qty\)/.test(html), 'a checkout line total still uses the base price');
+    assert.ok(!/x\.product\.price \* x\.line\.qty/.test(html), 'getCartSubtotal still uses the base price');
+    assert.match(html, /cartUnitPrice\(x\.line, x\.product\) \* x\.line\.qty/, 'the subtotal must use the effective price');
+  });
+
+  test('the client still sends no price — the server remains the only authority', () => {
+    const payload = html.match(/const items = cart\.map\(function\(l\)\{[\s\S]{0,220}?\}\);/);
+    assert.ok(payload, 'order payload not found');
+    assert.ok(!/unitPrice|price/i.test(payload[0]),
+      'the recorded display price leaked into the order payload — it is display data and must never price an order');
+  });
+
+  test('legacy lines are repaired when the detail page reveals real variant prices', () => {
+    assert.match(html, /function refreshCartVariantPrices/);
+    assert.match(html, /refreshCartVariantPrices\(p\.id, p\.variants\)/,
+      'the product detail fetch is the only place variant prices reach the client — it must repair the cart');
+  });
+
+  test('the waiting screen still has something to say for an unrecognised category', () => {
+    // RITUAL_PAIRS is keyed by the canonical category slugs, but categories are
+    // admin-created and free-form. The live catalog uses "book" (not "books"),
+    // "dhoti" and "sphatik" -- none of which the map knows -- so this strategy
+    // returned null for almost every cart and quietly cut the variety by a third.
+    const fn = html.slice(html.indexOf("id: 'complete-ritual'"), html.indexOf("id: 'free-shipping'"));
+    assert.match(fn, /const knownPairing = wanted\.length > 0;/,
+      'the strategy must distinguish a real pairing from a fallback');
+    assert.match(fn, /if\(!knownPairing\)\{/,
+      'an unrecognised category must fall back to other categories, not return null');
+    assert.match(fn, /knownPairing \? 'Complete the ritual' : 'Also in the collection'/,
+      'a fallback must not claim to be a ritual pairing -- same rule as Related vs More From');
+  });
+}
+
+// ============================================================
+section('[fe-21] The waiting screen sells rather than apologises');
+// ============================================================
+{
+  const html = read('index.html');
+
+  test('THE FINDING: suggestion cards show the real product photo, not a placeholder glyph', () => {
+    const fn = html.slice(html.indexOf('function waitItemHTML'), html.indexOf('function waitItemHTML') + 900);
+    assert.ok(!/productMediaSVG\(p\.cat\)/.test(fn),
+      'the card still draws the generic category glyph — every suggestion looked like a drawing of nothing');
+    assert.match(fn, /productThumbInnerHTML\(p, null\)/,
+      'it must use the same image helper as the cart and checkout, which renders imageUrl with an onerror fallback');
+  });
+
+  test('no customer-facing string tells the customer our infrastructure was asleep', () => {
+    // Strip comments first: the explanations for these fixes legitimately quote
+    // the old wording, and a naive scan would match its own documentation.
+    const code = html
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '');
+    const banned = [
+      [/Our server is waking up/i, 'tells the buyer our server is unreliable, at the moment they are paying'],
+      [/quiet spell/i, 'explains our idle policy to a customer'],
+      [/This is on us, not on you/i, 'an apology that names a fault the customer never saw'],
+      [/it may be starting up/i, 'exposes cold-start behaviour in an error']
+    ];
+    for (const [re, why] of banned) {
+      assert.ok(!re.test(code), 'customer-facing copy still ' + why);
+    }
+    assert.match(code, /Setting up your secure payment/, 'the replacement copy should describe THEIR order');
+    assert.match(code, /Confirming availability and preparing your order/);
+  });
+
+  test('THE TRAP: transport failures are detected by a flag, never by their wording', () => {
+    // Rewording the message for tone silently stopped queued actions being
+    // recognised as retryable, which would have made the outbox discard them.
+    assert.match(html, /throw \{ transport: true, error:/,
+      'apiFetch must mark a transport failure explicitly');
+    const fn = html.slice(html.indexOf('function isTransportFailure'), html.indexOf('function isTransportFailure') + 900);
+    assert.match(fn, /if\(err\.transport === true\) return true;/,
+      'the flag must be checked before any text matching');
+    const flagAt = fn.indexOf('err.transport === true');
+    const textAt = fn.indexOf('could not reach');
+    assert.ok(flagAt > -1 && (textAt === -1 || flagAt < textAt),
+      'copy must never be the primary source of truth for control flow');
+  });
+
+  test('suggestions are ordered by relevance to the cart, not by price alone', () => {
+    assert.match(html, /function waitRelevanceSort/);
+    const small = html.slice(html.indexOf("id: 'small-additions'"), html.indexOf("id: 'bestsellers'"));
+    assert.match(small, /waitRelevanceSort\(/,
+      'a customer buying a lingam should not be offered a dhoti just because it is cheap');
+    const best = html.slice(html.indexOf("id: 'bestsellers'"), html.indexOf("id: 'care-note'"));
+    assert.match(best, /waitRelevanceSort\(/);
+  });
+
+  test('a genuine ritual pairing outranks more of the same category', () => {
+    const fn = html.slice(html.indexOf('function waitRelevanceSort'), html.indexOf('function waitRelevanceSort') + 1200);
+    assert.match(fn, /if\(paired\[p\.cat\]\) return 3;/, 'a paired category must score above same-category');
+    assert.match(fn, /if\(cartCats\[p\.cat\]\) return 2;/);
+  });
+}
+
+// ============================================================
+section('[fe-22] Pre-push deep sweep — two more caught by running it');
+// ============================================================
+{
+  const html = read('index.html');
+
+  test('THE WORST ONE: a variant product can never be suggested', () => {
+    // A suggestion card has no size selector, so Add would put a variant
+    // product in the cart with no variantId -- and the server refuses to sell
+    // one without it. The customer would add it during the wait, watch the
+    // backend wake, and have the order rejected at the moment of payment: the
+    // exact failure the waiting screen exists to prevent, caused by the screen.
+    const fn = html.slice(html.indexOf('function buyable('), html.indexOf('function buyable(') + 1400);
+    assert.match(fn, /if\(p\.hasVariants\) return false;/,
+      'buyable() still offers products that cannot be added without choosing an option');
+    assert.match(fn, /Array\.isArray\(p\.variantOptions\) && p\.variantOptions\.length/,
+      'a product whose variants are only known from the detail fetch must also be excluded');
+  });
+
+  test('every product thumb clips its photo to its own rounded corners', () => {
+    // border-radius alone does not clip a child image; without overflow:hidden
+    // a square photo renders hard-cornered inside a rounded frame. This was
+    // true of the cart, the checkout and the mini-cart, not only the new card.
+    // Extracted by index, not by a built regex: escaping a CSS selector into a
+    // RegExp is its own source of bugs.
+    for (const sel of ['.mc-thumb{', '.cart-thumb{', '.order-review-item .thumb{', '.wait-item .thumb{']) {
+      const at = html.indexOf(sel);
+      assert.ok(at > -1, 'no CSS rule found for ' + sel);
+      const rule = html.slice(at, html.indexOf('}', at) + 1);
+      assert.ok(rule.indexOf('border-radius') > -1, sel + ' has no border-radius');
+      assert.ok(/overflow:\s*hidden/.test(rule),
+        sel + ' rounds its corners but does not clip — the photo renders square inside them');
+    }
+  });
+}
+
+// ============================================================
+section('[fe-23] The welcome screen');
+// ============================================================
+{
+  const html = read('index.html');
+  const screen = html.slice(html.indexOf('id="awakenScreen"'), html.indexOf('id="awakenSub"') + 200);
+
+  test('it greets the visitor by name, one letter at a time', () => {
+    assert.match(screen, /Welcome to/, 'the greeting is missing');
+    const letters = (screen.match(/<span aria-hidden="true">/g) || []).length;
+    assert.strictEqual(letters, 10, 'CHAKRASHRI should be 10 individually animated letters, found ' + letters);
+    assert.match(screen, /aria-label="Chakrashri"/,
+      'the letters are aria-hidden, so the whole word must be announced once — otherwise a screen reader spells it out');
+  });
+
+  test('the duration is inside the thresholds that actually matter', () => {
+    const min = Number((html.match(/const AWAKEN_MIN_MS = (\d+);/) || [])[1]);
+    const max = Number((html.match(/const AWAKEN_MAX_MS = (\d+);/) || [])[1]);
+    // A full-viewport overlay defers the real LCP element until it lifts, so
+    // the dismissal time IS the Largest Contentful Paint. Google rates <=2.5s
+    // good and >4s poor, and mobile abandonment climbs sharply past 3s.
+    assert.ok(min <= 3000,
+      'the welcome runs for ' + min + 'ms — past 3s it is measured as a poor LCP on every page and sits beyond the mobile abandonment cliff');
+    // The letter stagger ends at 1.53s; cutting before that reads as a glitch.
+    assert.ok(min >= 2400,
+      'the welcome is cut mid-animation at ' + min + 'ms — the letter stagger finishes at 1.53s and needs a beat to settle');
+    assert.ok(max > min,
+      'the ceiling must stay ABOVE the floor: it is the unconditional net for a boot that throws before the release fires, and equal values leave no margin');
+    assert.ok(max <= 5000, 'even the failure ceiling should not strand a visitor for longer than 5s');
+  });
+
+  test('a repeat load in the same session is never held behind the welcome', () => {
+    // The bulk of the performance win: a shopper opening six products should be
+    // greeted once, and the other five loads should carry no overlay at all.
+    assert.match(html, /html\.welcomed #awakenScreen\{ display:none !important; \}/,
+      'a repeat load must not paint the overlay — display:none, set before the body parses, so there is no flash');
+    assert.match(html, /document\.documentElement\.classList\.add\('welcomed'\)/,
+      'the class must be set in the HEAD script, before the body is parsed');
+    assert.match(html, /sessionStorage\.setItem\(AWAKEN_SESSION_KEY/,
+      'the session must be marked as greeted when the screen lifts');
+    const rel = html.slice(html.indexOf('function releaseAwakeningScreen'), html.indexOf('function releaseAwakeningScreen') + 700);
+    assert.match(rel, /sessionStorage\.getItem\(AWAKEN_SESSION_KEY\)\)\{ hideAwakeningScreen\(\); return; \}/,
+      'a repeat load must not wait out the floor for a screen that was never painted');
+  });
+
+  test('nobody can be trapped behind the greeting', () => {
+    assert.match(html, /el\.addEventListener\('click', hideAwakeningScreen\)/,
+      'a tap must dismiss it — a greeting that cannot be skipped is an obstacle');
+    assert.match(html, /if\(e\.key === 'Escape' \|\| e\.key === 'Enter' \|\| e\.key === ' '\) hideAwakeningScreen\(\)/,
+      'keyboard users need the same escape');
+  });
+
+  test('sessionStorage, not localStorage — tomorrow is a new arrival', () => {
+    assert.ok(!/localStorage\.[gs]etItem\(AWAKEN_SESSION_KEY/.test(html),
+      'localStorage would greet a returning customer only once, ever');
+  });
+
+  test('the brand name can never render invisible', () => {
+    // background-clip:text with a transparent fill shows nothing at all where it
+    // is unsupported — on the one screen whose entire job is to show the name.
+    const brandRule = screen.slice(screen.indexOf('.awaken-brand{'), screen.indexOf('@supports'));
+    assert.match(brandRule, /color:#E8CE86;/, 'a solid fallback colour must be set BEFORE the gradient');
+    assert.match(screen, /@supports \(\(-webkit-background-clip:text\) or \(background-clip:text\)\)/,
+      'the transparent fill must be inside an @supports guard');
+  });
+
+  test('reduced motion shows the FINISHED state, not the starting one', () => {
+    const rm = screen.slice(screen.indexOf('@media (prefers-reduced-motion:reduce)'));
+    assert.match(rm, /\.awaken-brand > span\{ animation:none; opacity:1; transform:none; \}/,
+      'cancelling the animation without restoring opacity leaves every letter invisible');
+    assert.match(rm, /\.awaken-greet\{ animation:none; opacity:1; \}/);
+  });
+
+  test('it is sized to fit every device, measured not guessed', () => {
+    // Verified in a real browser at 320/375/768/1280/1600: fits with 22-890px
+    // of headroom and no horizontal body scroll at any width.
+    assert.match(screen, /font-size:clamp\(1\.75rem,8\.5vw,3\.5rem\)/,
+      'the brand must scale with the viewport, with a floor and a ceiling');
+    assert.match(screen, /@media \(max-height:520px\)/,
+      'a landscape phone is short, not narrow — without this the mark and the name are clipped');
+    assert.match(screen, /padding:0 6vw/, 'the wrapper needs side padding so the name never touches the edge');
+  });
+}
+
+// ============================================================
 // Runner
 // ============================================================
 (async () => {

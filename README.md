@@ -671,6 +671,287 @@ From Chakrashri"* when the products shown are not actually related — because
 calling them Related when they share nothing is the same class of small untruth
 as everything else this work removed.
 
+##### Variant prices in the cart
+
+The server prices a variant line from `variant.price_paise`, falling back to the
+base product when that column is NULL (`utils/orders.js`). The cart recorded the
+chosen `variantId` and its image but **never its price**, so every number the
+customer saw — the mini-cart unit price, the cart page price and line total, the
+checkout line total, and the subtotal that drives the free-shipping threshold —
+was the **base product** price.
+
+The order was never wrong: the client sends only `{ productId, variantId,
+quantity }` and the server computes every amount itself. What was wrong was the
+number the customer agreed to. Someone choosing a dearer variant was quoted the
+cheaper figure all the way to the payment sheet and then charged correctly.
+
+`cartUnitPrice(line, product)` is now the single reader for every cart price, and
+`variantUnitPrice(product, variant)` mirrors the server's rule exactly — including
+the NULL-inherits-base case — so Add to Cart and Buy Now cannot drift apart.
+**Buy Now was the easier one to miss and the worse one to get wrong**, since it
+goes straight to checkout; a test asserts both call sites pass the price.
+
+Three deliberate properties:
+
+- **The recorded price is display data only.** It is never sent to the server and
+  never prices an order. A test asserts it cannot leak into the order payload.
+- **Carts saved before this fix still render.** A line with no `unitPrice` falls
+  back to the base price — exactly what it did before, so nothing regresses.
+- **Those legacy lines repair themselves.** The product detail fetch is the only
+  place variant prices reach the client, so `refreshCartVariantPrices()` runs
+  there and corrects any stale or missing line price.
+
+Only one product in the catalog currently has variants (`dhoti`), so the blast
+radius was small — but it would have grown silently with every variant product
+added.
+
+##### What the waiting screen says, and what it must never say
+
+Three things were wrong with it in practice, all found by looking at a real
+screenshot rather than at the code.
+
+**The suggestion cards showed a drawing of nothing.** `waitItemHTML` rendered
+`productMediaSVG(p.cat)` — the generic category glyph — so every product in the
+one moment we are asking the customer to stay looked like a faceless
+placeholder, even though eight of ten products carry a real photo. It now uses
+`productThumbInnerHTML`, the same helper the cart and checkout already use, so
+the picture matches the next screen and a dead image URL still falls back
+gracefully.
+
+**The copy confessed.** At the exact moment a customer was about to pay, the
+status read *"Our server is waking up — this happens on the first order after a
+quiet spell."* That volunteers that our infrastructure is unreliable while
+asking for money, and explains an idle policy to someone who never asked. Every
+such line is now about **their order**, and every one is still true:
+
+| Before | Now |
+|---|---|
+| "Connecting to our payment service…" | "Setting up your secure payment…" |
+| "Our server is waking up — … after a quiet spell." | "Confirming availability and preparing your order…" |
+| "Almost there. … we are nearly connected." | "Thank you for your patience — finalising your secure checkout." |
+| "Waking the server — first visit after a quiet spell" | "Preparing the collection for you…" |
+| "This is on us, not on you — our storefront is waking up." | "We are refreshing the collection. Please try again in a moment." |
+| "Could not reach the server — it may be starting up." | "That did not go through just now. Please try again in a moment." |
+
+A test scans the file with comments stripped and fails if any of the old
+phrasings returns — the comments explaining this fix legitimately quote the old
+wording, and a naive scan would match its own documentation.
+
+**The suggestions ignored the cart.** `small-additions` and `bestsellers` sorted
+on price and badge alone, so someone buying a lingam could be offered a dhoti.
+Both now run through `waitRelevanceSort()`, which scores a known `RITUAL_PAIRS`
+pairing highest, then the same category, then everything else, breaking ties on
+bestseller badge and review count.
+
+##### Two more found by running the code, not reading it
+
+**A suggestion could offer something the customer cannot buy.** `buyable()` was
+stock + not-already-in-cart, which let a product **with variants** be suggested.
+A suggestion card has no size selector, so Add put it in the cart with no
+`variantId` — and the server refuses to sell a variant product without one
+(`utils/orders.js`). The sequence would have been: customer waits, adds the
+suggested item, backend wakes, **order rejected at the moment of payment**. The
+exact failure the waiting screen exists to prevent, caused by the screen itself.
+
+`qvAddToCart` solves the same problem by bouncing the customer to the product
+page to choose an option. That is wrong here — it would abandon the waiting
+screen and discard the pending payment intent. So variant products are simply
+never suggested. Verified against the live catalog: `Dhoti` is correctly
+excluded, leaving 9 of 10 products suggestable.
+
+**No product thumb clipped its photo.** `border-radius` alone does not clip a
+child image; without `overflow: hidden` a square photo renders hard-cornered
+inside a rounded frame. This was true of `.mc-thumb`, `.cart-thumb`,
+`.order-review-item .thumb` **and** the new `.wait-item .thumb` — so it had been
+visible on the mini-cart, the cart page and the checkout all along, and only
+became obvious once real photos replaced the flat glyph. All four now clip.
+
+Measured in the browser against the live stylesheet before and after: the image
+fills its 132×132 thumb exactly, does not overflow, and the glyph fallback for a
+photo-less product is still sized correctly at 52%.
+
+##### A trap worth remembering: copy is not control flow
+
+Rewording that error message silently broke something. `isTransportFailure()`
+decided whether an action was retryable by **pattern-matching the user-facing
+sentence** — so changing it for tone stopped queued actions being recognised as
+transport failures, and the outbox would have discarded them instead of saving
+them for delivery.
+
+It survived only by luck: queued POSTs are non-retryable and threw the *other*
+message, which still matched. That is not a safety margin.
+
+`apiFetch` now throws `{ transport: true, ... }` and `isTransportFailure` reads
+the flag first, keeping the text match only as a legacy fallback. **Copy and
+control flow must never share a source of truth** — the text is for the
+customer and must stay free to change.
+
+##### The wake call is the first request the page makes
+
+`<head>` order matters here in a way that is not obvious, and getting it wrong
+cost exactly what this work exists to save.
+
+**An inline script element is blocked until every stylesheet before it has
+loaded** — the browser must assume the script might read computed styles. The
+wake-up block sat *after* the render-blocking Google Fonts stylesheet, so the
+knock on `/api/health` and `/api/ready` was not sent until `fonts.googleapis.com`
+had answered. On a slow mobile connection that is hundreds of milliseconds added
+to a 30-60 second cold start, for nothing.
+
+It now sits **above** the font tags, so the two knocks are the first requests the
+document makes — before fonts, before the stylesheet, before 460KB of markup is
+parsed. Both `/api/health` (wakes the Render process) and `/api/ready` (runs
+`SELECT 1`, which resumes the Neon compute) go out together, so the two sleeping
+services wake in parallel rather than in series.
+
+This applies to every entry point equally: the home page, a prerendered product
+page opened from a WhatsApp link, or any deep link. There is a comment above the
+block warning against reordering it.
+
+##### The welcome screen
+
+The first thing a visitor sees is the hero Sri Yantra, the words **Welcome to**,
+and **CHAKRASHRI** rising one letter at a time under a slow gold sheen. It sits
+in the markup at the top of `<body>` with its own inline `<style>`, so it paints
+from the first bytes of the document rather than waiting on 460KB of app script
+or a stylesheet hundreds of KB further down.
+
+**2.6 seconds, shown once per session.** Both halves of that are deliberate, and
+the number is bounded from both directions.
+
+*Why not longer.* The storefront renders from the catalog snapshot in ~300ms, so
+for almost every visit this screen is not masking work — it is holding a finished
+page back. A full-viewport overlay defers the real Largest Contentful Paint
+element until it lifts, so **the dismissal time IS the LCP**:
+
+| Threshold | Limit | At 5s | At 2.6s |
+|---|---|---|---|
+| Core Web Vitals LCP | ≤2.5s good, >4s poor | poor | needs-improvement |
+| Mobile abandonment | climbs sharply past 3s | past it | inside it |
+| Conversion (Google/Deloitte) | ~1% lost per 100ms | ~25% exposure | ~13% |
+
+A product page opened from a shared WhatsApp link is the highest-intent arrival
+there is; gating the price behind five seconds is the worst place on the site to
+spend them.
+
+*Why not shorter.* The letter stagger finishes at 1.53s and the sheen begins at
+0.9s. Below about 2.4s the animation is cut mid-sweep and reads as a glitch
+rather than a greeting. 2600ms lands just past it — the welcome completes,
+settles for a beat, and lifts.
+
+*Once per session* is the larger win, and it is what brand-led storefronts
+actually ship. A shopper who opens six products should be greeted once, not six
+times. The head boot script sets `html.welcomed` **before the body is parsed**,
+and `display:none` means a repeat load never paints, measures or animates the
+overlay at all — no flash, and no LCP penalty on any page after the first.
+`sessionStorage`, not `localStorage`: a customer returning tomorrow is a new
+arrival and should be welcomed again. If storage throws (private mode) it falls
+through and greets, which is the safe direction.
+
+It can also always be dismissed — a tap, Escape, Enter or Space. A greeting that
+cannot be skipped is an obstacle.
+
+`AWAKEN_MAX_MS = 4500` stays deliberately **above** the floor. It is the
+unconditional safety net for a boot that throws before `releaseAwakeningScreen()`
+is reached; making the two equal would leave no margin for the normal release to
+fire, and a loading screen that can become the site is the one failure this must
+never have.
+
+Verified in a browser: first arrival paints it; a repeat load computes to
+`display:none` with **0px painted area**; private mode greets. Verified with a
+real page reload that the session flag survives, so **every reload loads the site
+directly** rather than replaying the welcome.
+
+Three details that are easy to get wrong and are covered by tests:
+
+- **The name can never render invisible.** `background-clip:text` with a
+  transparent fill shows *nothing* where it is unsupported — on the one screen
+  whose entire job is to show the name. A solid `#E8CE86` is set first and the
+  gradient only applies inside an `@supports` guard.
+- **Reduced motion shows the finished state, not the starting one.** Cancelling
+  the animations without also restoring `opacity:1` would leave every letter at
+  zero and the brand would simply never appear.
+- **A screen reader hears "Chakrashri", not ten letters.** The spans are
+  `aria-hidden` and the wrapper carries `aria-label`.
+
+**Sized by measurement, not by guess.** Verified in a real browser at each
+viewport — brand width against available width after the 6vw side padding:
+
+| Viewport | Font | Brand | Available | Headroom |
+|---|---|---|---|---|
+| 320 | 28px | 259px | 282px | +22px |
+| 375 | 32px | 295px | 330px | +35px |
+| 768 | 56px | 518px | 676px | +158px |
+| 1280 | 56px | 518px | 1126px | +608px |
+| 1600 | 56px | 518px | 1408px | +890px |
+
+No horizontal body scroll at any width. A separate `max-height:520px` rule
+shrinks the mark and the name on a landscape phone, which is short rather than
+narrow and would otherwise clip.
+
+##### Why the waiting screen almost never appears — and that is correct
+
+Testing this by hand is confusing, and it is worth writing down why. Waiting
+twenty minutes and then buying something will **not** show the waiting screen,
+because the external scheduler calls the job trigger every ten minutes and that
+call keeps Render awake. The instance is essentially never idle long enough to
+spin down. Verified: the last job run was 2.6 minutes old and `/api/health`
+answered in 561ms — a cold start takes 30-60 seconds.
+
+`withBackendReady()` returns immediately when the backend is confirmed up, which
+is the designed behaviour: *"when the backend and database are active there is
+no need for this waiting."* So a healthy site never shows it.
+
+It still exists for the cases the scheduler cannot cover:
+
+- the minute or two after a deploy, while Render restarts
+- if the cron-job.org schedule fails, is paused, or the account lapses
+- a free-tier eviction, which Render does not announce
+
+To see it deliberately, open the browser console on the live site and run:
+
+```
+backendReady = { awake: false, at: 0, inFlight: null };
+probeBackend = async () => false;
+withBackendReady(async () => 'ORDER', { title: 'Preparing your secure checkout' });
+```
+
+Verified end-to-end against the live site: the modal opens, the order does **not**
+run, the cart stays intact, and when the backend wakes the order proceeds
+automatically without the customer touching anything.
+
+**Monitor the scheduler**, because it is now the only thing keeping the site warm:
+
+```bash
+npm run jobs:status
+```
+
+If the last run is more than ~15 minutes old, check the cron-job.org dashboard.
+That timestamp lives in memory and resets on every deploy, so "no run yet" is
+normal immediately after deploying.
+
+##### Suggestion variety depends on your categories
+
+The `complete-ritual` strategy pairs categories using `RITUAL_PAIRS`, which is
+keyed by the canonical slugs (`lingam`, `yantra`, `idols`, `malas`, ...). But
+categories are admin-created and free-form: this catalog uses `book` (not
+`books`), `dhoti` and `sphatik`, none of which the map knows. The strategy
+returned `null` for almost every real cart, quietly cutting the waiting screen's
+variety by a third — and it would have failed the same way for every new category
+added from now on.
+
+It now falls back to categories the customer does **not** already have in their
+cart, sorted bestsellers-first. Because that is a weaker claim, it gets weaker
+wording — *"Also in the collection"* instead of *"Complete the ritual"* — on the
+same principle as the Related Products rail: never assert a relationship the data
+does not support.
+
+Measured against the live 10-product catalog, every cart now has **2-4** usable
+strategies. `bestsellers` still declines for most carts, correctly: there is only
+one bestseller-badged product, and a suggestion rail with one lonely card is
+worse than a different suggestion. Badging more products improves it with no code
+change.
+
 ##### Four defects found in the final audit, and what they teach
 
 These were introduced by the outbox and waiting-screen work above and found by

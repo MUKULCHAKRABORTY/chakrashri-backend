@@ -1,6 +1,6 @@
 {
   "name": "chakrashri-backend",
-  "version": "1.2.0",
+  "version": "2.0.0",
   "description": "Production backend API for Chakrashri e-commerce (sacred objects, puja booking, astrology consultations)",
   "main": "src/server.js",
   "type": "commonjs",
