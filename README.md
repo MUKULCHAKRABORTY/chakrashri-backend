@@ -244,6 +244,506 @@ at this repo, then delete the hand-made service so you aren't billed for two. Re
 `sync: false` secret. Then remove `migrate-on-deploy.yml`, delete the external cron schedule, and
 drop `JOBS_TRIGGER_TOKEN` — the real cron services take over all of it.
 
+#### Cold starts, and why a visitor never waits through one
+
+Keeping the instance warm makes a cold start **rare**. It cannot make it impossible — a deploy,
+an eviction, or a missed schedule all bring one back. So the storefront is built to render
+completely **without the API**, and the cold start happens behind a page the visitor is already
+using.
+
+**What it used to do.** `init()` awaited seven API calls before it did anything else, and routing
+was the *last* thing it did. `#page-home` is the only page marked active in the static HTML, so a
+visitor opening a shared product link on a sleeping API sat on the **home page**, with empty
+product grids, for the whole 30–60 second boot — and was then thrown to the product without
+warning. Nothing was broken; the first paint was simply gated on a request that had no business
+gating it.
+
+**What it does now.** Three sources for the catalog, fastest first:
+
+| Tier | Source | Typical | Used when |
+|---|---|---|---|
+| 1 | `catalog.json` on Netlify's edge | ~50 ms | Always, if the file exists |
+| 2 | `localStorage` (last catalog seen, max 24h old) | ~1 ms | Snapshot missing or slow |
+| 3 | The live API | 30–60 s when cold | Always — in the **background**, and it always wins |
+
+The page routes and renders from tier 1 or 2 in well under a second; tier 3 replaces it silently
+when it lands. A shared product link now shows the real product — name, price, images,
+description, working Add to Cart — while the server is still booting.
+
+Three supporting pieces, all in `index.html`, each marked with a `COLD START` comment block:
+
+- **The knock happens in `<head>`.** `/api/health` is fetched before the 460 KB of markup is
+  parsed, so Render's boot clock starts ~1.5 s earlier than it used to. It touches no database and
+  is exempt from the rate limiter, so a slow answer costs nothing.
+- **Skeletons, never a false empty state.** An empty grid because the catalog has not arrived is
+  not an empty catalog. "No products found" is now shown only once a tier has actually answered.
+- **Honest, escalating copy** — and only on requests something is genuinely waiting on. Browsing
+  is served from the snapshot and stays silent; add-to-cart, login and checkout show
+  "Just a moment…" at 4 s and "Our server is waking up…" at 15 s.
+
+**What still waits on the server, stated plainly.** Add to cart, login, checkout and booking
+cannot be served from a snapshot and never will be. What changed is *when* they happen: a visitor
+browses for 30-odd seconds first, and the server has been waking that whole time. The static shell
+buys exactly the time the boot needs.
+
+**The snapshot is display data only.** Price and stock in `catalog.json` can be minutes or days
+old. The server re-checks both at add-to-cart and again at checkout (`utils/stock.js`,
+`utils/orders.js`), which is what makes a stale snapshot a cosmetic problem rather than a
+mispriced order. **Never compute a total from it.**
+
+##### Setup — one command, then commit the result
+
+`netlify.toml` regenerates `catalog.json` on every deploy, so normally there is nothing to do. But
+generate one by hand and **commit it**, once:
+
+```bash
+npm run snapshot
+```
+
+That is the safety net. On a build where the API never wakes, the script refuses to publish an
+empty shop and keeps whatever copy is in the repo — so the committed one is what visitors get.
+With no committed copy and a failed build fetch, the storefront falls back to tiers 2 and 3, which
+still works but gives a first-time visitor skeletons instead of products.
+
+The script wakes the API by polling `/api/health` for up to 90 s before fetching, and always exits
+`0`: a deploy blocked because a snapshot could not be refreshed is worse than a deploy carrying
+yesterday's snapshot.
+
+#### Shared links: why every product used to preview as the same thing
+
+Separate problem, same symptom, and worth understanding on its own.
+
+`_redirects` serves the **same** `index.html` for every path. Its head carries
+the generic site title, the generic description and no image. `updatePageMeta()`
+rewrites those per view — but it rewrites them *in JavaScript*, and the crawlers
+that build link previews do not run JavaScript.
+
+So every product link shared on WhatsApp — the dominant channel for this market —
+previewed as "Chakrashri — Sacred Objects, Puja Booking & Astrology" with no
+picture and no price, whichever product it pointed at. Facebook, Twitter/X,
+Slack, Telegram, LinkedIn and iMessage all behave the same way.
+
+`scripts/generate-product-pages.js` writes a real `product/<slug>/index.html`
+per product on every deploy, with that product's own title, description, image,
+`og:type=product` and Product/Offer JSON-LD already in the bytes. Netlify serves
+a real file in preference to the `/*` catch-all, so these win automatically —
+**do not add `!` to that rule**, since a forced rewrite would shadow every one
+of them. The frontend test asserts it is not forced.
+
+Two silent bugs were found and fixed while doing this, both of which had been
+quietly costing the site:
+
+- **`og:image` was never emitted at all.** The social-card and JSON-LD code read
+  `p.img`, and no product object in this project has ever had an `img` field —
+  the API mapper builds `imageUrl` and the embedded seed catalog has no image
+  field whatsoever. Reading a missing property is `undefined`, not an error, so
+  it failed in total silence. Every shared link was pictureless, and Google
+  never had an image to attach to a result.
+- **The Product JSON-LD was mostly wrong.** It read `short_desc`, `stock_qty`
+  and `review_count` from objects whose fields are named `shortDesc`, `stockQty`
+  and `reviews`. Net effect: every product Google indexed had an **empty
+  description**, was advertised as **InStock whether or not it was**, and
+  **never carried its star rating**. The availability mismatch is the serious
+  one — Google issues manual actions over it. Both readers now accept either
+  shape, because the generator passes raw API rows and the storefront passes
+  mapped ones.
+
+##### What the generated pages are, and what they cost
+
+Each page is a full copy of `index.html` with its head rewritten — there are no
+shared external assets to link to, since all CSS and JS is inline. That reads
+alarming at ~487KB and mostly is not: Netlify serves them brotli-compressed at
+roughly 85KB, and a visitor downloads exactly **one**, because every navigation
+after the entry page is client-side routing. The real cost is a repeat visitor
+entering at two different products on different days paying for two documents
+instead of one cached one — a fair trade for previews that work.
+
+Each page also inlines its own product row as `window.__PRERENDER__`, which
+`seedPrerenderedProduct()` reads *before* the snapshot is awaited. A prerendered
+product page therefore renders completely with **no network request at all** —
+not even `catalog.json`. Verified: with the API unreachable and localStorage
+cleared, `/product/<slug>` renders name, price, MRP, saving, SKU, rating and a
+working Add to Cart, with `catalogSource` still `null`.
+
+The pages are **gitignored build output** (`/product/`), regenerated from the
+live catalog on every deploy — note the deliberate asymmetry with
+`catalog.json`, which *is* committed because it is the storefront's fallback
+when a build cannot reach the API. These pages have no such role: with none
+present, every product still renders through the SPA exactly as before.
+
+`PRERENDER_MAX_PAGES` (default 400) caps how many are written. Beyond it the
+remaining products still work, they just share the generic preview.
+
+**Failure is always soft.** If the head of `index.html` ever changes shape so a
+replacement pattern stops matching, the script writes **nothing** and says so
+loudly, rather than publishing pages that look fine and carry the wrong preview.
+It always exits `0` — link previews must never be able to block a deploy.
+
+#### The rule: never show a visitor something that is not true
+
+Every piece below enforces one rule — when the site cannot say what is true, it
+says nothing rather than inventing it. Auditing for that turned up four defects
+that had nothing to do with cold starts and everything to do with this rule.
+
+**1. A sleeping API used to produce a shop full of products that do not exist.**
+`index.html` carried 128 lines of demo catalog — "Natural Sphatik Shivling – 2
+Inch" at ₹1,299, ids like `lin-01`, invented ratings and review counts — as the
+last-resort fallback. So the failure mode of an unreachable backend was a
+storefront that looked completely normal and sold nothing real. That is the one
+failure a customer cannot detect: an empty grid is obviously a site with a
+problem; a full grid of fake products looks fine right up until they try to buy.
+The seed data is **deleted**. `PRODUCTS` now starts empty, and when every source
+fails the grids say *"We could not load the collection"* with a Try Again button.
+
+**2. Three mega-menu links pointed at those demo ids.** `openProduct('lin-01')`
+resolves against no real catalog, so "Popular Picks" was three links that each
+ended in *"that product could not be found"*. They are now filled from the live
+catalog by `renderMegaMenuPicks()`, bestsellers first, and render nothing at all
+when there is no catalog — an empty column is honest, three dead links were not.
+
+**3. THE CART EMPTIED ITSELF DURING A COLD START.** The worst of the four. A
+cart line stored only `{ id, qty, variant }`, so every name and price came from
+a live `PRODUCTS` lookup, and `getCartLinesWithProducts()` discarded any line it
+could not resolve. For the whole of a 30–60 second cold start the shopper saw
+the cart badge reading **3** and *"Your cart is empty"* inside the drawer, the
+cart page and the checkout.
+
+Worse, `getCartSubtotal()` sums that same filtered list, so the checkout quoted
+a total that excluded the missing lines — and the order still went through at
+the correct amount, because the client sends only `{ productId, variantId,
+quantity }` and the server computes every figure from the database. Being
+charged an amount you were never shown is a trust failure whatever the cause.
+
+Two fixes. A line now records what it needs to describe itself (`snap`) at the
+moment it is added, and falls back to that whenever the catalog cannot answer —
+the live product still wins whenever it is present, so a price change is picked
+up the moment the catalog lands, and `backfillCartSnapshots()` heals carts saved
+before this existed. And `placeOrder()` refuses outright while any line is
+unresolvable, rather than taking payment against a total it cannot vouch for.
+
+**The snapshot on a cart line is display data and nothing else.** It is never
+sent to the server and never used to compute what anyone pays. Verified: with
+the API unreachable and `PRODUCTS` emptied, the cart shows the same two lines
+and the same ₹8,297 total it showed while healthy.
+
+**4. A cache-busting reload could fire 60 seconds into a visit.**
+`checkSiteVersion()` resolves over the network, so on a cold API it lands a
+minute in. That was harmless when the visitor was still staring at an empty
+page; now they are reading a product, and reloading discards their scroll
+position, an open drawer, or a half-filled address form. It now reloads only if
+they have not interacted yet, and otherwise waits for their next visit.
+
+##### The awakening screen
+
+A full-viewport chakra — the hero Sri Yantra — sits in the **markup** at the top
+of `<body>`, with its own inline `<style>`. Both details matter: a loading screen
+rendered by the app it is covering for is no loading screen at all, and one that
+waits for a stylesheet hundreds of KB further down the document is not much
+better.
+
+Two bounds, in `AWAKEN_MIN_MS` (900) and `AWAKEN_MAX_MS` (4000):
+
+- The **floor** stops it flashing. With the snapshot in place the page is
+  usually ready in ~300ms, so without it the brand mark would appear and vanish.
+- The **ceiling** is the four seconds asked for, and it is a ceiling rather than
+  a fixed duration on purpose. A splash that always ran its full length would
+  make every visit slower than the storefront actually is, delay Largest
+  Contentful Paint on every page, and cost conversions on exactly the mobile
+  connections this market runs on. **To make it a flat four seconds instead, set
+  `AWAKEN_MIN_MS` to 4000** — that is the only change needed.
+
+Measured: visible at full opacity to 900ms, fading by 962ms, gone from the DOM
+at 1767ms.
+
+It can never become permanent. The ceiling is armed unconditionally at parse
+time, and both an `error` and an `unhandledrejection` listener dismiss it
+immediately. Both listeners are required: `init()` is `async`, so a throw inside
+it surfaces as a rejection and fires no error event — without the second one, a
+dead boot would sit behind a full-screen overlay.
+
+##### Waking both sleeping services, not just one
+
+There are **two** things asleep, and they wake independently. `/api/health`
+touches no database, so it answers as soon as Node is listening — the earliest
+honest signal that Render is back. `/api/ready` runs `SELECT 1`, which is what
+actually resumes the Neon compute. Firing only the first meant the database
+only began waking when the first real query arrived, so the visitor paid the
+Render cold start **and** the Neon one, in series. Both now go out from the
+`<head>`, before the markup is parsed, and both are exempt from the rate limiter.
+
+##### Keeping the published snapshot fresh, without burning the build budget
+
+A returning visitor always has their own copy in `localStorage`, refreshed every
+visit. A **first-time** visitor has only whatever `catalog.json` was published on
+the last deploy — which on a site that deploys rarely can be weeks behind.
+
+`.github/workflows/refresh-catalog.yml` runs every six hours, compares the live
+catalog against the one currently being served, and asks Netlify to rebuild
+**only when they actually differ**. The comparison is the whole point: Netlify's
+free plan allows 300 build minutes a month, and rebuilding on a timer would
+exhaust it and then stop deploying anything at all — including real code changes
+— which is far worse than a stale price. The fingerprint covers only the fields a
+visitor actually sees, so a reordered API response or a new unused column is not
+a change.
+
+It is optional and fails safe. Without `NETLIFY_BUILD_HOOK_URL` set it logs and
+exits; if the API will not wake, or returns an empty catalog, it does nothing
+rather than publishing an empty shop. Check drift by hand any time with:
+
+```bash
+npm run catalog:drift
+```
+
+##### Actions taken while the backend is asleep (the outbox)
+
+The cart and the wishlist already live in `localStorage`, so they never needed a
+server. Everything else a visitor can *do* was a bare POST that simply failed
+while the instance was cold: a restock alert, a newsletter signup, a contact
+message all ended in *"Could not add you to the list. Please try again."* That
+is a dead end, and it is not even true — nothing was wrong with the request
+except when it was made.
+
+Those three are now recorded locally, confirmed to the customer at once, and
+delivered the moment the backend answers. From their side the site behaves
+identically whether it was awake or asleep.
+
+**What may be queued, and what may never be.** Only actions where *"we will do
+this shortly"* is an honest thing to say. A payment, an order, a booking and a
+login all hand the customer something that cannot be invented — money moves, a
+slot is held, a token is issued. `OUTBOX_ROUTES` is an allowlist and
+`queuedPost()` throws on any path not in it, so a future call site cannot make a
+payment fire-and-forget by reaching for the wrong helper. The test suite asserts
+that list never grows to include `payments`, `orders`, `bookings` or `auth`.
+
+**Duplicates.** `stock-notify` and `newsletter` are `ON CONFLICT` upserts
+server-side (see `engagement.routes.js`), so replaying either changes nothing
+and they stay queued until they land. `contact` is a plain `INSERT`, so a replay
+would open a second support ticket — it is dispatched **at most twice** and then
+handed back to the customer with an honest message rather than retried forever.
+
+A 4xx is never queued. `isTransportFailure()` separates *"the server is asleep"*
+from *"the server refused this"*; queueing a refusal would only replay the
+refusal. The queue is bounded to 40 items and 7 days, and drains on wake, on tab
+focus, and when the browser regains a connection — each of those checks the
+queue is non-empty first, so a visitor with nothing pending never pays for a
+probe.
+
+**One bug found by testing this, worth recording:** the branches that give up on
+an item filtered it out of the in-memory array but never wrote that back. The
+item stayed at `dispatched: 2` forever — it could never be sent, never be
+cleared, and re-toasted its own failure on every flush for the rest of the
+visit. Every removal now goes through a single `drop()` helper so the write
+cannot be forgotten again.
+
+##### The wait before a payment, and what it is spent on
+
+A restock alert can be recorded and delivered later. A payment cannot, and
+neither can a booking — a slot has to be held against real availability, and
+confirming a pandit before anything confirmed one is worse than any wait. So for
+those the wait is unavoidable; the only question is what it is spent on.
+
+`withBackendReady()` gates `placeOrder`, `confirmPujaBooking` and
+`confirmAstroBooking`. **When the backend is already up it runs the action
+immediately — measured at 0ms, with no modal and no artificial delay anywhere.**
+Only when it is not does the waiting screen appear, and it closes the instant
+`/api/ready` confirms both the web process and the database are up.
+
+Readiness is re-checked rather than answered once at page load: Render sleeps
+after ~15 minutes and Neon after ~5, so a session that started warm can go cold
+while someone is still reading. `BACKEND_READY_TTL_MS` (45s) bounds how long an
+"awake" answer is trusted, and every successful API call refreshes it for free,
+so an active session almost never probes at all.
+
+**What the wait shows.** Six strategies, chosen for what is actually in the cart
+and rotated so the same card cannot simply reappear to fill time:
+
+| Strategy | Fires when |
+|---|---|
+| Complete the ritual | Pairs categories that genuinely belong together (a lingam with samagri, a mala with books) |
+| Free shipping is ₹X away | Subtotal is under ₹999, and only items that actually close the gap, cheapest first |
+| Small things worth having | Items under ₹500, most-reviewed first |
+| Most chosen this season | Bestsellers not already in the cart |
+| Looking after it | A genuine care note for the material in their cart — no products at all |
+| From the Journal | An article, when there is nothing useful left to suggest |
+
+Every product shown is real, from the last catalog the site actually served.
+Adding one is an ordinary local cart write, which is exactly why it can be
+offered with the server still cold — the test suite asserts `waitAddSuggestion`
+touches no network.
+
+**The rule that matters: the intent is never lost.** Whether they add three
+things, dismiss every suggestion, or sit and read, the original action continues
+on its own the moment the backend and database both answer — with whatever they
+added included, because `placeOrderNow()` reads the cart when it *runs*, not
+when it was requested. That is why `placeOrder` was split in two, and the test
+suite asserts the items array is built inside `placeOrderNow`.
+
+Cancelling genuinely cancels: the intent is dropped, `withBackendReady` returns
+`undefined`, and a later wake does not resurrect it. Escape routes through
+`cancelWaitingExperience()` rather than `closeModal`, because hiding the box
+while leaving a pending intent alive would fire an order later with nothing on
+screen to explain it. A 120-second ceiling ends the wait honestly: nothing
+charged, cart saved, try again.
+
+**Business note.** This turns the worst moment on the site — a shopper with
+their card out, waiting — into the one place a relevant cross-sell is genuinely
+welcome. It is measured against the same catalog the storefront renders, so it
+costs nothing extra to run and nothing extra to maintain.
+
+##### The storefront origin — read it, never assume it
+
+**The site is live at `https://chakrashri.netlify.app`.** The custom domain
+`www.chakrashri.com` is not attached yet and currently 404s.
+
+That distinction is not cosmetic. Every build script writes absolute URLs —
+`canonical`, `og:url`, each `sitemap.xml` entry, the Product JSON-LD
+`offers.url` — and all four defaulted to the custom domain. The result was a
+storefront telling Google that every real page was a duplicate of an address
+that does not resolve, and handing every WhatsApp preview a dead destination.
+Nothing on the site itself looks wrong when this happens, which is what makes it
+dangerous. `npm run check:share` caught it as a 404 against the live URL.
+
+Scripts now read `SITE_ORIGIN || URL`, falling back to the Netlify subdomain.
+**`URL` is set by Netlify during every build to the site's primary domain**, so
+attaching the custom domain later needs no code change at all.
+
+Three literals cannot read an environment variable and are the only things to
+change at cutover:
+
+| File | What to change |
+|---|---|
+| `index.html` | `<link rel="canonical">` and `<meta property="og:url">` in the head, the two JSON-LD `url` fields, and the `SITE_ORIGIN` `file://` fallback |
+| `robots.txt` | the `Sitemap:` line |
+| Render dashboard | `CLIENT_URL` — or add both origins to `ADDITIONAL_CLIENT_ORIGINS` during the cutover, or CORS blocks the storefront |
+
+`npm run check:storefront` compares those literals against the origin the build
+actually uses and **fails** when they disagree, so this cannot silently rot
+again. Run it after any domain change.
+
+##### Checking the storefront artifacts
+
+Two questions come up every time you build these: *did the snapshot capture
+everything?* and *do shared links actually show the right thing?* Both are npm
+scripts:
+
+```bash
+npm run check:storefront
+```
+
+Reads `catalog.json` and `product/` and reports what a visitor would really get:
+product/category/service counts, snapshot age, missing slugs or prices,
+duplicate slugs, which products have no image (their link previews are text-only),
+what is out of stock, whether every product has a page, and a spot-check of one
+generated page's title, `og:image`, Product JSON-LD and inline payload. Exits
+non-zero on anything that would reach a customer.
+
+```bash
+npm run check:share
+```
+
+The same, plus it fetches the **live** site to confirm the deployed product page
+carries the product's own `og:title` and that `/catalog.json` is being served.
+Run it after a deploy; if it reports the generic site title, the prerender step
+did not run in the Netlify build.
+
+**Both exist as npm scripts for a specific reason.** They were originally handed
+over as `node -e '...'` one-liners and both *failed when run*: PowerShell
+re-quotes arguments on their way to a native executable, so the double quotes
+inside a single-quoted string are stripped and node receives
+`require(./catalog.json)` — a syntax error that reads like a broken project
+rather than a broken command. A verification command that cannot be pasted and
+run is worse than none, because it costs confidence before telling you anything.
+
+##### The related-products rail
+
+`renderRelatedProducts` passed same-category matches straight to
+`renderGridInto`, and an empty list there renders the **shop grid's** empty
+state: *"No products found. Try adjusting your filters, or ask Chakra AI for a
+recommendation."* with a **Clear Filters** button — inside a product page, where
+there are no filters at all. With a catalog spread thinly across categories,
+which is the normal state of a growing shop, that was most product pages. It was
+only obvious once the rail was checked against the real 10-product catalog.
+
+It now takes same-category matches first, tops the rail up from the rest of the
+catalog (bestsellers first) so it is useful rather than empty, hides the whole
+section when there is genuinely nothing to show, and relabels the heading *"More
+From Chakrashri"* when the products shown are not actually related — because
+calling them Related when they share nothing is the same class of small untruth
+as everything else this work removed.
+
+##### Four defects found in the final audit, and what they teach
+
+These were introduced by the outbox and waiting-screen work above and found by
+re-reading the code rather than by a failing test. Recorded because each one is
+a pattern, not a typo.
+
+**1. `undefined !== false` is true.** `queuedPost` read
+`isBackendKnownAwake() || opts.tryLiveFirst !== false`, and no real call site
+passes `tryLiveFirst`, so the right-hand side was permanently true and the whole
+condition always true. Every queued action therefore attempted a live POST
+against a sleeping instance first — 30 seconds of `apiFetch` timeout, with the
+"our server is waking up" notice appearing — before finally queueing. The outbox
+existed to remove exactly that experience and was reintroducing it. *An
+option-defaulting expression that is true when the option is absent is not a
+default; it is an unconditional.*
+
+**2. Moving a slow step earlier can unguard a fast one.** "Place Order & Pay" is
+a plain `onclick` with no re-entrancy guard of its own, and never needed one:
+`placeOrder` synchronously hid the checkout layout and showed the processing
+pane, so the button was gone within a frame. Putting the backend wait *before*
+that swap left the button live and clickable for up to two minutes — and two
+taps, which is precisely what an impatient shopper does when nothing appears to
+happen, meant two orders and two charges. The guard now lives in
+`withBackendReady`, so the bookings are covered too and any money path added
+later inherits it. *Check what was protecting a thing implicitly before you
+change when it runs.*
+
+**3. A modal is not a page.** Browser-back during the wait left the overlay on
+screen with a live intent behind it, which would then place an order from a
+screen the customer had already left. `popstate` now cancels it.
+
+**4. Claim a lock before the thing you await, not after.** `flushOutbox` probed
+the backend and only then set `outboxFlushing`, so two callers arriving together
+— a wake notification and a tab focus, say — could both pass the unclaimed lock
+and deliver the same queued items twice.
+
+A fifth, found earlier the same way: the outbox branches that gave up on an item
+filtered it out of the in-memory array but never wrote that back, so the item
+stayed at `dispatched: 2` forever — never sent, never cleared, re-toasting its
+own failure on every flush. Every removal now goes through one `drop()` helper.
+
+All five are covered by `[fe-19]` in `test/frontend.test.js`.
+
+**A note on writing those tests:** two of them initially failed against correct
+code, because the assertion matched the explanatory *comment* rather than the
+code — the same trap as the earlier duplicate-`id` scan. When a test greps
+source, its own documentation is part of what it greps.
+
+##### Two things left deliberately alone — your call, not mine
+
+- **The testimonials on the home page** are hardcoded and attributed to named
+  individuals with cities ("Priya Sharma, Pune"). If those are real customers
+  quoted with permission, nothing needs doing. If they are placeholder copy,
+  they are the same class of problem as the demo catalog, and they carry more
+  risk: the Consumer Protection Act 2019 and the BIS standard on online consumer
+  reviews both treat fabricated testimonials as a misleading advertisement.
+  Product reviews are *not* affected — those are real, and come from the API.
+- **The hero statistics** (40,000+ devotees served, 4.8/5, 120+ verified
+  priests, 12 years in service) are unverifiable from the code. They are
+  business claims, so they are yours to stand behind.
+
+##### A caveat about Neon, before you add a second schedule
+
+Neon suspends its compute after ~5 minutes idle, so the 10-minute job trigger leaves it asleep
+about half the time. It is tempting to add a 4-minute ping at `/api/ready` (which runs `SELECT 1`)
+to keep it permanently warm — **check your Neon compute-hour allowance first.** Keeping it awake
+round the clock is ~730 compute-hours a month, which is well beyond what the free plan includes,
+and exhausting it takes the database down rather than just making it slow.
+
+You almost certainly do not need to. Neon's wake is seconds, not the tens of seconds Render costs,
+and the tiers above already hide it — the job trigger's own database work keeps it warm during
+the window that matters anyway.
+
 ### 1. Push this code to GitHub
 Render deploys from a Git repository, not a zip upload.
 ```bash

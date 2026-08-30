@@ -450,7 +450,17 @@ section('[fe-9] The capture forms actually submit somewhere');
       const fn = extractFunction(read('index.html'), fnName);
       assert.ok(fn, fnName + ' is missing from index.html');
       assert.ok(fn.includes(endpoint), fnName + ' does not call ' + endpoint);
-      assert.ok(/apiFetch\s*\(/.test(fn), fnName + ' never issues a request');
+      // apiFetch OR queuedPost. queuedPost is the outbox wrapper: it calls
+      // apiFetch first and only falls back to local storage when the request
+      // could not be delivered, so the guarantee this test exists to protect —
+      // that the form reaches the server rather than just showing a toast — is
+      // stronger than it was, not weaker. See OUTBOX_ROUTES in index.html.
+      assert.ok(/apiFetch\s*\(|queuedPost\s*\(/.test(fn),
+        fnName + ' never issues a request');
+      if (/queuedPost\s*\(/.test(fn)) {
+        assert.ok(!/^\s*toast\(/m.test(fn.split('queuedPost')[0].split('\n').slice(-3).join('\n')),
+          fnName + ' confirms to the customer before attempting delivery');
+      }
     });
   }
 
@@ -621,6 +631,525 @@ section('[fe-6] HYG-05 — no API key or direct model call in client code');
         assert.ok(!re.test(html), `${file} appears to contain ${what}`);
       }
     }
+  });
+}
+
+// ============================================================
+section('[fe-13] Prerendered product pages carry the right link preview');
+// ============================================================
+// scripts/generate-product-pages.js rewrites the head of a 460KB index.html
+// with string replacement. A pattern that silently matched nothing would emit
+// pages that look perfect and carry the GENERIC preview — the exact bug the
+// script exists to fix, reintroduced invisibly. These tests are the guard.
+{
+  const gen = require('../scripts/generate-product-pages.js');
+
+  // A product chosen to exercise every branch at once: an ampersand and a
+  // double quote that must be escaped, a real image, a stock count, reviews.
+  const PRODUCT = {
+    id: 7,
+    slug: 'sphatik-shivling-2in',
+    name: 'Sphatik "Premium" Shivling & Base',
+    category: 'lingam',
+    price_paise: 249900,
+    mrp_paise: 349900,
+    rating: '4.6',
+    review_count: 18,
+    badge: 'bestseller',
+    stock_qty: 7,
+    has_variants: false,
+    sku: 'CS-LNG-001',
+    short_desc: 'Natural clear quartz shivling, hand-finished.',
+    long_desc: 'Longer copy.',
+    material: 'Sphatik',
+    image_url: 'https://cdn.example.test/shivling.jpg'
+  };
+
+  const source = read('index.html');
+  const rendered = gen.renderProductPage(source, PRODUCT);
+  const out = rendered.html;
+
+  function metaContent(html, selector) {
+    const re = new RegExp('<meta ' + selector + ' content="([^"]*)"');
+    const m = html.match(re);
+    return m ? m[1] : null;
+  }
+
+  test('THE FINDING: every head tag is actually rewritten — nothing silently missed', () => {
+    assert.deepStrictEqual(rendered.missed, [],
+      'these replacements matched nothing, so the page would carry the generic preview: ' + rendered.missed.join(', '));
+  });
+
+  test('the title and og:title name the product, not the site', () => {
+    assert.match(out, /<title>Sphatik &quot;Premium&quot; Shivling &amp; Base — Buy Online \| Chakrashri<\/title>|<title>Sphatik "Premium" Shivling &amp; Base — Buy Online \| Chakrashri<\/title>/,
+      'the <title> still reads as the generic site title');
+    const ogTitle = metaContent(out, 'property="og:title"');
+    assert.ok(ogTitle && ogTitle.indexOf('Shivling') > -1, 'og:title does not name the product: ' + ogTitle);
+    assert.ok(ogTitle.indexOf('Sacred Objects, Puja Booking') === -1, 'og:title is still the generic site title');
+  });
+
+  test('og:url and canonical point at this product, not the home page', () => {
+    // The origin is read from the generator, never hardcoded here: the live site
+    // is currently the Netlify subdomain and moves to the custom domain later,
+    // and a test that pins one of those fails the day the other becomes true.
+    const origin = (process.env.SITE_ORIGIN || process.env.URL || 'https://chakrashri.netlify.app').replace(/\/+$/, '');
+    const expected = origin + '/product/sphatik-shivling-2in';
+    assert.strictEqual(metaContent(out, 'property="og:url"'), expected);
+    assert.ok(out.indexOf('<link rel="canonical" href="' + expected + '">') > -1,
+      'canonical should be ' + expected);
+  });
+
+  test('og:type is product, so a share card renders as an item and not a website', () => {
+    assert.strictEqual(metaContent(out, 'property="og:type"'), 'product');
+  });
+
+  test('THE OTHER FINDING: an image reaches the preview card at all', () => {
+    // index.html ships with no og:image, and the code that used to add one read
+    // p.img — a field no product object in this project has ever had. So every
+    // shared link was pictureless. The generator adds it from image_url.
+    assert.strictEqual(metaContent(out, 'property="og:image"'), 'https://cdn.example.test/shivling.jpg');
+    assert.strictEqual(metaContent(out, 'name="twitter:image"'), 'https://cdn.example.test/shivling.jpg');
+    assert.strictEqual(metaContent(out, 'name="twitter:card"'), 'summary_large_image');
+  });
+
+  test('a product with no image does NOT claim a large-image card', () => {
+    const noImage = gen.renderProductPage(source, Object.assign({}, PRODUCT, { image_url: null }));
+    assert.deepStrictEqual(noImage.missed, []);
+    assert.strictEqual(metaContent(noImage.html, 'property="og:image"'), null,
+      'og:image was emitted with no image to point at — a broken preview image is worse than none');
+    assert.strictEqual(metaContent(noImage.html, 'name="twitter:card"'), 'summary');
+  });
+
+  test('quotes and ampersands in a product name cannot break out of an attribute', () => {
+    const ogTitle = metaContent(out, 'property="og:title"');
+    assert.ok(ogTitle.indexOf('"') === -1, 'a raw double quote in og:title ends the attribute early');
+    assert.ok(/&quot;/.test(ogTitle), 'the quote should be escaped, not stripped');
+    assert.ok(/&amp;/.test(ogTitle), 'the ampersand should be escaped');
+    // The malicious case: a name that tries to close the tag and open a script.
+    const evil = gen.renderProductPage(source, Object.assign({}, PRODUCT, {
+      name: 'X"><script>alert(1)</script>'
+    }));
+    const ogEvil = metaContent(evil.html, 'property="og:title"');
+    assert.ok(ogEvil.indexOf('<script') === -1 && ogEvil.indexOf('">') === -1,
+      'a product name was able to escape the meta attribute');
+  });
+
+  test('the JSON-LD island is valid JSON and describes this product', () => {
+    const m = out.match(/<script type="application\/ld\+json" id="ldPage">([\s\S]*?)<\/script>/);
+    assert.ok(m, 'the per-page JSON-LD island is missing or was not filled');
+    let data;
+    assert.doesNotThrow(() => { data = JSON.parse(m[1]); }, 'the JSON-LD island is not valid JSON');
+    assert.strictEqual(data['@type'], 'Product');
+    assert.strictEqual(data.sku, 'CS-LNG-001');
+    assert.strictEqual(data.offers.price, '2499.00', 'price must be rupees, not paise');
+    assert.strictEqual(data.offers.priceCurrency, 'INR');
+    assert.strictEqual(data.category, 'Sphatik Lingams');
+    assert.ok(data.description.length > 0, 'BUG: the JSON-LD description used to always be empty');
+  });
+
+  test('BIZ-04 — availability reflects real stock, and a rating is only claimed when reviews exist', () => {
+    const inStock = gen.productJsonLd(PRODUCT);
+    assert.strictEqual(inStock.offers.availability, 'https://schema.org/InStock');
+    assert.ok(inStock.aggregateRating, '18 real reviews should produce an aggregateRating');
+    assert.strictEqual(inStock.aggregateRating.reviewCount, 18);
+
+    const soldOut = gen.productJsonLd(Object.assign({}, PRODUCT, { stock_qty: 0 }));
+    assert.strictEqual(soldOut.offers.availability, 'https://schema.org/OutOfStock',
+      'BUG: an out-of-stock product was advertised to Google as InStock');
+
+    const unrated = gen.productJsonLd(Object.assign({}, PRODUCT, { review_count: 0, rating: null }));
+    assert.strictEqual(unrated.aggregateRating, undefined,
+      'publishing a rating for a product with no reviews is the fabricated rating BIZ-04 removed');
+  });
+
+  test('a closing script tag inside product copy cannot truncate the page', () => {
+    // The failure scripts/check-syntax.js exists to catch, arriving from the
+    // database instead of from a source edit.
+    const nasty = gen.renderProductPage(source, Object.assign({}, PRODUCT, {
+      short_desc: 'Ends the block: </script><script>alert(1)</script>'
+    }));
+    assert.deepStrictEqual(nasty.missed, []);
+    const payload = nasty.html.match(/window\.__PRERENDER__ = \{ product: ([\s\S]*?) \};/);
+    assert.ok(payload, 'the inline product payload is missing');
+    assert.ok(payload[1].indexOf('</script>') === -1,
+      'a raw </script> reached the inline payload and would truncate the document');
+    assert.doesNotThrow(() => JSON.parse(payload[1]), 'the inline payload is not valid JSON');
+  });
+
+  test('the inline payload is the real product row, so the page renders before catalog.json', () => {
+    const payload = out.match(/window\.__PRERENDER__ = \{ product: ([\s\S]*?) \};/);
+    const row = JSON.parse(payload[1]);
+    assert.strictEqual(row.slug, PRODUCT.slug);
+    assert.strictEqual(row.price_paise, PRODUCT.price_paise);
+    assert.strictEqual(row.stock_qty, PRODUCT.stock_qty);
+  });
+
+  test('index.html knows how to consume that payload', () => {
+    const html = read('index.html');
+    assert.match(html, /window\.__PRERENDER__/,
+      'the storefront never reads __PRERENDER__, so the inline payload is dead weight');
+    assert.match(html, /function seedPrerenderedProduct/);
+    assert.match(html, /seedPrerenderedProduct\(\);[\s\S]{0,200}readBootSnapshot/,
+      'the inline product must be seeded BEFORE the snapshot is awaited, or a prerendered page still waits on the CDN');
+  });
+
+  test('the page still boots as the full storefront — the app script survives the rewrite', () => {
+    const originalScripts = inlineScriptBodies(source).length;
+    const rewrittenScripts = inlineScriptBodies(out).length;
+    assert.strictEqual(rewrittenScripts, originalScripts,
+      'the rewrite changed how many inline script blocks exist — something was truncated');
+    assert.ok(out.length > source.length - 2000,
+      'the rewritten page is dramatically shorter than the source; content was lost');
+    assert.match(out, /document\.addEventListener\('DOMContentLoaded', init\)/,
+      'the SPA boot hook is gone, so the prerendered page would never become interactive');
+  });
+
+  test("the generator's category labels match the storefront's, so a crumb and a rich result agree", () => {
+    const html = read('index.html');
+    const m = html.match(/const CAT_LABELS = \{([^}]*)\}/);
+    assert.ok(m, 'CAT_LABELS not found in index.html');
+    const inPage = {};
+    for (const pair of m[1].split(',')) {
+      const kv = pair.match(/\s*(\w+)\s*:\s*'([^']*)'/);
+      if (kv) inPage[kv[1]] = kv[2];
+    }
+    assert.deepStrictEqual(gen.CAT_LABELS, inPage,
+      'scripts/generate-product-pages.js and index.html disagree about category labels');
+  });
+
+  test('_redirects lets a real prerendered file win over the SPA catch-all', () => {
+    const redirects = read('_redirects');
+    const catchAll = redirects.split('\n').findIndex((l) => /^\/\*\s+\/index\.html\s+200/.test(l.trim()));
+    assert.ok(catchAll > -1, 'the SPA catch-all is missing');
+    assert.ok(!/^\/\*\s+\/index\.html\s+200!/m.test(redirects),
+      'the catch-all is FORCED (200!), which would shadow every prerendered product page');
+  });
+}
+
+// ============================================================
+section('[fe-14] A visitor is never shown data that is not real');
+// ============================================================
+// The storefront runs on infrastructure that sleeps. Everything here guards the
+// same rule: when we cannot say what is true, say nothing — never invent it.
+{
+  const html = read('index.html');
+
+  test('THE FINDING: the demo catalog is gone — a sleeping API can no longer produce a shop full of products that do not exist', () => {
+    assert.ok(!/Natural Sphatik Shivling – 2 Inch/.test(html),
+      'the seeded demo product is still in the file and can still reach a customer');
+    assert.ok(!/id:'lin-01'/.test(html) && !/id:'mal-01'/.test(html) && !/id:'bok-01'/.test(html),
+      'demo product objects are still defined');
+    assert.match(html, /let PRODUCTS = \[\];/,
+      'PRODUCTS must start empty so nothing can render before a real source answers');
+  });
+
+  test('the mega-menu no longer links to product ids that exist in no catalog', () => {
+    assert.ok(!/onclick="openProduct\('(lin|mal|idl|yan|bra|bok)-\d+'\)/.test(html),
+      'a hardcoded demo product link is still present — it 404s against a real catalog');
+    assert.match(html, /id="megaPicks"/, 'the picks column should be filled from the real catalog');
+    assert.match(html, /function renderMegaMenuPicks/);
+  });
+
+  test('a total failure produces an honest message and a retry, not fabricated stock', () => {
+    assert.match(html, /catalogSource = 'unavailable'/,
+      'there must be a terminal state distinct from "loading" and from "empty result"');
+    assert.match(html, /We could not load the collection/,
+      'the failure state needs its own wording — "No products found" describes a different problem');
+    assert.match(html, /function retryCatalogLoad/, 'the retry button must actually retry');
+  });
+
+  test('the loading state can never become permanent', () => {
+    assert.match(html, /setTimeout\(hideAwakeningScreen, AWAKEN_MAX_MS\)/,
+      'the awakening screen needs an unconditional ceiling, or a failed boot traps the visitor behind it');
+    assert.match(html, /addEventListener\('error', function\(\)\{ hideAwakeningScreen\(\); \}\)/);
+    assert.match(html, /addEventListener\('unhandledrejection', function\(\)\{ hideAwakeningScreen\(\); \}\)/,
+      'init() is async, so a throw inside it is a REJECTION and fires no error event — without this listener a dead boot sits behind a full-screen overlay');
+    assert.match(html, /catalogSource = 'unavailable';/,
+      'loadCatalog must always resolve catalogSource, or the skeletons pulse forever');
+  });
+}
+
+// ============================================================
+section('[fe-15] The cart survives a sleeping backend');
+// ============================================================
+// A cart line stored only { id, qty }, so every name and price came from a live
+// PRODUCTS lookup. While the catalog was unavailable the lines were filtered
+// out: the badge said 3 and the drawer said "Your cart is empty", and the
+// checkout quoted a total that excluded them.
+{
+  const html = read('index.html');
+
+  test('THE FINDING: a cart line carries what it needs to describe itself', () => {
+    assert.match(html, /function cartLineSnapshot/);
+    assert.match(html, /function productFromCartLine/);
+    assert.match(html, /snap: cartLineSnapshot\(p\)/,
+      'a new cart line must record its own name and price at the moment it is added');
+  });
+
+  test('an unresolvable product falls back to the line snapshot instead of vanishing', () => {
+    assert.match(html, /getProduct\(l\.id\) \|\| productFromCartLine\(l\)/,
+      'getCartLinesWithProducts still drops any line the live catalog cannot resolve');
+  });
+
+  test('carts saved before snapshots existed are healed once a catalog arrives', () => {
+    assert.match(html, /function backfillCartSnapshots/);
+    assert.match(html, /backfillCartSnapshots\(\);[\s\S]{0,400}renderFeaturedGrid\(\)/,
+      'the backfill must run before the views that read those lines are re-rendered');
+  });
+
+  test('THE MONEY GUARD: checkout refuses to quote a total it cannot vouch for', () => {
+    assert.match(html, /function cartHasUnresolvedLines/);
+    // placeOrder is now the waiting-experience wrapper; placeOrderNow is what
+    // actually takes the money, so that is where the guard has to be.
+    const start = html.indexOf('async function placeOrderNow');
+    assert.ok(start > -1, 'placeOrderNow is missing');
+    const body = html.slice(start, start + 6000);
+    assert.match(body, /if\(cartHasUnresolvedLines\(\)\)/,
+      'placeOrderNow must not proceed while a line is missing from the displayed total');
+    const guardAt = body.indexOf('cartHasUnresolvedLines()');
+    const payAt = body.indexOf('checkoutProcessing');
+    assert.ok(payAt > -1, 'could not find the payment UI switch inside placeOrderNow');
+    assert.ok(guardAt > -1 && guardAt < payAt,
+      'the guard must run BEFORE the payment UI is shown, not after');
+  });
+
+  test('the client still never sends prices — the server remains the only source of an amount', () => {
+    assert.match(html, /\{ productId: l\.id, variantId: l\.variantId \|\| null, quantity: l\.qty \}/,
+      'the order payload must carry ids and quantities only');
+    const payload = html.match(/const items = cart\.map\(function\(l\)\{[\s\S]{0,200}?\}\);/);
+    assert.ok(payload, 'could not find the order items payload');
+    assert.ok(!/price|amount|total|snap/i.test(payload[0]),
+      'a price reached the order payload — the server must compute every amount itself');
+  });
+}
+
+// ============================================================
+section('[fe-16] Waking both sleeping services, and not disrupting the visitor');
+// ============================================================
+{
+  const html = read('index.html');
+
+  test('THE FINDING: the database is woken too, not just the web process', () => {
+    assert.match(html, /knock\('\/api\/health'\)/,
+      'the liveness knock is missing — it is the earliest signal the server is back');
+    assert.match(html, /knock\('\/api\/ready'\)/,
+      'nothing wakes Neon: /api/health touches no database, so the compute only starts resuming when the first real query lands, and the visitor pays both cold starts in series');
+  });
+
+  test('both knocks are sent from the <head>, before the app script parses', () => {
+    const headEnd = html.indexOf('</head>');
+    assert.ok(html.indexOf("knock('/api/health')") < headEnd && html.indexOf("knock('/api/ready')") < headEnd,
+      'the wake-up calls moved out of the head — that costs ~1.5s of the cold start');
+  });
+
+  test('a cache-busting reload cannot yank the page out from under someone mid-visit', () => {
+    assert.match(html, /function hasUserInteracted/);
+    assert.match(html, /!hasUserInteracted\(\)/,
+      'checkSiteVersion resolves 30-60s into a cold visit; reloading then would discard the scroll position, an open drawer, or a half-filled address form');
+  });
+
+  test('the awakening screen is in the markup, so it paints before the app exists', () => {
+    const bodyAt = html.indexOf('<body>');
+    const screenAt = html.indexOf('id="awakenScreen"');
+    const scriptAt = html.indexOf('const API_BASE');
+    assert.ok(screenAt > bodyAt && screenAt < scriptAt,
+      'a loading screen rendered by the app it is covering for is no loading screen at all');
+    assert.match(html, /prefers-reduced-motion:reduce\)\{\s*#awakenScreen/,
+      'a full-viewport animation with no reduced-motion escape is an accessibility failure');
+  });
+}
+
+// ============================================================
+section('[fe-17] Actions taken while the backend is asleep are not lost');
+// ============================================================
+{
+  const html = read('index.html');
+
+  test('THE FINDING: engagement actions are queued instead of failing', () => {
+    assert.match(html, /function queuedPost/);
+    assert.match(html, /const OUTBOX_ROUTES = \{/);
+    for (const p of ['/api/engage/stock-notify', '/api/engage/newsletter', '/api/engage/contact']) {
+      assert.ok(html.indexOf("queuedPost('" + p + "'") > -1,
+        p + ' still posts directly, so a cold instance turns it into a dead end');
+    }
+  });
+
+  test('THE SAFETY RULE: money and identity can never be queued', () => {
+    const block = html.slice(html.indexOf('const OUTBOX_ROUTES = {'), html.indexOf('function readOutbox'));
+    for (const forbidden of ['payments', 'orders', 'bookings', 'auth', 'checkout']) {
+      assert.ok(block.indexOf(forbidden) === -1,
+        'the outbox allowlist names "' + forbidden + '" — telling someone a payment or booking succeeded before it did is worse than any wait');
+    }
+    assert.match(html, /queuedPost called for a path that is not queueable/,
+      'queuedPost must refuse an unlisted path outright, so a future call site cannot make a payment fire-and-forget');
+  });
+
+  test('a request the server actually REFUSED is not replayed forever', () => {
+    assert.match(html, /function isTransportFailure/);
+    assert.match(html, /if\(!isTransportFailure\(err\)\) throw err;/,
+      'a 4xx must surface to the customer, not be queued — queueing a rejection just replays the rejection');
+  });
+
+  test('the non-idempotent endpoint cannot open duplicate support tickets', () => {
+    // stock-notify and newsletter are ON CONFLICT upserts server-side; contact
+    // is a plain INSERT (see engagement.routes.js), so it needs a dispatch cap.
+    assert.match(html, /idempotent: false/, 'contact must be marked non-idempotent');
+    assert.match(html, /!route\.idempotent && item\.dispatched >= 2/,
+      'a non-idempotent queued item must stop being retried and be handed back to the customer');
+  });
+
+  test('the queue is bounded in size and age', () => {
+    assert.match(html, /OUTBOX_MAX_ITEMS/);
+    assert.match(html, /OUTBOX_MAX_AGE_MS/);
+    assert.match(html, /i\.at > cutoff/,
+      'a restock alert requested a month ago should not be delivered silently now');
+  });
+
+  test('the queue drains on every free opportunity, and probes only when it has something to send', () => {
+    assert.match(html, /visibilitychange[\s\S]{0,160}outboxCount\(\)/);
+    assert.match(html, /addEventListener\('online'[\s\S]{0,120}outboxCount\(\)/);
+    assert.match(html, /if\(outboxCount\(\)\) scheduleOutboxFlush/,
+      'flushing must be gated on the queue being non-empty, or every visitor pays for a probe they do not need');
+  });
+}
+
+// ============================================================
+section('[fe-18] The wait before a payment is spent well, and never loses the intent');
+// ============================================================
+{
+  const html = read('index.html');
+
+  test('readiness is re-checked, not answered once at page load', () => {
+    assert.match(html, /function isBackendKnownAwake/);
+    assert.match(html, /BACKEND_READY_TTL_MS/,
+      'a cached "awake" must expire — Render sleeps after ~15 min and Neon after ~5, so a session that started warm can go cold mid-visit');
+    assert.match(html, /\/api\/ready/, 'the probe must be /api/ready, which reports on the database too');
+  });
+
+  test('THE FINDING: checkout and both bookings wait for a confirmed backend', () => {
+    assert.match(html, /return withBackendReady\(placeOrderNow/);
+    assert.match(html, /return withBackendReady\(confirmPujaBookingNow/);
+    assert.match(html, /return withBackendReady\(confirmAstroBookingNow/);
+  });
+
+  test('an already-awake backend adds no delay at all', () => {
+    // The fast path lives in runWithBackendReady; withBackendReady is now the
+    // re-entrancy guard that wraps it.
+    const fn = html.slice(html.indexOf('async function runWithBackendReady'), html.indexOf('async function runWithBackendReady') + 900);
+    assert.match(fn, /if\(isBackendKnownAwake\(\)\) return intent\(\);/,
+      'the fast path must return before anything is rendered');
+    const openAt = fn.indexOf('openWaitingExperience');
+    const fastAt = fn.indexOf('isBackendKnownAwake');
+    assert.ok(fastAt > -1 && fastAt < openAt, 'the waiting screen must not be reachable when the backend is already up');
+  });
+
+  test('THE RULE THAT MATTERS: the cart is read when the order runs, not when it was requested', () => {
+    const now = html.slice(html.indexOf('async function placeOrderNow'), html.indexOf('async function placeOrderNow') + 1600);
+    assert.match(now, /const items = cart\.map/,
+      'items must be built inside placeOrderNow, or anything added from the waiting screen is silently dropped from the order');
+  });
+
+  test('cancelling actually cancels — it does not hide the box and fire the order later', () => {
+    assert.match(html, /function cancelWaitingExperience/);
+    assert.match(html, /waitState\.cancelled = true/);
+    assert.match(html, /if\(waitState\.cancelled\)\{ closeWaitingExperience\(\); return undefined; \}/);
+    assert.match(html, /if\(waitState\.open\)\{ cancelWaitingExperience\(\); return; \}/,
+      'Escape must route through cancel, not closeModal, or the pending intent survives with nothing on screen');
+  });
+
+  test('suggestions are varied, and never invented', () => {
+    assert.match(html, /const WAIT_STRATEGIES = \[/);
+    const ids = html.match(/^\s*id: '([a-z-]+)',$/gm) || [];
+    assert.ok(ids.length >= 5, 'expected several distinct suggestion strategies, found ' + ids.length);
+    assert.match(html, /waitSeenStrategies\(\)/, 'shown strategies must be tracked so the same one does not simply reappear');
+    assert.match(html, /seen\.indexOf\(b\.id\) === -1/);
+    // Everything offered must come from the real catalog.
+    const strat = html.slice(html.indexOf('const WAIT_STRATEGIES = ['), html.indexOf('function pickWaitStrategy'));
+    assert.ok(strat.indexOf('PRODUCTS.filter') > -1, 'suggested products must come from the real catalog');
+    assert.ok(!/price: *[0-9]/.test(strat), 'a hardcoded price appears in the suggestion strategies — nothing shown may be invented');
+  });
+
+  test('a suggested item can be added with the server still cold', () => {
+    assert.match(html, /function waitAddSuggestion/);
+    const fn = html.slice(html.indexOf('function waitAddSuggestion'), html.indexOf('function waitAddSuggestion') + 700);
+    assert.match(fn, /addToCart\(/, 'adding from the waiting screen must be the ordinary local cart write');
+    assert.ok(!/apiFetch|fetch\(/.test(fn), 'adding a suggestion must not need the network — that is the whole point');
+  });
+
+  test('the wait is bounded and fails honestly', () => {
+    assert.match(html, /WAIT_MAX_MS/);
+    assert.match(html, /Nothing has been charged and your cart is saved/,
+      'a timeout must say plainly that no money moved');
+  });
+}
+
+// ============================================================
+section('[fe-19] Regressions found in the final audit — locked shut');
+// ============================================================
+// Four defects introduced while building the outbox and the waiting screen,
+// each caught by re-reading the code rather than by a failing test. These are
+// the tests that would have caught them.
+{
+  const html = read('index.html');
+
+  test('THE DUPLICATE-CHARGE BUG: only one money action can be in flight', () => {
+    assert.match(html, /let intentInFlight = false;/,
+      'nothing stops a second tap on Place Order during the wait — that is two orders and two charges');
+    const fn = html.slice(html.indexOf('async function withBackendReady'), html.indexOf('async function runWithBackendReady'));
+    assert.match(fn, /if\(intentInFlight\)\{/, 'the guard must be checked before anything else happens');
+    assert.match(fn, /intentInFlight = true;/);
+    assert.match(fn, /finally \{[\s\S]{0,200}intentInFlight = false;/,
+      'the guard must be released in a finally, or one thrown intent locks checkout for the rest of the session');
+  });
+
+  test('the Place Order button is disabled while its action is pending', () => {
+    assert.match(html, /id="placeOrderBtn"/, 'the button needs an id so it can be disabled');
+    assert.match(html, /busyButton: '#placeOrderBtn'/);
+    assert.match(html, /if\(busyBtn\)\{ busyBtn\.disabled = false;/,
+      're-enabling must also be in the finally, or a failed attempt leaves checkout permanently dead');
+  });
+
+  test('THE INSTANT-QUEUE BUG: a queued action must not wait on a sleeping server first', () => {
+    const fn = html.slice(html.indexOf('async function queuedPost'), html.indexOf('function isTransportFailure'));
+    assert.ok(!/opts\.tryLiveFirst !== false/.test(fn),
+      'the old condition is back: undefined !== false is true, so every queued action attempts a live POST against a sleeping instance and blocks for the full apiFetch timeout');
+    assert.match(fn, /isBackendKnownAwake\(\) \|\| opts\.tryLiveFirst === true/,
+      'live delivery must be attempted only when the backend is known up, or explicitly requested');
+  });
+
+  test('leaving the page cancels a pending payment rather than firing it later', () => {
+    const fn = html.slice(html.indexOf("addEventListener('popstate'"), html.indexOf("addEventListener('popstate'") + 700);
+    assert.match(fn, /waitState && waitState\.open\) cancelWaitingExperience\(\)/,
+      'browser-back leaves the modal open and the intent live — it would place an order from a screen the customer had already left');
+  });
+
+  test('the suggestion rotation timer cannot be orphaned', () => {
+    const fn = html.slice(html.indexOf('function openWaitingExperience'), html.indexOf('function openWaitingExperience') + 700);
+    assert.match(fn, /if\(waitState\.rotateTimer\)\{ clearInterval/,
+      'reopening without clearing abandons the previous interval, which keeps re-rendering into a modal nobody is looking at');
+  });
+
+  test('the outbox flush lock is claimed before the probe it awaits', () => {
+    const fn = html.slice(html.indexOf('async function flushOutbox'), html.indexOf('async function flushOutbox') + 900);
+    const lockAt = fn.indexOf('outboxFlushing = true');
+    const probeAt = fn.indexOf('await probeBackend()');
+    assert.ok(lockAt > -1 && probeAt > -1 && lockAt < probeAt,
+      'the probe awaits, so two callers arriving together would both pass an unclaimed lock and deliver the same items twice');
+  });
+
+  test('the related rail never asks a customer to clear filters that do not exist', () => {
+    const fn = html.slice(html.indexOf('function renderRelatedProducts'), html.indexOf('function renderRelatedProducts') + 2200);
+    assert.ok(fn.indexOf("renderGridInto('relatedGrid', related)") > -1, 'renderRelatedProducts is missing');
+    // Passing an empty list straight through renders the SHOP grid's empty
+    // state -- "No products found / Try adjusting your filters / Clear Filters"
+    // -- inside a product page, where there are no filters at all.
+    assert.match(fn, /if\(!related\.length\)\{/,
+      'an empty related list must hide the section, not render the shop empty state into it');
+    assert.match(fn, /section\.style\.display = 'none'/);
+    assert.match(fn, /related = related\.concat\(fill\)/,
+      'a category with no siblings should top the rail up from the rest of the catalog rather than showing nothing');
+    assert.match(fn, /sameCat\.length \? 'Related Products' : 'More From Chakrashri'/,
+      'products topped up from other categories must not be labelled "Related"');
   });
 }
 

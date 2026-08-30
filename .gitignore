@@ -11,3 +11,19 @@ coverage/
 
 # Claude Code session worktrees (local only)
 .claude/worktrees/
+
+# Build output from scripts/generate-product-pages.js — one prerendered HTML
+# page per product, regenerated from the live catalog on every Netlify deploy.
+# Committing them would put a few hundred near-identical 460KB files in the
+# repo and they would go stale the moment a product changed.
+#
+# NOTE the deliberate asymmetry with catalog.json, which IS committed: that file
+# is the storefront's fallback when a build cannot reach the API, so a copy has
+# to exist in the repo. These pages have no such role — with none present, every
+# product still renders through the SPA exactly as before.
+/product/
+
+# Regenerated from the live catalog on every Netlify build, same as /product/.
+# robots.txt points at it, but the copy that matters is the one the build
+# writes — a committed one only goes stale between deploys.
+/sitemap.xml

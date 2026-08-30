@@ -9,6 +9,19 @@
     "dev": "node node_modules/nodemon/bin/nodemon.js src/server.js",
     "migrate": "node scripts/run-migrations.js",
     "sitemap": "node scripts/generate-sitemap.js",
+
+    "//snapshot": "Writes catalog.json — the build-time catalog the storefront renders its first paint from while the Render free-tier API is still waking (30-60s). Netlify runs this on every deploy. Run it by hand and COMMIT the result too: on a build where the API never wakes, the script refuses to publish an empty shop and keeps whatever copy is in the repo, so the committed one is the safety net.",
+    "snapshot": "node scripts/generate-catalog-snapshot.js",
+
+    "//prerender": "Writes product/<slug>/index.html for every product, so link-preview crawlers (WhatsApp, Facebook, Twitter, Slack) — which never run JavaScript — get that product's real title, description, image and Product JSON-LD instead of the generic site head. Reads catalog.json, so run `npm run snapshot` first. Output is gitignored build artifact; Netlify regenerates it on every deploy.",
+    "prerender": "node scripts/generate-product-pages.js",
+
+    "//check:storefront": "Answers 'did the snapshot capture everything, and do shared links show the right thing?'. Reads catalog.json and product/ and reports what a visitor would actually get. Read-only, no network. `check:share` does the same plus fetches the LIVE site to confirm the deploy actually ran the prerender step. Both exist as npm scripts rather than node -e one-liners because PowerShell strips the inner quotes of those and they fail before telling you anything.",
+    "check:storefront": "node scripts/check-storefront.js",
+    "check:share": "node scripts/check-storefront.js --live",
+
+    "//catalog:drift": "Answers 'is what visitors see still what the shop actually sells?'. Compares the live catalog against the catalog.json currently deployed and reports whether they differ. Read-only and safe to run any time. The scheduled workflow runs the same script WITHOUT --dry-run, which triggers a Netlify rebuild when they have drifted.",
+    "catalog:drift": "node scripts/publish-catalog-if-changed.js --dry-run",
     "check:syntax": "node scripts/check-syntax.js",
 
     "test:unit": "node test/unit.test.js",
