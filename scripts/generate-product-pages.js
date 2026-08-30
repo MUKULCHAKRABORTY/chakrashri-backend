@@ -88,10 +88,42 @@ const CAT_LABELS = {
   samagri: 'Puja Samagri Kits'
 };
 
+// Mirrors MINOR_WORDS in index.html. Categories are admin-created and
+// free-form, so most of them fall through to the title-caser below.
+const MINOR_WORDS = ['and', 'or', 'of', 'the', 'a', 'an', 'for', 'in', 'on', 'with', 'to'];
+
+/**
+ * Must produce EXACTLY what catLabel() in index.html produces.
+ *
+ * THE BUG THIS FIXES: this used to be a one-line word-boundary uppercase,
+ * which disagrees with the storefront on any multi-word category.
+ * "books and gifts" rendered as "Books and Gifts" in the breadcrumb but
+ * "Books And Gifts" in the Product JSON-LD; "GIFT SETS" was normalised by the
+ * storefront and left shouting here; stray spaces survived here and were
+ * collapsed there.
+ *
+ * Nothing breaks visibly — the page simply tells Google a different category
+ * name than it shows the customer, on every category added from here on.
+ *
+ * test/frontend.test.js runs both implementations over the same inputs and
+ * fails if they ever diverge again.
+ */
+function titleCaseTerm(term) {
+  return String(term)
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w, i) => {
+      if (i > 0 && MINOR_WORDS.indexOf(w) > -1) return w;
+      return w.charAt(0).toUpperCase() + w.slice(1);
+    })
+    .join(' ');
+}
+
 function catLabel(key) {
   if (!key) return 'Uncategorized';
   if (CAT_LABELS[key]) return CAT_LABELS[key];
-  return String(key).replace(/[-_]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  return titleCaseTerm(String(key).replace(/[-_]+/g, ' '));
 }
 
 /**
@@ -381,6 +413,6 @@ if (require.main === module) {
 }
 
 module.exports = {
-  renderProductPage, productJsonLd, titleFor, descriptionFor,
+  renderProductPage, productJsonLd, titleFor, descriptionFor, titleCaseTerm, MINOR_WORDS,
   productImageUrl, attr, text, jsonForScript, catLabel, CAT_LABELS
 };

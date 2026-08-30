@@ -20,6 +20,9 @@
     "check:storefront": "node scripts/check-storefront.js",
     "check:share": "node scripts/check-storefront.js --live",
 
+    "//health": "Answers 'is anything still keeping the API awake?'. Measures /api/health latency: a warm Render instance answers in under a second, one that has spun down takes 30-60s to boot, so a slow reply means the cron-job.org schedule has stopped. No credentials needed. The Keep-alive watch workflow runs this weekly and fails loudly, so you do not have to remember to check.",
+    "health": "node scripts/check-scheduler.js",
+
     "//catalog:drift": "Answers 'is what visitors see still what the shop actually sells?'. Compares the live catalog against the catalog.json currently deployed and reports whether they differ. Read-only and safe to run any time. The scheduled workflow runs the same script WITHOUT --dry-run, which triggers a Netlify rebuild when they have drifted.",
     "catalog:drift": "node scripts/publish-catalog-if-changed.js --dry-run",
     "check:syntax": "node scripts/check-syntax.js",

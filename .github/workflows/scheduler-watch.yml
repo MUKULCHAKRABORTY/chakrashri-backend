@@ -1,0 +1,59 @@
+# Tells you when the keep-alive schedule has stopped, so you never have to remember to look.
+#
+# WHY THIS EXISTS
+# The storefront's cold-start design assumes something calls the API every ten
+# minutes — the cron-job.org schedule that hits the job trigger. That service is
+# outside this repository: an expired account, a disabled job or a rotated token
+# stops it silently, and nothing here would notice. The site would simply get
+# slow again, and the three background jobs would stop running.
+#
+# The obvious alternative is "check it monthly by hand", which is a task that is
+# forgotten by design. This checks instead, and fails loudly when the answer is
+# wrong. GitHub emails you on a failed scheduled run, so a stopped schedule
+# reaches you without anyone remembering anything.
+#
+# WHY WEEKLY AND NOT HOURLY
+# The check wakes the instance by asking it. Run often enough and it quietly
+# becomes the keep-alive it is supposed to be monitoring, and would then always
+# report success — the most useless possible outcome for a monitor. Once a week
+# is frequent enough to catch a stopped schedule long before it matters, and far
+# too rare to keep anything warm.
+#
+# COST: one run a week, most of which is a 12-minute sleep only on the failure
+# path. Nowhere near the free Actions allowance.
+#
+# NO SECRETS NEEDED. It reads latency on /api/health, which is public and touches
+# no database.
+name: Keep-alive watch
+
+on:
+  schedule:
+    # 06:30 UTC Monday = noon IST, so a failure email arrives during the day.
+    - cron: '30 6 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: scheduler-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    name: Is anything still keeping the API awake?
+    runs-on: ubuntu-latest
+    # The failure path waits one full schedule interval before deciding, so the
+    # job needs longer than the 6-minute default would allow.
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # No install step: the script uses only Node built-ins and global fetch.
+      # Keeping it dependency-free matters for an unattended monitor — a
+      # dependency resolution failure would silently stop the alarm working.
+      - name: Check the API is warm
+        env:
+          API_BASE: https://chakrashri-api.onrender.com
+        run: node scripts/check-scheduler.js --retry

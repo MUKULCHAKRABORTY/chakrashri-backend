@@ -11,6 +11,56 @@ password) with something that can safely take real orders and real money.
 - **Payments:** Razorpay (order creation, signature verification, webhooks)
 - **Auth:** JWT + bcrypt password hashing, role-based access control (customer / staff / admin)
 
+## Routine operations — read this first
+
+Everything here is automated. This section exists so that anyone — or any AI
+assistant — opening this repository knows what is watched, what is not, and what
+to do when something reports a problem. **You are not expected to remember any
+of it on a schedule.**
+
+| What | How often | Who does it | What happens if it breaks |
+|---|---|---|---|
+| Keep the API awake | every 10 min | cron-job.org (external) | Every visitor pays a 30-60s cold start; the three background jobs stop |
+| Watch that the above is still running | weekly | `.github/workflows/scheduler-watch.yml` | **GitHub emails you** on a failed run |
+| Refresh the published catalog | every 6 h | `.github/workflows/refresh-catalog.yml` | New visitors see a stale catalog until the next deploy |
+| Apply migrations | on push to `main` | `.github/workflows/migrate-on-deploy.yml` | Fails loudly; new code meets an old schema |
+| Rebuild snapshot, sitemap, product pages | every deploy | `netlify.toml` build command | Falls back to the committed `catalog.json` |
+
+### The one thing that is outside this repository
+
+`cron-job.org` calls the job trigger every ten minutes. That single external
+service is what keeps Render warm **and** runs the expiry sweep, the payment
+reconciler and the scheduled emails. An expired account, a disabled job or a
+rotated token stops it silently.
+
+That is why **Keep-alive watch** exists — so a stopped schedule reaches you by
+email instead of by a customer complaining the site is slow. To check by hand at
+any time:
+
+```bash
+npm run health
+```
+
+`WARM` means the schedule is doing its job. `COLD` means nothing has called the
+API for at least fifteen minutes, and the script prints the exact steps to fix
+it. For detail on the jobs themselves — last run, per-job exit codes — use:
+
+```bash
+npm run jobs:status
+```
+
+Note that `lastRun` lives in memory and resets on every deploy, so "no run yet"
+is normal for a few minutes after deploying and is not a fault.
+
+### If you have just changed the catalog
+
+```bash
+npm run check:storefront
+```
+
+Reports what a visitor would actually get. Add `npm run check:share` after a
+deploy to confirm the live site serves it. Both are read-only.
+
 ## Getting started
 
 ```bash
@@ -743,6 +793,97 @@ Both now run through `waitRelevanceSort()`, which scores a known `RITUAL_PAIRS`
 pairing highest, then the same category, then everything else, breaking ties on
 bestseller badge and review count.
 
+##### The most expensive one: the checkout total was missing GST
+
+`calculateOrderTotals` in `utils/orders.js` is:
+
+```
+subtotal    = sum(lineTotal)
+shipping    = subtotal >= threshold ? 0 : flat      (the ORIGINAL subtotal)
+originalGst = round(sum(lineTotal * gstRate / 100))
+gst         = round(originalGst * (discountedSubtotal / subtotal))
+total       = discountedSubtotal + shipping + gst
+```
+
+The checkout showed `subtotal - discount + shipping` and **no GST at all** — and
+`mapApiProduct` had never even kept `gst_rate` off the API response, so the
+client could not have computed it. Every product in this catalog carries
+`gst_rate` 3.00, so this was live on every order:
+
+| Cart | Checkout showed | Server charged |
+|---|---|---|
+| 1 × Bhagavat Puran | ₹879.00 | **₹903.00** |
+| 1 × Shree Yantra | ₹2,499.00 | **₹2,573.97** |
+
+`calculateCartTotals()` now mirrors the server exactly, and both the cart page
+and the checkout read it — previously each hand-rolled its own total, which is
+how they could disagree with the server and with each other. Verified against
+the **real** `calculateOrderTotals` across eight scenarios covering mixed GST
+rates, a zero-rated product, the free-shipping boundary, a coupon, and a coupon
+larger than the cart. Agreement is exact to the paisa.
+
+Two details that must not be "simplified", because both are in the server:
+
+- Shipping is decided on the **original** subtotal, not the discounted one, so a
+  coupon cannot quietly remove free shipping.
+- GST is scaled by the discount ratio and rounded **once at the end**, not per
+  line — rounding per line drifts by a paisa on most orders.
+
+The GST row appears only when there is tax to show: a "GST ₹0" line on a
+zero-rated catalog is noise, and a missing one on a taxed catalog is a wrong
+total.
+
+##### The rule that has found nearly every bug here: look for the second copy
+
+The productive audit question on this codebase is not *"is this correct?"* but
+**"does this rule exist somewhere else too, and do the copies agree?"** Nothing
+shares modules — one 460KB `index.html`, a separate `admin.html`, and the server
+owning the real rules — so anything a customer sees is necessarily
+re-implemented on the client, with no compiler to notice when the copies drift.
+
+Applying it deliberately found three more, all in money.
+
+**Shipping was hardcoded on the client.** `utils/settings.js` holds
+`free_shipping_threshold_paise` and `shipping_flat_paise`, both editable from
+the admin settings screen, and `utils/orders.js` prices every order from them.
+The storefront said `subtotal >= 999 ? 0 : 79`. So the day you raise the
+threshold, the checkout keeps quoting the old one — while the server charges the
+new one. Measured, with the threshold moved to ₹1,499:
+
+| Cart | Old client showed | Server charges |
+|---|---|---|
+| ₹500 | ₹79 | ₹99 |
+| **₹1,200** | **₹0** | **₹99** |
+| ₹2,000 | ₹0 | ₹0 |
+
+At ₹1,200 the customer agreed to a total ₹99 lower than they were billed.
+`/api/site/config` had published the real values all along, with a 60-second
+cache, and **nothing had ever called it.** It does now, cached in localStorage
+like the catalog, falling back to exactly `DEFAULTS` so an unconfigured shop is
+unchanged. A test runs the client arithmetic against the server rule at nine
+cart values across three settings combinations.
+
+**A ₹40 COD fee that does not exist.** The checkout added it to the displayed
+total; `grep -rn "cod.*fee" src/` returns nothing. `calculateOrderTotals` is
+subtotal + shipping + GST − discount, with no COD fee anywhere. So every
+cash-on-delivery customer was quoted ₹40 more than they were billed, and the
+checkout total and the order confirmation disagreed. Removed rather than
+implemented: inventing a charge on the client is the one direction that can
+never be made correct. A second, dead `codFee` in `placeOrderNow` — declared,
+never read — went with it.
+
+**COD offered when the server would refuse it.** `cod_enabled` and
+`cod_max_order_paise` are both settings the server enforces, and the client
+ignored both, so switching COD off or exceeding the limit produced a rejection
+at the moment of payment for a choice we had invited. It is now dimmed and
+labelled, and a cart that grows past the limit while COD is selected moves the
+customer to a method that will succeed.
+
+**Copy counts as an implementation.** Nine places said "₹999" in prose. The
+customer-facing ones are tagged `data-free-ship-threshold` and rewritten from the
+real value; the product price of ₹999 on the puja card is deliberately untouched,
+and a test asserts it stays that way.
+
 ##### Two more found by running the code, not reading it
 
 **A suggestion could offer something the customer cannot buy.** `buyable()` was
@@ -888,6 +1029,57 @@ viewport — brand width against available width after the 6vw side padding:
 No horizontal body scroll at any width. A separate `max-height:520px` rule
 shrinks the mark and the name on a landscape phone, which is short rather than
 narrow and would otherwise clip.
+
+##### The waiting screen fits what is being bought
+
+`withBackendReady` guards three money paths — checkout, puja booking and
+astrology booking — and all three showed the same suggestions. That was wrong
+for two of them.
+
+During a booking the cart is empty and irrelevant, yet the picker would offer
+*"Free shipping is ₹199 away"* (there is no cart and no shipping) and an **Add**
+button that drops a product into a cart the booking has nothing to do with,
+leaving it stranded there afterwards. Same class of defect as suggesting a
+variant product that cannot be added: an action offered in a context where it
+does not belong.
+
+Every strategy now declares its `contexts`. Anything that touches the cart is
+`['order']`. Bookings get `booking-next` instead — what actually happens after
+they book, in three rotating variants, different for puja and astrology. It
+needs no catalog and can create no side effect:
+
+> **What happens next** — Your pandit calls a day before to confirm the muhurat
+> and tell you exactly which samagri to arrange, so nothing is left to the
+> morning of the ceremony.
+
+A strategy with no `contexts` (the Journal) suits all three.
+
+##### Everything here keeps working for products, services and categories added later
+
+Verified by test, not by assumption. Nothing added today is keyed to a fixed
+product id, slug or category:
+
+| Add a… | What happens |
+|---|---|
+| product | Appears in the snapshot, gets a prerendered page, enters the mega-menu picks and the related rail |
+| product with variants | Excluded from suggestions automatically; its variant price is recorded on every cart path |
+| category | `catLabel` title-cases it; `complete-ritual` falls back to other categories; the rail is built from the API |
+| booking service | Comes from the API and rides in the snapshot; resolved by id, never a cached object |
+| slug | Page written, sitemap entry added, stale pages pruned via the manifest |
+
+**One real defect this analysis found.** `CAT_LABELS` covers seven slugs;
+everything else an admin types falls through to a title-caser — and there were
+**two** of them, one in the storefront and one in the page generator, which
+disagreed. `"books and gifts"` was *"Books and Gifts"* in the breadcrumb and
+*"Books And Gifts"* in the Product JSON-LD. `"GIFT SETS"` was normalised by one
+and left shouting by the other. Stray spaces survived in one and were collapsed
+in the other.
+
+Nothing looks broken when this happens — the page simply tells Google a
+different category name than it shows the customer, on every category added from
+then on. The generator now uses the storefront's exact rule, including the
+`MINOR_WORDS` list, and a test runs both implementations over 17 inputs — known,
+new, messy, empty and null — and fails if they ever diverge.
 
 ##### Why the waiting screen almost never appears — and that is correct
 

@@ -1363,11 +1363,20 @@ section('[fe-23] The welcome screen');
   const screen = html.slice(html.indexOf('id="awakenScreen"'), html.indexOf('id="awakenSub"') + 200);
 
   test('it greets the visitor by name, one letter at a time', () => {
-    assert.match(screen, /Welcome to/, 'the greeting is missing');
-    const letters = (screen.match(/<span aria-hidden="true">/g) || []).length;
-    assert.strictEqual(letters, 10, 'CHAKRASHRI should be 10 individually animated letters, found ' + letters);
-    assert.match(screen, /aria-label="Chakrashri"/,
-      'the letters are aria-hidden, so the whole word must be announced once — otherwise a screen reader spells it out');
+    // "Welcome to" (10) + "CHAKRASHRI" (10) are both animated per letter, and
+    // the tagline sits beneath as a single line.
+    // Slice from the MARKUP, not from the inline <style> above it: the class
+    // names appear in both, and anchoring on the first occurrence lands in CSS.
+    const markup = screen.slice(screen.indexOf('<div class="awaken-welcome"'));
+    const greet = markup.slice(markup.indexOf('awaken-greet'), markup.indexOf('awaken-brand'));
+    const brand = markup.slice(markup.indexOf('awaken-brand'), markup.indexOf('awaken-tagline'));
+    assert.strictEqual((greet.match(/<span aria-hidden="true">/g) || []).length, 10,
+      '"Welcome to" should be 10 individually animated letters');
+    assert.strictEqual((brand.match(/<span aria-hidden="true">/g) || []).length, 10,
+      '"CHAKRASHRI" should be 10 individually animated letters');
+    assert.match(screen, /Sacred, Authentic, Pure &amp; Trustworthy/, 'the tagline is missing');
+    assert.match(screen, /aria-label="Welcome to Chakrashri"/,
+      'the letters are aria-hidden, so the whole phrase must be announced once — otherwise a screen reader spells out 20 characters');
   });
 
   test('the duration is inside the thresholds that actually matter', () => {
@@ -1423,9 +1432,14 @@ section('[fe-23] The welcome screen');
 
   test('reduced motion shows the FINISHED state, not the starting one', () => {
     const rm = screen.slice(screen.indexOf('@media (prefers-reduced-motion:reduce)'));
-    assert.match(rm, /\.awaken-brand > span\{ animation:none; opacity:1; transform:none; \}/,
+    // All three lines animate in, so all three need their finished state
+    // restored — the greeting and brand letters, and the tagline.
+    assert.match(rm, /animation:none; opacity:1; transform:none;/,
       'cancelling the animation without restoring opacity leaves every letter invisible');
-    assert.match(rm, /\.awaken-greet\{ animation:none; opacity:1; \}/);
+    assert.match(rm, /\.awaken-tagline\{ animation:none; opacity:1; \}/,
+      'the tagline fades in too, so it needs the same treatment');
+    assert.ok(/awaken-greet > span/.test(rm) && /awaken-brand > span/.test(rm),
+      'both sets of letters must be covered');
   });
 
   test('it is sized to fit every device, measured not guessed', () => {
@@ -1436,6 +1450,320 @@ section('[fe-23] The welcome screen');
     assert.match(screen, /@media \(max-height:520px\)/,
       'a landscape phone is short, not narrow — without this the mark and the name are clipped');
     assert.match(screen, /padding:0 6vw/, 'the wrapper needs side padding so the name never touches the edge');
+  });
+}
+
+// ============================================================
+section('[fe-24] It keeps working for products, services and categories added later');
+// ============================================================
+{
+  const html = read('index.html');
+  const gen = require('../scripts/generate-product-pages.js');
+
+  test('THE FINDING: both title-casers agree on any category, not just the known ones', () => {
+    // CAT_LABELS covers seven slugs. Everything else an admin types falls
+    // through to a title-caser -- and there are TWO of them, one in the
+    // storefront and one in the page generator. They disagreed: "books and
+    // gifts" was "Books and Gifts" in the breadcrumb and "Books And Gifts" in
+    // the Product JSON-LD, and "GIFT SETS" was normalised by one and left
+    // shouting by the other. Nothing looks broken -- the page just tells Google
+    // a different category name than it shows the customer.
+    function pageCatLabel() {
+      function grab(name) {
+        const i = html.indexOf('function ' + name + '(');
+        let depth = 0; const start = html.indexOf('{', i);
+        for (let k = start; k < html.length; k++) {
+          if (html[k] === '{') depth++;
+          else if (html[k] === '}') { depth--; if (!depth) return html.slice(i, k + 1); }
+        }
+      }
+      const minor = html.match(/const MINOR_WORDS = [^;]+;/)[0];
+      return new Function(minor + 'const CAT_LABELS=' + JSON.stringify(gen.CAT_LABELS) + ';' +
+        grab('titleCaseTerm') + grab('catLabel') + '; return catLabel;')();
+    }
+    const page = pageCatLabel();
+    const inputs = ['book', 'dhoti', 'sphatik', 'puja thali', 'books and gifts',
+      'gifts for the home', 'malas of rudraksha', 'incense-and-dhoop', 'GIFT SETS',
+      '  spaced  out  ', 'THE_HOME_SHRINE', 'lingam', 'yantra', '', null, undefined, 'a'];
+    for (const input of inputs) {
+      assert.strictEqual(gen.catLabel(input), page(input),
+        'catLabel disagrees for ' + JSON.stringify(input) + ' — the breadcrumb and the rich result would differ');
+    }
+  });
+
+  test('ALL FOUR title-casers agree — storefront, admin, generator and backend', () => {
+    // There are four independent implementations of this rule: index.html,
+    // admin.html (DL_MINOR), scripts/generate-product-pages.js and
+    // src/utils/text.js (displayTerm). A category name is written by the admin,
+    // stored by the backend, listed in the admin console, shown in the
+    // storefront breadcrumb and published in the Product JSON-LD — so all four
+    // have to say the same thing or the customer, the owner and Google each see
+    // a different label.
+    const admin = read('admin.html');
+    const backend = require('../src/utils/text.js');
+    function caser(src, minorDecl, name) {
+      const i = src.indexOf('function ' + (name || 'titleCaseTerm') + '(');
+      let depth = 0; const start = src.indexOf('{', i);
+      let body;
+      for (let k = start; k < src.length; k++) {
+        if (src[k] === '{') depth++;
+        else if (src[k] === '}') { depth--; if (!depth) { body = src.slice(i, k + 1); break; } }
+      }
+      return new Function(src.match(minorDecl)[0] + body + '; return ' + (name || 'titleCaseTerm') + ';')();
+    }
+    const store = caser(html, /const MINOR_WORDS = [^;]+;/);
+    const adm = caser(admin, /const DL_MINOR = [^;]+;/);
+
+    const inputs = ['books and gifts', 'gifts for the home', 'GIFT SETS', '  spaced  out  ',
+      'puja samagri kits', 'malas of rudraksha', 'murtis & idols', 'incense and dhoop',
+      'a', 'the shrine', 'book', 'dhoti'];
+    for (const input of inputs) {
+      const expected = store(input);
+      assert.strictEqual(adm(input), expected, 'admin.html disagrees for ' + JSON.stringify(input));
+      assert.strictEqual(gen.titleCaseTerm(input), expected, 'the page generator disagrees for ' + JSON.stringify(input));
+      assert.strictEqual(backend.displayTerm(input), expected, 'src/utils/text.js disagrees for ' + JSON.stringify(input));
+    }
+  });
+
+  test('the generator carries the same MINOR_WORDS list as the storefront', () => {
+    const inPage = JSON.parse(html.match(/const MINOR_WORDS = (\[[^\]]+\]);/)[1].replace(/'/g, '"'));
+    assert.deepStrictEqual(gen.MINOR_WORDS, inPage,
+      'the two lists drifted — a category with a minor word would be cased differently in each place');
+  });
+
+  test('nothing in the new work is keyed to a fixed product, slug or category', () => {
+    assert.ok(!/openProduct\('(lin|mal|idl|yan|bra|bok)-\d+'\)/.test(html), 'a hardcoded product id is back');
+    assert.match(html, /function renderMegaMenuPicks/, 'the picks column must be built from the catalog');
+    assert.match(html, /const knownPairing = wanted\.length > 0;/,
+      'an unrecognised category must still produce a suggestion');
+    assert.match(html, /apiFetch\('\/api\/booking-services\?type=puja', \{ background: true \}\)/,
+      'booking services must come from the API, never a fixed array');
+  });
+}
+
+// ============================================================
+section('[fe-25] The waiting screen fits the thing being bought');
+// ============================================================
+{
+  const html = read('index.html');
+
+  test('THE FINDING: a booking is never offered cart-only suggestions', () => {
+    // During a puja booking the cart is empty and irrelevant, yet the picker
+    // would happily show "Free shipping is Rs199 away" and an Add button that
+    // drops a product into a cart the booking has nothing to do with -- leaving
+    // it stranded there afterwards.
+    for (const id of ['complete-ritual', 'free-shipping', 'small-additions', 'bestsellers', 'care-note']) {
+      const at = html.indexOf("id: '" + id + "'");
+      assert.ok(at > -1, id + ' strategy is missing');
+      const decl = html.slice(at, at + 120);
+      assert.match(decl, /contexts: \['order'\]/, id + ' must be order-only — it touches the cart');
+    }
+  });
+
+  test('a booking gets its own suggestion, and it cannot touch the cart', () => {
+    const at = html.indexOf("id: 'booking-next'");
+    assert.ok(at > -1, 'bookings need a strategy of their own or the wait shows nothing');
+    const block = html.slice(at, html.indexOf("id: 'journal'"));
+    assert.match(block, /contexts: \['puja', 'astrology'\]/);
+    assert.ok(!/items:/.test(block), 'a booking suggestion must not offer products — it would strand them in the cart');
+    assert.match(block, /waitState\.audience === 'puja'/, 'puja and astrology need different copy');
+  });
+
+  test('the picker filters by audience, and every caller declares one', () => {
+    const fn = html.slice(html.indexOf('function pickWaitStrategy'), html.indexOf('function pickWaitStrategy') + 900);
+    assert.match(fn, /!s\.contexts \|\| s\.contexts\.indexOf\(audience\) > -1/,
+      'without this filter a booking still gets cart suggestions');
+    assert.match(html, /audience: 'order'/);
+    assert.match(html, /audience: 'puja'/);
+    assert.match(html, /audience: 'astrology'/);
+  });
+}
+
+// ============================================================
+section('[fe-26] Money rules come from the server, never from the client');
+// ============================================================
+{
+  const html = read('index.html');
+  const settings = require('../src/utils/settings.js');
+
+  function run(names, extra) {
+    let src = extra || '';
+    for (const n of names) {
+      const i = html.indexOf('function ' + n + '(');
+      assert.ok(i > -1, n + ' is missing from index.html');
+      let depth = 0; const start = html.indexOf('{', i);
+      for (let k = start; k < html.length; k++) {
+        if (html[k] === '{') depth++;
+        else if (html[k] === '}') { depth--; if (!depth) { src += html.slice(i, k + 1) + String.fromCharCode(10); break; } }
+      }
+    }
+    return src;
+  }
+
+  test('THE FINDING: shipping is read from the server, not hardcoded', () => {
+    assert.ok(!/subtotal >= 999 \|\| subtotal === 0 \? 0 : 79/.test(html),
+      'the hardcoded threshold is back — changing it in the admin console would desynchronise the checkout from the server');
+    assert.match(html, /apiFetch\('\/api\/site\/config'/,
+      '/api/site/config publishes the real values and must be read');
+  });
+
+  test('the client fallback matches SETTINGS_DEFAULTS exactly', () => {
+    const cfg = html.match(/let siteConfig = \{[\s\S]*?\};/)[0];
+    const thr = Number(cfg.match(/freeShippingThresholdPaise: (\d+)/)[1]);
+    const flat = Number(cfg.match(/shippingFlatPaise: (\d+)/)[1]);
+    const codMax = Number(cfg.match(/codMaxOrderPaise: (\d+)/)[1]);
+    // Read the defaults from whichever name the module exports them under, so
+    // this keeps working if the export is renamed.
+    const D = settings.SETTINGS_DEFAULTS || settings.DEFAULTS || settings.defaults;
+    assert.ok(D && typeof D.free_shipping_threshold_paise === 'number',
+      'could not read the server defaults from src/utils/settings.js');
+    assert.strictEqual(thr, D.free_shipping_threshold_paise,
+      'the pre-config fallback must equal the server default, or an unconfigured shop behaves differently on each side');
+    assert.strictEqual(flat, D.shipping_flat_paise);
+    assert.strictEqual(codMax, D.cod_max_order_paise);
+  });
+
+  test('client shipping arithmetic matches the server at every boundary', () => {
+    const api = new Function(
+      html.match(/let siteConfig = \{[\s\S]*?\};/)[0] +
+      run(['freeShippingThreshold', 'shippingFlat', 'getShippingCost']) +
+      '; return { getShippingCost, set: (c) => { siteConfig = Object.assign(siteConfig, c); } };'
+    )();
+    // Mirrors calculateOrderTotals in utils/orders.js.
+    const server = (paise, thr, flat) => (paise >= thr ? 0 : flat);
+
+    for (const [thr, flat] of [[99900, 7900], [149900, 9900], [50000, 5000]]) {
+      api.set({ freeShippingThresholdPaise: thr, shippingFlatPaise: flat });
+      for (const rupees of [0, 1, 499, 500, 999, 1200, 1499, 1500, 5000]) {
+        const client = api.getShippingCost(rupees);
+        const expected = rupees === 0 ? 0 : server(rupees * 100, thr, flat) / 100;
+        assert.strictEqual(client, expected,
+          'shipping disagrees at Rs' + rupees + ' with threshold ' + thr + ' — the customer would agree to a total the server does not charge');
+      }
+    }
+  });
+
+  test('THE PHANTOM CHARGE: no COD fee is invented on the client', () => {
+    assert.ok(!/const codFee = method === 'cod' \? 40 : 0;/.test(html),
+      'the client is adding a Rs40 COD fee the server never charges — the checkout total and the order confirmation would disagree');
+    const totals = html.slice(html.indexOf('function updateCheckoutTotals'), html.indexOf('function updateCheckoutTotals') + 1600);
+    assert.match(totals, /const codFee = 0;/);
+  });
+
+  test('COD is not offered when the server would refuse it', () => {
+    assert.match(html, /function applyCodAvailability/);
+    const fn = html.slice(html.indexOf('function applyCodAvailability'), html.indexOf('function applyCodAvailability') + 1800);
+    assert.match(fn, /!siteConfig\.codEnabled \|\| overLimit/,
+      'both the switch and the order limit must gate it — the server enforces both');
+    assert.match(fn, /if\(fallback\) selectPayMethod\(fallback\)/,
+      'a cart that grows past the limit while COD is selected must move to a method that will succeed');
+  });
+
+  test('prose quoting the threshold is rewritten from the real value', () => {
+    assert.match(html, /data-free-ship-threshold/, 'the copy must be tagged so it can follow the setting');
+    assert.match(html, /qsa\('\[data-free-ship-threshold\]'\)/);
+    // The puja card price of Rs999 is NOT a threshold and must stay untouched.
+    assert.match(html, /<div class="price">₹999<\/div>/,
+      'a product price was wrongly tagged as a shipping threshold');
+  });
+}
+
+// ============================================================
+section('[fe-27] THE BIG ONE: the checkout total equals what the server charges');
+// ============================================================
+// calculateOrderTotals is discountedSubtotal + shipping + GST. The checkout
+// showed subtotal - discount + shipping and NO GST, and the client never even
+// kept gst_rate off the API response. Every product in this catalog carries
+// gst_rate 3.00, so every customer was quoted ~3% less than they were charged.
+{
+  const html = read('index.html');
+  const orders = require('../src/utils/orders.js');
+
+  function grab(name) {
+    const i = html.indexOf('function ' + name + '(');
+    assert.ok(i > -1, name + ' is missing');
+    let depth = 0; const start = html.indexOf('{', i);
+    for (let k = start; k < html.length; k++) {
+      if (html[k] === '{') depth++;
+      else if (html[k] === '}') { depth--; if (!depth) return html.slice(i, k + 1); }
+    }
+  }
+
+  const PRODUCTS = [
+    { id: '1', name: 'A', cat: 'book',   price: 800,  mrp: 800,  stock: true, gstRate: 3, sku: 'A', slug: 'a' },
+    { id: '2', name: 'B', cat: 'yantra', price: 2499, mrp: 2499, stock: true, gstRate: 3, sku: 'B', slug: 'b' },
+    { id: '3', name: 'C', cat: 'book',   price: 250,  mrp: 250,  stock: true, gstRate: 12, sku: 'C', slug: 'c' },
+    { id: '4', name: 'D', cat: 'idols',  price: 500,  mrp: 500,  stock: true, gstRate: 0, sku: 'D', slug: 'd' }
+  ];
+
+  function client() {
+    const src = 'let cart=[]; let appliedCoupon=null; const PRODUCTS=' + JSON.stringify(PRODUCTS) + ';' +
+      'let siteConfig={freeShippingThresholdPaise:99900,shippingFlatPaise:7900,codEnabled:true,codMaxOrderPaise:500000};' +
+      'function getProduct(id){return PRODUCTS.find(p=>p.id===String(id));}' +
+      grab('cartUnitPrice') + grab('productFromCartLine') + grab('getCartLinesWithProducts') +
+      grab('freeShippingThreshold') + grab('shippingFlat') + grab('getShippingCost') + grab('calculateCartTotals');
+    return new Function(src + '; return { calc: calculateCartTotals, setCart: (c)=>{cart=c;}, setCoupon: (c)=>{appliedCoupon=c;} };')();
+  }
+
+  function server(lines, discountPaise) {
+    const items = lines.map((l) => {
+      const p = PRODUCTS.find((x) => x.id === l.id);
+      return { lineTotalPaise: Math.round(p.price * 100) * l.qty, gstRate: p.gstRate };
+    });
+    return orders.calculateOrderTotals(items, discountPaise || 0,
+      { free_shipping_threshold_paise: 99900, shipping_flat_paise: 7900 });
+  }
+
+  test('THE FINDING: gst_rate is kept off the API response at all', () => {
+    assert.match(html, /gstRate: Number\(p\.gst_rate\) \|\| 0,/,
+      'mapApiProduct drops gst_rate, so the client cannot compute the total the server charges');
+    assert.match(html, /function calculateCartTotals/);
+  });
+
+  test('client and server agree to the paisa across carts, rates and coupons', () => {
+    const api = client();
+    const scenarios = [
+      [[{ id: '1', qty: 1 }], 0],
+      [[{ id: '2', qty: 1 }], 0],
+      [[{ id: '3', qty: 3 }], 0],
+      [[{ id: '4', qty: 2 }], 0],                                   // zero-rated
+      [[{ id: '1', qty: 2 }, { id: '3', qty: 1 }, { id: '4', qty: 4 }], 0],  // mixed rates
+      [[{ id: '2', qty: 1 }], 20000],                               // coupon
+      [[{ id: '3', qty: 1 }], 99999999],                            // coupon > cart
+      [[{ id: '1', qty: 1 }, { id: '2', qty: 1 }], 50000]
+    ];
+    for (const [lines, disc] of scenarios) {
+      api.setCart(lines.map((l) => ({ id: l.id, qty: l.qty })));
+      api.setCoupon(disc ? { discountPaise: disc, code: 'X' } : null);
+      const c = api.calc();
+      const s = server(lines, disc);
+      assert.strictEqual(Math.round(c.total * 100), s.totalPaise,
+        'total disagrees for ' + JSON.stringify(lines) + ' discount ' + disc +
+        ' — the customer would agree to a figure the server does not charge');
+      assert.strictEqual(Math.round(c.gst * 100), s.gstPaise, 'GST disagrees for ' + JSON.stringify(lines));
+      assert.strictEqual(Math.round(c.shipping * 100), s.shippingPaise, 'shipping disagrees');
+      assert.strictEqual(Math.round(c.discount * 100), s.discountPaise, 'discount clamp disagrees');
+    }
+  });
+
+  test('both summaries read the same function — cart page and checkout cannot differ', () => {
+    const cart = html.slice(html.indexOf('function buildSummaryLinesHTML'), html.indexOf('function buildCouponRowHTML'));
+    const checkout = html.slice(html.indexOf('function updateCheckoutTotals'), html.indexOf('function updateCheckoutTotals') + 2200);
+    assert.match(cart, /calculateCartTotals\(\)/, 'the cart page still totals independently');
+    assert.match(checkout, /calculateCartTotals\(\)/, 'the checkout still totals independently');
+    assert.ok(!/formatINR\(Math\.max\(0, subtotal - discount \+ shipping\)\)/.test(html),
+      'a hand-rolled total that omits GST is back');
+  });
+
+  test('the GST line is shown only when there is tax to show', () => {
+    assert.match(html, /id="ckGstRow"/);
+    assert.match(html, /gstRow\.style\.display = totals\.gst > 0 \? '' : 'none'/,
+      'a "GST ₹0" row on a zero-rated catalog is noise; a missing one on a taxed catalog is a wrong total');
+  });
+
+  test('the rate survives a cold start on the cart line', () => {
+    assert.match(html, /gstRate: Number\(p\.gstRate\) \|\| 0,/, 'cartLineSnapshot must carry the rate');
+    assert.match(html, /gstRate: Number\(l\.snap\.gstRate\) \|\| 0,/, 'productFromCartLine must restore it');
   });
 }
 

@@ -1528,6 +1528,12 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
 .waking{ position:fixed; left:50%; transform:translateX(-50%); bottom:24px; z-index:9000; display:flex; align-items:center; gap:11px; padding:12px 18px; border-radius:999px; background:var(--ink); color:#F6ECE2; font-size:.83rem; line-height:1.35; box-shadow:0 8px 30px rgba(0,0,0,.28); max-width:calc(100vw - 32px); }
 .waking .dot{ width:9px; height:9px; border-radius:50%; background:#C9A227; flex-shrink:0; animation:wakepulse 1.3s ease-in-out infinite; }
 
+/* A payment method the server will refuse — COD switched off, or an order above
+   cod_max_order_paise. Dimmed and labelled rather than hidden, so the customer
+   can see the option exists and why it is not open to them right now. */
+.pay-method-disabled{ opacity:.45; pointer-events:none; filter:grayscale(.6); }
+.pay-method-note{ font-size:.7rem; color:var(--oxblood); font-weight:600; margin-top:4px; }
+
 /* ---------- "Getting things ready" modal ---------- */
 .wait-box{ max-width:620px; width:min(94vw,620px); padding:var(--sp-6); }
 .wait-head{ display:flex; gap:16px; align-items:center; }
@@ -1880,9 +1886,31 @@ a.p-media:focus-visible, a.p-name:focus-visible{ outline:2px solid var(--oxblood
     /* clamp() rather than a breakpoint: this is one line of text whose only job
        is to fit, and it has to look deliberate on a 320px phone and a 1600px
        desktop alike. */
-    #awakenScreen .awaken-greet{ font-family:Poppins, system-ui, sans-serif; font-size:clamp(.62rem,2.6vw,.78rem);
-      letter-spacing:.42em; text-indent:.42em; text-transform:uppercase; color:rgba(241,226,200,.66);
-      opacity:0; animation:awakenGreetIn .8s ease .15s forwards; }
+    /* "Welcome to" is now a display line in its own right rather than a small
+       kicker, so the whole phrase reads as one greeting. Its letters rise
+       first, then the brand name, then the tagline settles underneath. */
+    #awakenScreen .awaken-greet{ display:block; font-family:Cinzel, Georgia, serif; font-weight:400;
+      font-size:clamp(1.02rem,4.6vw,1.85rem); letter-spacing:.16em; text-indent:.16em;
+      color:#E9D9B6; line-height:1.1; white-space:nowrap; }
+    #awakenScreen .awaken-greet > span{ display:inline-block; opacity:0; transform:translateY(.45em);
+      animation:awakenLetterIn .55s cubic-bezier(.22,1,.36,1) forwards; }
+    #awakenScreen .awaken-greet > span:nth-child(1){ animation-delay:.10s; }
+    #awakenScreen .awaken-greet > span:nth-child(2){ animation-delay:.15s; }
+    #awakenScreen .awaken-greet > span:nth-child(3){ animation-delay:.20s; }
+    #awakenScreen .awaken-greet > span:nth-child(4){ animation-delay:.25s; }
+    #awakenScreen .awaken-greet > span:nth-child(5){ animation-delay:.30s; }
+    #awakenScreen .awaken-greet > span:nth-child(6){ animation-delay:.35s; }
+    #awakenScreen .awaken-greet > span:nth-child(7){ animation-delay:.40s; }
+    #awakenScreen .awaken-greet > span:nth-child(8){ animation-delay:.45s; }
+    #awakenScreen .awaken-greet > span:nth-child(9){ animation-delay:.50s; }
+    #awakenScreen .awaken-greet > span:nth-child(10){ animation-delay:.55s; }
+    /* The four qualities the shop is built on. Arrives last and stays quiet —
+       it is a supporting line, not a second headline. */
+    #awakenScreen .awaken-tagline{ display:block; font-family:Poppins, system-ui, sans-serif;
+      font-size:clamp(.6rem,2.5vw,.8rem); letter-spacing:.22em; text-indent:.22em;
+      text-transform:uppercase; color:rgba(233,217,182,.72); line-height:1.5;
+      max-width:100%; text-wrap:balance;
+      opacity:0; animation:awakenGreetIn .9s ease 1.55s forwards; }
     #awakenScreen .awaken-brand{ display:block; font-family:Cinzel, Georgia, serif; font-weight:700;
       font-size:clamp(1.75rem,8.5vw,3.5rem); letter-spacing:.1em; text-indent:.1em; line-height:1.05;
       white-space:nowrap;
@@ -1891,6 +1919,15 @@ a.p-media:focus-visible, a.p-name:focus-visible{ outline:2px solid var(--oxblood
          name invisible — the one thing this screen exists to show. */
       color:#E8CE86; }
     @supports ((-webkit-background-clip:text) or (background-clip:text)){
+      /* The greeting takes the same gold, a shade quieter, so "Welcome to
+         Chakrashri" reads as one phrase lit by one light rather than two
+         differently-coloured lines. */
+      #awakenScreen .awaken-greet{
+        background:linear-gradient(100deg,#C7A96A 0%,#F0E2BE 40%,#FFF6DC 52%,#F0E2BE 64%,#C7A96A 100%);
+        background-size:260% 100%;
+        -webkit-background-clip:text; background-clip:text;
+        -webkit-text-fill-color:transparent; color:transparent;
+        animation:awakenSheen 3.6s ease-in-out 1.2s infinite; }
       #awakenScreen .awaken-brand{
         background:linear-gradient(100deg,#B8901F 0%,#F3DFA6 22%,#FFF6DC 38%,#E8CE86 52%,#F3DFA6 68%,#B8901F 100%);
         background-size:260% 100%;
@@ -1902,16 +1939,19 @@ a.p-media:focus-visible, a.p-name:focus-visible{ outline:2px solid var(--oxblood
        styles so the markup stays clean and the CSP needs no exception. */
     #awakenScreen .awaken-brand > span{ display:inline-block; opacity:0; transform:translateY(.5em);
       animation:awakenLetterIn .62s cubic-bezier(.22,1,.36,1) forwards; }
-    #awakenScreen .awaken-brand > span:nth-child(1){ animation-delay:.28s; }
-    #awakenScreen .awaken-brand > span:nth-child(2){ animation-delay:.35s; }
-    #awakenScreen .awaken-brand > span:nth-child(3){ animation-delay:.42s; }
-    #awakenScreen .awaken-brand > span:nth-child(4){ animation-delay:.49s; }
-    #awakenScreen .awaken-brand > span:nth-child(5){ animation-delay:.56s; }
-    #awakenScreen .awaken-brand > span:nth-child(6){ animation-delay:.63s; }
-    #awakenScreen .awaken-brand > span:nth-child(7){ animation-delay:.70s; }
-    #awakenScreen .awaken-brand > span:nth-child(8){ animation-delay:.77s; }
-    #awakenScreen .awaken-brand > span:nth-child(9){ animation-delay:.84s; }
-    #awakenScreen .awaken-brand > span:nth-child(10){ animation-delay:.91s; }
+    /* Begins as 'Welcome to' finishes (.55s + .55s duration), so the two read
+       as one sentence arriving rather than two things racing. Last letter
+       settles at 1.50s; the tagline follows at 1.55s. */
+    #awakenScreen .awaken-brand > span:nth-child(1){ animation-delay:.68s; }
+    #awakenScreen .awaken-brand > span:nth-child(2){ animation-delay:.75s; }
+    #awakenScreen .awaken-brand > span:nth-child(3){ animation-delay:.82s; }
+    #awakenScreen .awaken-brand > span:nth-child(4){ animation-delay:.89s; }
+    #awakenScreen .awaken-brand > span:nth-child(5){ animation-delay:.96s; }
+    #awakenScreen .awaken-brand > span:nth-child(6){ animation-delay:1.03s; }
+    #awakenScreen .awaken-brand > span:nth-child(7){ animation-delay:1.10s; }
+    #awakenScreen .awaken-brand > span:nth-child(8){ animation-delay:1.17s; }
+    #awakenScreen .awaken-brand > span:nth-child(9){ animation-delay:1.24s; }
+    #awakenScreen .awaken-brand > span:nth-child(10){ animation-delay:1.31s; }
     #awakenScreen .awaken-sub{ font-family:Poppins, system-ui, sans-serif; font-size:clamp(.68rem,2.4vw,.76rem);
       color:rgba(241,226,200,.6); min-height:1.2em; text-align:center; padding:0 8vw; }
     @keyframes awakenGreetIn{ from{ opacity:0; transform:translateY(6px); } to{ opacity:1; transform:none; } }
@@ -1926,15 +1966,26 @@ a.p-media:focus-visible, a.p-name:focus-visible{ outline:2px solid var(--oxblood
        opacity 0 and the brand name would simply never appear. */
     @media (prefers-reduced-motion:reduce){
       #awakenScreen .awaken-spin, #awakenScreen .awaken-bindu{ animation:none; }
-      #awakenScreen .awaken-brand{ animation:none; }
-      #awakenScreen .awaken-greet{ animation:none; opacity:1; }
-      #awakenScreen .awaken-brand > span{ animation:none; opacity:1; transform:none; }
+      #awakenScreen .awaken-brand, #awakenScreen .awaken-greet{ animation:none; }
+      #awakenScreen .awaken-tagline{ animation:none; opacity:1; }
+      #awakenScreen .awaken-brand > span,
+      #awakenScreen .awaken-greet > span{ animation:none; opacity:1; transform:none; }
     }
     /* A short viewport (landscape phone) must not clip the mark or the name. */
+    /* At 320px the tagline measured 281px against 282px available — one pixel,
+       which is inside measurement noise and would be lost entirely if Poppins
+       failed to load and a wider fallback took over. Letter-spacing is the
+       cheapest thing to give back: dropping it to .12em here recovers ~37px and
+       the line still reads as spaced. */
+    @media (max-width:400px){
+      #awakenScreen .awaken-tagline{ letter-spacing:.12em; text-indent:.12em; }
+    }
     @media (max-height:520px){
       #awakenScreen{ gap:14px; }
-      #awakenScreen svg{ width:min(26vh,120px); }
+      #awakenScreen svg{ width:min(24vh,110px); }
+      #awakenScreen .awaken-greet{ font-size:clamp(.85rem,3.4vh,1.2rem); }
       #awakenScreen .awaken-brand{ font-size:clamp(1.4rem,6vh,2.2rem); }
+      #awakenScreen .awaken-tagline{ font-size:clamp(.55rem,1.9vh,.7rem); letter-spacing:.16em; }
     }
   </style>
   <svg viewBox="0 0 500 500" aria-hidden="true">
@@ -1961,12 +2012,13 @@ a.p-media:focus-visible, a.p-name:focus-visible{ outline:2px solid var(--oxblood
     </g>
     <circle class="awaken-bindu" cx="250" cy="250" r="5.5" fill="#F1E2C8"/>
   </svg>
-  <div class="awaken-welcome">
-    <span class="awaken-greet">Welcome to</span>
-    <!-- One span per letter so each can rise in turn. aria-label carries the
-         whole word, and the letters are hidden from assistive tech, so a screen
-         reader hears "Chakrashri" rather than ten separate characters. -->
-    <span class="awaken-brand" role="text" aria-label="Chakrashri"><span aria-hidden="true">C</span><span aria-hidden="true">H</span><span aria-hidden="true">A</span><span aria-hidden="true">K</span><span aria-hidden="true">R</span><span aria-hidden="true">A</span><span aria-hidden="true">S</span><span aria-hidden="true">H</span><span aria-hidden="true">R</span><span aria-hidden="true">I</span></span>
+  <!-- One span per letter so each can rise in turn. The letters are hidden from
+       assistive tech and the wrapper carries the full phrase, so a screen reader
+       hears "Welcome to Chakrashri" rather than nineteen separate characters. -->
+  <div class="awaken-welcome" role="text" aria-label="Welcome to Chakrashri">
+    <span class="awaken-greet" aria-hidden="true"><span aria-hidden="true">W</span><span aria-hidden="true">e</span><span aria-hidden="true">l</span><span aria-hidden="true">c</span><span aria-hidden="true">o</span><span aria-hidden="true">m</span><span aria-hidden="true">e</span><span aria-hidden="true"> </span><span aria-hidden="true">t</span><span aria-hidden="true">o</span></span>
+    <span class="awaken-brand" aria-hidden="true"><span aria-hidden="true">C</span><span aria-hidden="true">H</span><span aria-hidden="true">A</span><span aria-hidden="true">K</span><span aria-hidden="true">R</span><span aria-hidden="true">A</span><span aria-hidden="true">S</span><span aria-hidden="true">H</span><span aria-hidden="true">R</span><span aria-hidden="true">I</span></span>
+    <span class="awaken-tagline" aria-hidden="true">Sacred, Authentic, Pure &amp; Trustworthy</span>
   </div>
   <div class="awaken-sub" id="awakenSub"></div>
 </div>
@@ -1984,8 +2036,8 @@ a.p-media:focus-visible, a.p-name:focus-visible{ outline:2px solid var(--oxblood
   <div class="container">
     <div class="topbar-msg">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.4 14.5L16 10 4 20"/><path d="M3 3l7.07 17 2.51-7.39L20 10.07z"/></svg>
-      <span class="long">Free shipping across India on orders above ₹999 &nbsp;•&nbsp; Every idol hand‑verified before dispatch</span>
-      <span class="short-msg">Free shipping above ₹999</span>
+      <span class="long">Free shipping across India on orders above <span data-free-ship-threshold>₹999</span> &nbsp;•&nbsp; Every idol hand‑verified before dispatch</span>
+      <span class="short-msg">Free shipping above <span data-free-ship-threshold>₹999</span></span>
     </div>
     <div class="topbar-links">
       <a href="#" onclick="return false;">Track Order</a>
@@ -2228,7 +2280,7 @@ a.p-media:focus-visible, a.p-name:focus-visible{ outline:2px solid var(--oxblood
   <div class="trust-strip">
     <div class="container">
       <div class="trust-item"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2l8 4v6c0 5-3.4 8.4-8 10-4.6-1.6-8-5-8-10V6z"/><path d="M9 12l2 2 4-4"/></svg></div><div><strong>100% Authentic</strong><span>Certified &amp; energized items</span></div></div>
-      <div class="trust-item"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7h13v10H3zM16 10h4l2 3v4h-6z"/><circle cx="7.5" cy="18" r="1.6"/><circle cx="17.5" cy="18" r="1.6"/></svg></div><div><strong>Pan‑India Delivery</strong><span>Free above ₹999</span></div></div>
+      <div class="trust-item"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7h13v10H3zM16 10h4l2 3v4h-6z"/><circle cx="7.5" cy="18" r="1.6"/><circle cx="17.5" cy="18" r="1.6"/></svg></div><div><strong>Pan‑India Delivery</strong><span>Free above <span data-free-ship-threshold>₹999</span></span></div></div>
       <div class="trust-item"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="10" width="16" height="10" rx="1.5"/><path d="M8 10V7a4 4 0 018 0v3"/></svg></div><div><strong>Secure Payments</strong><span>UPI, cards &amp; COD</span></div></div>
       <div class="trust-item"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12a9 9 0 1018 0 9 9 0 00-18 0z"/><path d="M8 12l2.5 2.5L16 9"/></svg></div><div><strong>Easy 7‑Day Returns</strong><span>No‑questions replacement</span></div></div>
     </div>
@@ -2569,7 +2621,7 @@ a.p-media:focus-visible, a.p-name:focus-visible{ outline:2px solid var(--oxblood
         <div class="pd-tab-pane" id="pdtab-variants"></div>
         <div class="pd-tab-pane" id="pdtab-reviews"></div>
         <div class="pd-tab-pane" id="pdtab-shipping">
-          <p><strong>Shipping:</strong> Dispatched within 24–48 hours. Free shipping across India on orders above ₹999; a flat ₹79 fee applies below that. Estimated delivery is 2–7 business days depending on your pin code.</p>
+          <p><strong>Shipping:</strong> Dispatched within 24–48 hours. Free shipping across India on orders above <span data-free-ship-threshold>₹999</span>; a flat <span data-free-ship-flat>₹79</span> fee applies below that. Estimated delivery is 2–7 business days depending on your pin code.</p>
           <p><strong>Returns:</strong> 7-day no-questions-asked return window for unused items in original packaging. Energized or customised items (engraved yantras, puja kits assembled to order) are final sale.</p>
           <p><strong>Damage in transit:</strong> Record an unboxing video and reach us within 48 hours of delivery for a free replacement.</p>
         </div>
@@ -2703,7 +2755,9 @@ a.p-media:focus-visible, a.p-name:focus-visible{ outline:2px solid var(--oxblood
               <div class="summary-line"><span>Subtotal</span><span id="ckSubtotal">₹0</span></div>
               <div class="summary-line" id="ckDiscountRow" style="display:none;color:var(--success);"><span id="ckDiscountLabel">Discount</span><span id="ckDiscount">₹0</span></div>
               <div class="summary-line"><span>Shipping</span><span id="ckShipping">₹0</span></div>
-              <div class="summary-line" id="ckCodRow" style="display:none;"><span>COD Fee</span><span>₹40</span></div>
+              <div class="summary-line" id="ckGstRow" style="display:none;"><span>GST</span><span id="ckGst">₹0</span></div>
+              <!-- Kept for a real, server-driven fee. The client no longer invents one. -->
+              <div class="summary-line" id="ckCodRow" style="display:none;"><span>COD Fee</span><span id="ckCodFee">₹0</span></div>
               <div class="summary-line total"><span>Total</span><span id="ckTotal">₹0</span></div>
             </div>
             <button class="btn btn-primary btn-block btn-lg" id="placeOrderBtn" style="margin-top:20px;" onclick="placeOrder()">Place Order &amp; Pay</button>
@@ -3026,7 +3080,7 @@ a.p-media:focus-visible, a.p-name:focus-visible{ outline:2px solid var(--oxblood
       </div>
       <div class="policy-section" id="policy-shipping">
         <h2>Shipping Policy</h2>
-        <p>We dispatch every order within 24–48 hours of confirmation. Shipping is free across India on orders above ₹999; a flat ₹79 fee applies to smaller orders. Delivery typically takes 2–7 business days depending on your location.</p>
+        <p>We dispatch every order within 24–48 hours of confirmation. Shipping is free across India on orders above <span data-free-ship-threshold>₹999</span>; a flat <span data-free-ship-flat>₹79</span> fee applies to smaller orders. Delivery typically takes 2–7 business days depending on your location.</p>
         <ul>
           <li>Fragile items (idols, sphatik pieces) are double-boxed with cushioning.</li>
           <li>You'll receive tracking details by SMS and email once your order ships.</li>
@@ -4400,6 +4454,10 @@ function mapApiProduct(p){
     // needs it to stop a customer clicking past what is available.
     stockQty: Number(p.stock_qty || 0),
     hasVariants: !!p.has_variants,
+    // Kept because the order total depends on it. The API has always sent it
+    // and the client had always dropped it, which is why the checkout could not
+    // compute the same total the server does.
+    gstRate: Number(p.gst_rate) || 0,
     sku: p.sku || '',
     shortDesc: p.short_desc || p.name,
     longDesc: p.long_desc || p.short_desc || p.name,
@@ -5536,6 +5594,7 @@ function cartLineSnapshot(p){
     cat: p.cat,
     slug: p.slug,
     sku: p.sku,
+    gstRate: Number(p.gstRate) || 0,
     imageUrl: p.imageUrl || null
   };
 }
@@ -5563,6 +5622,7 @@ function productFromCartLine(l){
     stockQty: l.qty,
     hasVariants: !!l.variantId,
     sku: l.snap.sku || '',
+    gstRate: Number(l.snap.gstRate) || 0,
     shortDesc: l.snap.name,
     longDesc: l.snap.name,
     material: '',
@@ -5605,10 +5665,187 @@ function backfillCartSnapshots(){
   return changed;
 }
 function getCartCount(){ return cart.reduce(function(s,l){ return s + l.qty; }, 0); }
+/* ---------------------------------------------------------------------------
+   THE ORDER TOTAL, COMPUTED THE WAY THE SERVER COMPUTES IT.
+   ---------------------------------------------------------------------------
+   calculateOrderTotals in utils/orders.js is:
+
+     subtotal        = sum(lineTotal)
+     shipping        = subtotal >= threshold ? 0 : flat        (ORIGINAL subtotal)
+     originalGst     = round(sum(lineTotal * gstRate / 100))
+     gst             = round(originalGst * (discountedSubtotal / subtotal))
+     total           = discountedSubtotal + shipping + gst
+
+   The checkout showed `subtotal - discount + shipping` and no GST at all. Every
+   product in this catalog carries gst_rate 3.00, so every customer was quoted
+   roughly 3% less than they were charged — ₹879 on screen against ₹903 taken
+   for a single Bhagavat Puran. The client had never even kept gst_rate off the
+   API response, so it could not have computed it.
+
+   Two details that must not be "simplified", because both are in the server:
+     - shipping is decided on the ORIGINAL subtotal, not the discounted one, so
+       a coupon cannot quietly remove free shipping;
+     - GST is scaled by the discount ratio and rounded ONCE at the end, not per
+       line, or the two sides drift by a paisa on almost every order.
+
+   This remains DISPLAY only. The server still computes what is charged; this
+   exists so the number the customer agrees to is the same one.
+   --------------------------------------------------------------------------- */
+function calculateCartTotals(){
+  const lines = getCartLinesWithProducts();
+  const subtotal = lines.reduce(function(s, x){ return s + cartUnitPrice(x.line, x.product) * x.line.qty; }, 0);
+
+  // Paise throughout, like the server, so no float drift reaches the customer.
+  const subtotalPaise = Math.round(subtotal * 100);
+  const originalGstPaise = Math.round(lines.reduce(function(s, x){
+    const linePaise = Math.round(cartUnitPrice(x.line, x.product) * x.line.qty * 100);
+    return s + (linePaise * (Number(x.product.gstRate) || 0)) / 100;
+  }, 0));
+
+  const rawDiscount = appliedCoupon ? Number(appliedCoupon.discountPaise) || 0 : 0;
+  const discountPaise = Math.max(0, Math.min(rawDiscount, subtotalPaise));
+  const discountedSubtotalPaise = subtotalPaise - discountPaise;
+
+  const shipping = getShippingCost(subtotal);
+  const shippingPaise = Math.round(shipping * 100);
+
+  const gstPaise = subtotalPaise > 0
+    ? Math.round(originalGstPaise * (discountedSubtotalPaise / subtotalPaise))
+    : 0;
+
+  return {
+    subtotal: subtotalPaise / 100,
+    discount: discountPaise / 100,
+    shipping: shippingPaise / 100,
+    gst: gstPaise / 100,
+    total: (discountedSubtotalPaise + shippingPaise + gstPaise) / 100
+  };
+}
+
 function getCartSubtotal(){
   return getCartLinesWithProducts().reduce(function(s,x){ return s + cartUnitPrice(x.line, x.product) * x.line.qty; }, 0);
 }
-function getShippingCost(subtotal){ return subtotal >= 999 || subtotal === 0 ? 0 : 79; }
+/* ---------------------------------------------------------------------------
+   SHIPPING AND COD RULES BELONG TO THE SERVER.
+   ---------------------------------------------------------------------------
+   utils/settings.js holds free_shipping_threshold_paise, shipping_flat_paise,
+   cod_enabled and cod_max_order_paise — all editable from the admin settings
+   screen — and utils/orders.js prices every order from them.
+
+   The storefront hardcoded 999 and 79. So the day the threshold was changed in
+   the admin console, the checkout would still say "free above Rs999" and still
+   add Rs79 to the total the customer agreed to, while the server charged the
+   new amount. That is the variant price bug again, except it applied to EVERY
+   order rather than only to products with variants.
+
+   /api/site/config already published exactly these four values with a 60-second
+   cache. Nothing had ever called it. The numbers below are only the fallback
+   for the first paint before it answers, and are deliberately identical to
+   SETTINGS_DEFAULTS so an unconfigured shop behaves exactly as before.
+   --------------------------------------------------------------------------- */
+let siteConfig = {
+  freeShippingThresholdPaise: 99900,
+  shippingFlatPaise: 7900,
+  codEnabled: true,
+  codMaxOrderPaise: 500000,
+  fromServer: false
+};
+
+const SITE_CONFIG_CACHE_KEY = 'chakrashri_site_config_v1';
+
+/* Cached like the catalog, for the same reason: a cold start must not make the
+   checkout quote different shipping than the last known-good answer. */
+function readCachedSiteConfig(){
+  try{
+    const box = JSON.parse(localStorage.getItem(SITE_CONFIG_CACHE_KEY) || 'null');
+    if(!box || typeof box.freeShippingThresholdPaise !== 'number') return null;
+    return box;
+  }catch(e){ return null; }
+}
+
+function applySiteConfig(cfg, fromServer){
+  if(!cfg || typeof cfg.freeShippingThresholdPaise !== 'number') return false;
+  siteConfig = {
+    freeShippingThresholdPaise: Number(cfg.freeShippingThresholdPaise),
+    shippingFlatPaise: Number(cfg.shippingFlatPaise),
+    codEnabled: cfg.codEnabled !== false,
+    codMaxOrderPaise: Number(cfg.codMaxOrderPaise) || 0,
+    fromServer: !!fromServer
+  };
+  if(fromServer){
+    try{ localStorage.setItem(SITE_CONFIG_CACHE_KEY, JSON.stringify(siteConfig)); }catch(e){}
+  }
+  applyShippingCopy();
+  applyCodAvailability();
+  return true;
+}
+
+async function loadSiteConfig(){
+  try{
+    const cfg = await apiFetch('/api/site/config', { background: true });
+    return applySiteConfig(cfg, true);
+  }catch(e){
+    console.warn('Could not load site config — keeping the last known values.', e);
+    return false;
+  }
+}
+
+function freeShippingThreshold(){ return siteConfig.freeShippingThresholdPaise / 100; }
+function shippingFlat(){ return siteConfig.shippingFlatPaise / 100; }
+
+/* Mirrors calculateOrderTotals in utils/orders.js: free at or above the
+   threshold, flat below it, nothing at all for an empty cart. */
+function getShippingCost(subtotal){
+  if(subtotal === 0) return 0;
+  return subtotal >= freeShippingThreshold() ? 0 : shippingFlat();
+}
+
+/* Rewrites every place the threshold is quoted to a customer. Hardcoding it in
+   nine places is how the copy and the arithmetic drift apart unnoticed. */
+function applyShippingCopy(){
+  try{
+    const t = formatINR(freeShippingThreshold());
+    const f = formatINR(shippingFlat());
+    qsa('[data-free-ship-threshold]').forEach(function(el){ el.textContent = t; });
+    qsa('[data-free-ship-flat]').forEach(function(el){ el.textContent = f; });
+  }catch(e){ /* copy only — never let a label break a render */ }
+}
+
+/* COD is a server-side switch and a server-side limit. Offering it when it is
+   off, or on an order above the maximum, produces a rejection at the moment of
+   payment for a choice we invited the customer to make. */
+function applyCodAvailability(){
+  try{
+    const el = qs('.pay-method[data-method="cod"]');
+    if(!el) return;
+    const subtotal = getCartSubtotal();
+    const overLimit = siteConfig.codMaxOrderPaise > 0 && (subtotal * 100) > siteConfig.codMaxOrderPaise;
+    const unavailable = !siteConfig.codEnabled || overLimit;
+
+    el.classList.toggle('pay-method-disabled', unavailable);
+    el.setAttribute('aria-disabled', unavailable ? 'true' : 'false');
+
+    let note = el.querySelector('.pay-method-note');
+    if(unavailable){
+      if(!note){
+        note = document.createElement('div');
+        note.className = 'pay-method-note';
+        el.appendChild(note);
+      }
+      note.textContent = !siteConfig.codEnabled
+        ? 'Currently unavailable'
+        : 'Not available above ' + formatINR(siteConfig.codMaxOrderPaise / 100);
+      if(el.classList.contains('active')){
+        // They chose COD and the order has since grown past the limit. Move
+        // them to a method that will actually succeed.
+        const fallback = qs('.pay-method[data-method="upi"]') || qs('.pay-method:not(.pay-method-disabled)');
+        if(fallback) selectPayMethod(fallback);
+      }
+    } else if(note){
+      note.remove();
+    }
+  }catch(e){ /* never let this block the checkout rendering */ }
+}
 
 function updateCartUI(){
   qsa('#cartCount').forEach(function(el){ el.textContent = getCartCount(); });
@@ -6052,7 +6289,7 @@ async function renderProductDetail(id){
     '</div>' +
     '<div class="pd-trust">' +
       '<div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2l8 4v6c0 5-3.4 8.4-8 10-4.6-1.6-8-5-8-10V6z"/><path d="M9 12l2 2 4-4"/></svg>100% authentic, hand-checked before dispatch</div>' +
-      '<div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7h13v10H3zM16 10h4l2 3v4h-6z"/><circle cx="7.5" cy="18" r="1.6"/><circle cx="17.5" cy="18" r="1.6"/></svg>Free shipping on orders above ₹999</div>' +
+      '<div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7h13v10H3zM16 10h4l2 3v4h-6z"/><circle cx="7.5" cy="18" r="1.6"/><circle cx="17.5" cy="18" r="1.6"/></svg>Free shipping on orders above ' + formatINR(freeShippingThreshold()) + '</div>' +
       '<div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12a9 9 0 1018 0 9 9 0 00-18 0z"/><path d="M8 12l2.5 2.5L16 9"/></svg>7-day easy return &amp; replacement</div>' +
     '</div>' +
     '<div class="pd-share"><span>Share:</span><div class="icons">' +
@@ -6802,16 +7039,24 @@ function refreshCartAndCheckoutViews(){
 // Shared summary-lines builder used by BOTH the cart page and the checkout
 // order summary, so the two can never disagree about the discount or total.
 function buildSummaryLinesHTML(subtotal, shipping){
-  const discount = appliedCoupon ? (appliedCoupon.discountPaise / 100) : 0;
-  let html = '<div class="summary-line"><span>Subtotal</span><span>' + formatINR(subtotal) + '</span></div>';
+  // Same figures as the checkout, from the same function, so the cart page and
+  // the checkout can never quote two different totals for one cart.
+  const totals = calculateCartTotals();
+  const discount = totals.discount;
+  let html = '<div class="summary-line"><span>Subtotal</span><span>' + formatINR(totals.subtotal) + '</span></div>';
   if(appliedCoupon){
     html += '<div class="summary-line" style="color:var(--success);">' +
       '<span>Discount (' + escapeHtml(appliedCoupon.code) + ') ' +
       '<a href="#" onclick="removeCoupon();return false;" style="font-size:.75rem;color:var(--oxblood);margin-left:6px;">remove</a></span>' +
       '<span>− ' + formatINR(discount) + '</span></div>';
   }
-  html += '<div class="summary-line"><span>Shipping</span><span>' + (shipping===0?'FREE':formatINR(shipping)) + '</span></div>' +
-    '<div class="summary-line total"><span>Total</span><span>' + formatINR(Math.max(0, subtotal - discount + shipping)) + '</span></div>';
+  html += '<div class="summary-line"><span>Shipping</span><span>' + (totals.shipping===0?'FREE':formatINR(totals.shipping)) + '</span></div>';
+  // Only shown when there is tax to show. A "GST ₹0" line on a zero-rated
+  // catalog is noise; a missing one on a taxed catalog is a wrong total.
+  if(totals.gst > 0){
+    html += '<div class="summary-line"><span>GST</span><span>' + formatINR(totals.gst) + '</span></div>';
+  }
+  html += '<div class="summary-line total"><span>Total</span><span>' + formatINR(totals.total) + '</span></div>';
   return html;
 }
 
@@ -6857,12 +7102,24 @@ function renderCheckoutPage(){
   updateCheckoutTotals();
 }
 function updateCheckoutTotals(){
-  const subtotal = getCartSubtotal();
-  const shipping = getShippingCost(subtotal);
+  // One source for every figure on this panel, mirroring the server exactly.
+  const totals = calculateCartTotals();
+  const subtotal = totals.subtotal;
+  const shipping = totals.shipping;
   const activeMethodEl = qs('.pay-method.active');
   const method = activeMethodEl ? activeMethodEl.dataset.method : 'upi';
-  const codFee = method === 'cod' ? 40 : 0;
-  const discount = appliedCoupon ? (appliedCoupon.discountPaise / 100) : 0;
+  // THE SERVER CHARGES NO COD FEE. calculateOrderTotals in utils/orders.js is
+  // subtotal + shipping + GST - discount; there is no cod fee setting and no
+  // cod fee anywhere in src/. This added Rs40 to the figure the customer agreed
+  // to and to nothing they were ever billed, so the checkout total and the
+  // order confirmation disagreed on every cash-on-delivery order.
+  //
+  // Removed rather than implemented: inventing a charge on the client is the
+  // one direction that can never be made correct. The server decides what
+  // anyone pays. The row stays in the markup so a real, server-driven fee can
+  // be shown later without rebuilding the summary.
+  const codFee = 0;
+  const discount = totals.discount;
 
   qs('#ckSubtotal').textContent = formatINR(subtotal);
   const discRow = qs('#ckDiscountRow');
@@ -6874,11 +7131,23 @@ function updateCheckoutTotals(){
     }
   }
   qs('#ckShipping').textContent = shipping===0?'FREE':formatINR(shipping);
+
+  const gstRow = qs('#ckGstRow');
+  if(gstRow){
+    gstRow.style.display = totals.gst > 0 ? '' : 'none';
+    const gstEl = qs('#ckGst');
+    if(gstEl) gstEl.textContent = formatINR(totals.gst);
+  }
   qs('#ckCodRow').style.display = codFee ? '' : 'none';
+  // The cart can grow past the COD limit between choosing it and paying.
+  applyCodAvailability();
   // Math.max(0, ...) guards the display against ever showing a negative
   // total; the authoritative amount is recomputed server-side at order
   // creation regardless of what's shown here.
-  qs('#ckTotal').textContent = formatINR(Math.max(0, subtotal - discount + shipping + codFee));
+  // calculateCartTotals already applied the discount, the shipping rule and the
+  // GST scaling exactly as utils/orders.js does. Re-deriving it here is how the
+  // two drift apart.
+  qs('#ckTotal').textContent = formatINR(Math.max(0, totals.total + codFee));
 
   const couponRow = qs('#ckCouponRow');
   if(couponRow) couponRow.innerHTML = buildCouponRowHTML();
@@ -6927,7 +7196,8 @@ async function placeOrder(){
     title: 'Preparing your secure checkout',
     status: 'Setting up your secure payment…',
     note: 'Your cart is saved. Nothing has been charged.',
-    busyButton: '#placeOrderBtn'
+    busyButton: '#placeOrderBtn',
+    audience: 'order'
   });
 }
 
@@ -6948,7 +7218,8 @@ async function placeOrderNow(){
   const shipping = getShippingCost(subtotal);
   const activeMethodEl = qs('.pay-method.active');
   const method = activeMethodEl ? activeMethodEl.dataset.method : 'upi';
-  const codFee = method === 'cod' ? 40 : 0;
+  // (The COD fee that used to be declared here was never read — the order
+  // payload carries ids and quantities only, and the server prices everything.)
   const customerName = qs('#ckName').value.trim();
   const itemCount = getCartCount();
   const paymentMethod = method === 'cod' ? 'cod' : 'razorpay';
@@ -7312,7 +7583,8 @@ async function confirmPujaBooking(){
   return withBackendReady(confirmPujaBookingNow, {
     title: 'Confirming your puja booking',
     status: 'Checking the pandit\'s availability…',
-    note: 'Nothing has been charged and your details are saved.'
+    note: 'Nothing has been charged and your details are saved.',
+    audience: 'puja'
   });
 }
 
@@ -7468,7 +7740,8 @@ async function confirmAstroBooking(){
   return withBackendReady(confirmAstroBookingNow, {
     title: 'Confirming your consultation',
     status: 'Checking the astrologer\'s availability…',
-    note: 'Nothing has been charged and your details are saved.'
+    note: 'Nothing has been charged and your details are saved.',
+    audience: 'astrology'
   });
 }
 
@@ -8325,6 +8598,7 @@ function buyable(p){
 const WAIT_STRATEGIES = [
   {
     id: 'complete-ritual',
+    contexts: ['order'],
     build: function(){
       const cats = {};
       cart.forEach(function(l){ const p = getProduct(l.id); if(p && p.cat) cats[p.cat] = true; });
@@ -8372,6 +8646,7 @@ const WAIT_STRATEGIES = [
   },
   {
     id: 'free-shipping',
+    contexts: ['order'],
     build: function(){
       const subtotal = getCartSubtotal();
       if(subtotal <= 0 || subtotal >= 999) return null;
@@ -8391,6 +8666,7 @@ const WAIT_STRATEGIES = [
   },
   {
     id: 'small-additions',
+    contexts: ['order'],
     build: function(){
       // Relevance first, then popularity: a customer buying a lingam should be
       // offered what goes WITH it, not whatever happens to be cheap.
@@ -8407,6 +8683,7 @@ const WAIT_STRATEGIES = [
   },
   {
     id: 'bestsellers',
+    contexts: ['order'],
     build: function(){
       const items = waitRelevanceSort(
         PRODUCTS.filter(function(p){ return buyable(p) && p.badge === 'bestseller'; })
@@ -8421,6 +8698,7 @@ const WAIT_STRATEGIES = [
   },
   {
     id: 'care-note',
+    contexts: ['order'],
     build: function(){
       // No products at all. A wait spent entirely on selling reads as a wait
       // spent selling; one card of genuine care guidance is what makes the
@@ -8447,6 +8725,40 @@ const WAIT_STRATEGIES = [
     }
   },
   {
+    /* Bookings only. Everything above is about a CART — shipping thresholds,
+       add-to-cart buttons, what goes with what you are buying — and none of it
+       applies to someone booking a pandit. Worse, the Add button would drop a
+       product into a cart that has nothing to do with their booking and leave
+       it stranded there afterwards.
+
+       So bookings get their own: what actually happens next. It is the thing a
+       customer genuinely wants to know at that moment, it needs no catalog, and
+       it cannot create a side effect. Three variants so a longer wait does not
+       repeat itself. */
+    id: 'booking-next',
+    contexts: ['puja', 'astrology'],
+    build: function(){
+      const isPuja = waitState.audience === 'puja';
+      const notes = isPuja ? [
+        { title: 'What happens next',
+          note: 'Your pandit calls a day before to confirm the muhurat and tell you exactly which samagri to arrange — so nothing is left to the morning of the ceremony.' },
+        { title: 'Before the day',
+          note: 'Share your gotra and sankalp details when the pandit calls. The ceremony is performed in the language you are comfortable with.' },
+        { title: 'Your booking is held',
+          note: 'The slot is reserved the moment this goes through, and a confirmation with your pandit\'s details reaches you by email.' }
+      ] : [
+        { title: 'What happens next',
+          note: 'Your astrologer reviews your birth details before the call, so the consultation starts with your chart already read rather than with data entry.' },
+        { title: 'Before the call',
+          note: 'Have your time and place of birth as exact as you can. A few minutes changes the ascendant, and with it most of the reading.' },
+        { title: 'Your slot is held',
+          note: 'The time is reserved as soon as this goes through, and the joining details reach you by email.' }
+      ];
+      const i = (waitState.shown.filter(function(x){ return x === 'booking-next'; }).length) % notes.length;
+      return { title: notes[i].title, note: notes[i].note };
+    }
+  },
+  {
     id: 'journal',
     build: function(){
       if(typeof BLOG_POSTS === 'undefined' || !BLOG_POSTS.length) return null;
@@ -8468,7 +8780,14 @@ const WAIT_STRATEGIES = [
    reappear to fill time — so once every usable strategy has been shown, the
    list resets while still excluding whichever one was on screen last. */
 function pickWaitStrategy(){
-  const built = WAIT_STRATEGIES.map(function(s){
+  // A strategy with no `contexts` suits every one of them (the Journal reads
+  // just as well before a booking as before a checkout). Anything that touches
+  // the cart declares itself order-only, so a booking can never be offered an
+  // Add button that would strand a product in a cart it has nothing to do with.
+  const audience = waitState.audience || 'order';
+  const built = WAIT_STRATEGIES.filter(function(s){
+    return !s.contexts || s.contexts.indexOf(audience) > -1;
+  }).map(function(s){
     let payload = null;
     try{ payload = s.build(); }catch(e){ payload = null; }
     return payload ? { id: s.id, payload: payload } : null;
@@ -8606,6 +8925,8 @@ function openWaitingExperience(context){
   waitState.open = true;
   waitState.cancelled = false;
   waitState.shown = [];
+  // 'order' | 'puja' | 'astrology' — decides which suggestions are even eligible.
+  waitState.audience = context.audience || 'order';
 
   const title = qs('#waitTitle');
   if(title) title.textContent = context.title || 'Preparing your secure checkout';
@@ -8996,6 +9317,10 @@ function routeAndRenderNow(){
    wait for something they are not waiting for) and buys a longer timeout,
    since there is no user to keep informed. */
 function bootLiveData(){
+  // Pricing rules first: they decide what the checkout quotes, and a stale
+  // threshold is a wrong number in front of a customer, not merely a slow page.
+  applySiteConfig(readCachedSiteConfig(), false);
+  loadSiteConfig();
   // Anything the visitor did on a previous visit while the backend was asleep
   // is delivered as soon as it answers. Costs nothing when the queue is empty.
   if(outboxCount()) scheduleOutboxFlush(1200);
