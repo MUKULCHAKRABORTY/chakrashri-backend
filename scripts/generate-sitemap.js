@@ -22,7 +22,9 @@
 const fs = require('fs');
 const path = require('path');
 
-const SITE_ORIGIN = (process.env.SITE_ORIGIN || 'https://www.chakrashri.com').replace(/\/+$/, '');
+// See the note in generate-product-pages.js: read the origin, never assume it.
+// Netlify sets URL to the site's primary domain during a build.
+const SITE_ORIGIN = (process.env.SITE_ORIGIN || process.env.URL || 'https://chakrashri.netlify.app').replace(/\/+$/, '');
 const API_BASE = (process.env.API_BASE || 'https://chakrashri-api.onrender.com').replace(/\/+$/, '');
 const OUTPUT = path.join(__dirname, '..', 'sitemap.xml');
 const FETCH_TIMEOUT_MS = parseInt(process.env.SITEMAP_FETCH_TIMEOUT_MS || '20000', 10);

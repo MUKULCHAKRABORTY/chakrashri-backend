@@ -20,4 +20,4 @@ Disallow: /reset-password
 Disallow: /*?sort=
 Disallow: /*?page=
 
-Sitemap: https://www.chakrashri.com/sitemap.xml
+Sitemap: https://chakrashri.netlify.app/sitemap.xml

@@ -59,3 +59,19 @@
 /admin.html
   Cache-Control: no-store
   X-Robots-Tag: noindex, nofollow
+
+# The build-time catalog snapshot (scripts/generate-catalog-snapshot.js), which
+# index.html renders its first paint from while the API is still waking.
+#
+# The numbers are chosen for that job specifically. max-age=300 means a shopper
+# clicking through several pages pays no network cost at all after the first
+# one. stale-while-revalidate is the part that matters: for a day after that
+# five minutes, the browser serves the cached copy INSTANTLY and refreshes it in
+# the background, so a returning visitor never waits on this file either — and
+# a stale copy is corrected within seconds by the live API fetch regardless.
+#
+# It is only ever display data. Price and stock are re-checked server-side at
+# add-to-cart and at checkout, which is what makes caching it this hard safe.
+/catalog.json
+  Cache-Control: public, max-age=300, stale-while-revalidate=86400
+  X-Robots-Tag: noindex

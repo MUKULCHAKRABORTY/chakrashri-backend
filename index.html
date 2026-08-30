@@ -24,14 +24,23 @@
      Product/Offer/AggregateRating structured data on product pages so Google
      can show price and rating in the result itself.
      =================================================================== -->
-<link rel="canonical" href="https://www.chakrashri.com/">
+<!-- LIVE ORIGIN. These three literals (canonical, og:url, and the Sitemap line
+     in robots.txt) are the only places the storefront origin is hardcoded —
+     everything else reads SITE_ORIGIN, or Netlify's own URL variable, at build
+     time. `npm run check:storefront` fails if they drift apart.
+
+     The custom domain www.chakrashri.com is NOT attached yet and currently
+     404s. Pointing canonical at it told Google every real page was a duplicate
+     of a dead address, and gave every shared link a dead destination. Change
+     these three the day the domain is attached, and not before. -->
+<link rel="canonical" href="https://chakrashri.netlify.app/">
 <meta name="robots" content="index,follow,max-image-preview:large">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Chakrashri">
 <meta property="og:locale" content="en_IN">
 <meta property="og:title" content="Chakrashri — Sacred Objects, Puja Booking &amp; Astrology">
 <meta property="og:description" content="Authentic sphatik lingams, sri yantras, idols, malas, bracelets &amp; spiritual books. Book pujas and astrology consultations online.">
-<meta property="og:url" content="https://www.chakrashri.com/">
+<meta property="og:url" content="https://chakrashri.netlify.app/">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Chakrashri — Sacred Objects, Puja Booking &amp; Astrology">
 <meta name="twitter:description" content="Authentic sphatik lingams, sri yantras, idols, malas, bracelets &amp; spiritual books. Book pujas and astrology consultations online.">
@@ -41,7 +50,7 @@
   "@type": "Store",
   "name": "Chakrashri",
   "description": "Authentic sacred objects, puja booking and Vedic astrology consultations.",
-  "url": "https://www.chakrashri.com/",
+  "url": "https://chakrashri.netlify.app/",
   "areaServed": "IN",
   "currenciesAccepted": "INR",
   "paymentAccepted": "Credit Card, Debit Card, UPI, Net Banking, Cash on Delivery"
@@ -52,10 +61,10 @@
   "@context": "https://schema.org",
   "@type": "WebSite",
   "name": "Chakrashri",
-  "url": "https://www.chakrashri.com/",
+  "url": "https://chakrashri.netlify.app/",
   "potentialAction": {
     "@type": "SearchAction",
-    "target": { "@type": "EntryPoint", "urlTemplate": "https://www.chakrashri.com/shop?search={search_term_string}" },
+    "target": { "@type": "EntryPoint", "urlTemplate": "https://chakrashri.netlify.app/shop?search={search_term_string}" },
     "query-input": "required name=search_term_string"
   }
 }
@@ -65,8 +74,73 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700;800&amp;family=Poppins:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&amp;display=swap" rel="stylesheet">
+<!-- ===================================================================
+     COLD START — first of three places this is handled.
+     ===================================================================
+     The API runs on Render's free plan: it spins down after ~15 minutes idle
+     and takes 30-60 seconds to boot, and Neon suspends its compute after ~5
+     minutes on top of that. Both clocks only start once something asks the
+     server for something, so the most valuable thing this page can do is ask
+     EARLY and render from somewhere else in the meantime.
+
+     These two fetches sit in the <head>, above 460KB of markup and a
+     render-blocking fonts stylesheet, rather than in init(). That is worth
+     roughly a second and a half of the server's boot — time the visitor spends
+     reading a finished page instead of waiting at the end of one. Neither
+     blocks rendering; they are promises the app collects later.
+
+     If the API ever moves to a custom domain, the preconnect below and the
+     connect-src in _headers must both change with it.
+     =================================================================== -->
+<link rel="preconnect" href="https://chakrashri-api.onrender.com">
+<link rel="dns-prefetch" href="https://chakrashri-api.onrender.com">
 <script>
   window.__API_BASE__ = "https://chakrashri-api.onrender.com";
+
+  window.__BOOT__ = (function(){
+    var boot = { t0: Date.now(), awakeAt: null };
+
+    /* TWO knocks, because there are TWO things asleep and they wake
+       independently.
+
+         /api/health  wakes the Render web process. It touches no database, so
+                      it answers the moment Node is listening — which makes it
+                      the earliest honest signal of "the server is back".
+         /api/ready   runs SELECT 1, which is what actually wakes the Neon
+                      compute. Neon suspends after ~5 minutes idle and takes a
+                      second or two to resume; without this the database only
+                      starts waking when the first real query arrives, so the
+                      visitor pays the Render cold start AND the Neon one, in series.
+
+       Both are exempt from the rate limiter (see the skip predicate in
+       server.js), so this costs the server nothing, and nothing is waiting on
+       either one — their entire value is in having been sent at t=0, before
+       460KB of markup and a render-blocking stylesheet have been parsed. */
+    function knock(path){
+      return fetch(window.__API_BASE__ + path, { cache: 'no-store' })
+        .then(function(res){ return res.ok || res.status === 503; })
+        .catch(function(){ return false; });
+    }
+
+    boot.awake = knock('/api/health').then(function(ok){
+      if(ok) boot.awakeAt = Date.now();
+      return ok;
+    });
+    // Fire-and-forget: nothing reads this. A 503 still means the request
+    // reached Node and the pool tried to connect, which is what wakes Neon.
+    boot.dbAwake = knock('/api/ready');
+
+    /* The build-time catalog snapshot, from Netlify's edge in ~50ms. This is
+       what lets a real, complete storefront render while the API is still
+       booting — see scripts/generate-catalog-snapshot.js. No cache option on
+       purpose: the Cache-Control in _headers should decide, so a repeat visitor
+       gets this from memory with no network at all. */
+    boot.snapshot = fetch('/catalog.json')
+      .then(function(res){ return res.ok ? res.json() : null; })
+      .catch(function(){ return null; });
+
+    return boot;
+  })();
 </script>
 <style>
 
@@ -1399,6 +1473,69 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
 .spinner{ width:56px; height:56px; border-radius:50%; border:4px solid var(--parchment); border-top-color:var(--oxblood); animation:spin 1s linear infinite; }
 @keyframes spin{ to{ transform:rotate(360deg); } }
 
+/* ---------- Cold-start skeletons ----------
+   A spinner says "something is happening". A skeleton in the shape of the
+   thing being loaded says "your content is arriving", and reads as materially
+   faster for an identical wait. These appear only when BOTH the catalog
+   snapshot and the localStorage copy came up empty and the API has not
+   answered — a first-time visitor on a cold server. Normally the snapshot
+   lands first and real product cards render straight away. */
+.sk{ background:linear-gradient(90deg, var(--parchment) 25%, rgba(255,255,255,.7) 37%, var(--parchment) 63%); background-size:400% 100%; animation:skwave 1.4s ease-in-out infinite; border-radius:var(--radius-sm); }
+@keyframes skwave{ 0%{ background-position:100% 50%; } 100%{ background-position:0 50%; } }
+/* Respect a reduced-motion preference: the shape still says "loading" without
+   the continuous sweep, which is the part that causes trouble. */
+@media (prefers-reduced-motion: reduce){ .sk{ animation:none; } }
+.sk-card{ border:1px solid var(--line); border-radius:var(--radius-md); overflow:hidden; background:#fff; }
+.sk-card .sk-media{ aspect-ratio:1/1; width:100%; border-radius:0; }
+.sk-card .sk-body{ padding:14px; display:flex; flex-direction:column; gap:9px; }
+.sk-line{ height:11px; }
+.sk-line.w40{ width:40%; } .sk-line.w60{ width:60%; } .sk-line.w85{ width:85%; }
+.sk-cat{ display:flex; flex-direction:column; align-items:center; gap:10px; }
+.sk-cat .sk-ring{ width:76px; height:76px; border-radius:50%; }
+
+/* ---------- "The server is waking up" notice ----------
+   Shown only on paths that genuinely cannot proceed without the API — add to
+   cart, login, checkout — and only once the wait is long enough that silence
+   would read as breakage. Browsing never triggers it, because browsing is
+   served from the snapshot. */
+.waking{ position:fixed; left:50%; transform:translateX(-50%); bottom:24px; z-index:9000; display:flex; align-items:center; gap:11px; padding:12px 18px; border-radius:999px; background:var(--ink); color:#F6ECE2; font-size:.83rem; line-height:1.35; box-shadow:0 8px 30px rgba(0,0,0,.28); max-width:calc(100vw - 32px); }
+.waking .dot{ width:9px; height:9px; border-radius:50%; background:#C9A227; flex-shrink:0; animation:wakepulse 1.3s ease-in-out infinite; }
+
+/* ---------- "Getting things ready" modal ---------- */
+.wait-box{ max-width:620px; width:min(94vw,620px); padding:var(--sp-6); }
+.wait-head{ display:flex; gap:16px; align-items:center; }
+.wait-head h3{ font-family:var(--f-display); color:var(--ink); font-size:1.25rem; margin:0 0 4px; }
+.wait-status{ font-size:.84rem; color:var(--text-mute); margin:0; }
+.wait-mark{ width:52px; height:52px; flex-shrink:0; color:var(--gold, #C9A227); }
+.wait-mark svg{ width:100%; height:100%; }
+.wait-spin{ transform-origin:250px 250px; animation:awakenSpin 18s linear infinite; }
+.wait-bindu{ transform-origin:250px 250px; animation:wakepulse 1.5s ease-in-out infinite; }
+@media (prefers-reduced-motion:reduce){ .wait-spin, .wait-bindu{ animation:none; } }
+/* An indeterminate bar, deliberately. A percentage would be a lie: nothing can
+   predict when a cold instance finishes booting, and a bar that stalls at 80%
+   erodes more trust than no bar at all. */
+.wait-progress{ height:3px; border-radius:3px; background:var(--parchment); overflow:hidden; margin:16px 0 4px; }
+.wait-progress-bar{ height:100%; width:38%; border-radius:3px; background:linear-gradient(90deg, var(--gold-lt, #E3C878), var(--oxblood)); animation:waitSlide 1.6s ease-in-out infinite; }
+@keyframes waitSlide{ 0%{ transform:translateX(-100%); } 100%{ transform:translateX(320%); } }
+@media (prefers-reduced-motion:reduce){ .wait-progress-bar{ animation:none; width:100%; opacity:.5; } }
+.wait-body{ margin-top:14px; min-height:150px; }
+.wait-suggest-title{ font-size:.79rem; text-transform:uppercase; letter-spacing:.09em; color:var(--oxblood); font-weight:700; margin:0 0 4px; }
+.wait-suggest-sub{ font-size:.85rem; color:var(--text); margin:0 0 14px; line-height:1.5; }
+.wait-items{ display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:12px; }
+.wait-item{ border:1px solid var(--line); border-radius:var(--radius-sm); padding:10px; display:flex; flex-direction:column; gap:8px; background:#fff; }
+.wait-item .thumb{ aspect-ratio:1/1; border-radius:var(--radius-sm); display:flex; align-items:center; justify-content:center; }
+.wait-item .thumb svg{ width:52%; height:52%; }
+.wait-item .nm{ font-size:.8rem; color:var(--ink); font-weight:600; line-height:1.3; }
+.wait-item .pr{ font-size:.86rem; color:var(--oxblood); font-weight:700; }
+.wait-item .added{ font-size:.78rem; color:var(--success); font-weight:600; display:flex; align-items:center; gap:6px; }
+.wait-note-card{ background:var(--parchment); border-radius:var(--radius-sm); padding:14px 16px; font-size:.85rem; color:var(--text); line-height:1.6; }
+.wait-foot{ display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:16px; padding-top:14px; border-top:1px solid var(--line); flex-wrap:wrap; }
+.wait-note{ font-size:.76rem; color:var(--text-mute); }
+.wait-actions{ display:flex; gap:10px; margin-top:14px; flex-wrap:wrap; }
+@media (max-width:560px){ .wait-head h3{ font-size:1.08rem; } .wait-items{ grid-template-columns:repeat(2,1fr); } }
+@keyframes wakepulse{ 0%,100%{ opacity:.35; } 50%{ opacity:1; } }
+@media (prefers-reduced-motion: reduce){ .waking .dot{ animation:none; opacity:1; } }
+
 .order-success{ text-align:center; padding:var(--sp-8) var(--sp-5); max-width:640px; margin:0 auto; }
 .order-success .check{ width:88px; height:88px; border-radius:50%; background:rgba(62,122,79,.12); display:flex; align-items:center; justify-content:center; margin:0 auto var(--sp-6); }
 .order-success .check svg{ width:44px; height:44px; color:var(--success); }
@@ -1679,6 +1816,70 @@ a.p-media:focus-visible, a.p-name:focus-visible{ outline:2px solid var(--oxblood
 </head>
 <body>
 
+<!-- ===================================================================
+     The awakening screen.
+     ===================================================================
+     Sits in the MARKUP, not in JavaScript, so it is painted from the first
+     bytes of the document — before the stylesheet below finishes, before the
+     460KB of app script parses, and long before any data arrives. A loader
+     that is itself rendered by the app it is covering for is no loader at all.
+
+     It reuses the hero Sri Yantra deliberately: the first thing a visitor sees
+     should be the brand, not a neutral spinner. Its own <style> block is
+     inline and duplicated from the main sheet on purpose — the main sheet is
+     hundreds of KB further down the document and this must not wait for it.
+
+     Dismissed by hideAwakeningScreen() as soon as the route has rendered
+     (typically well under a second), with a floor so it never flashes and a
+     ceiling so a wedged boot can never trap anyone behind it.
+     =================================================================== -->
+<div id="awakenScreen" role="status" aria-live="polite" aria-label="Loading Chakrashri">
+  <style>
+    #awakenScreen{ position:fixed; inset:0; z-index:99999; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:26px;
+      background:radial-gradient(circle at 50% 45%, #3A1019 0%, #2B0A12 70%); color:#F1E2C8;
+      transition:opacity .55s ease, visibility .55s ease; }
+    #awakenScreen.awaken-done{ opacity:0; visibility:hidden; pointer-events:none; }
+    #awakenScreen svg{ width:min(46vw, 190px); height:auto; overflow:visible; }
+    #awakenScreen .awaken-spin{ transform-origin:250px 250px; animation:awakenSpin 24s linear infinite; }
+    #awakenScreen .awaken-bindu{ transform-origin:250px 250px; animation:awakenPulse 1.6s ease-in-out infinite; }
+    #awakenScreen .awaken-word{ font-family:Cinzel, Georgia, serif; letter-spacing:.34em; text-indent:.34em; font-size:.82rem; text-transform:uppercase; color:#C9A227; }
+    #awakenScreen .awaken-sub{ font-family:Poppins, system-ui, sans-serif; font-size:.74rem; color:rgba(241,226,200,.62); margin-top:-16px; min-height:1.2em; }
+    @keyframes awakenSpin{ to{ transform:rotate(360deg); } }
+    @keyframes awakenPulse{ 0%,100%{ opacity:.35; r:4; } 50%{ opacity:1; r:7; } }
+    /* An animation that cannot be turned off is an accessibility failure, and
+       this one covers the whole viewport. The mark still reads as a mark. */
+    @media (prefers-reduced-motion:reduce){
+      #awakenScreen .awaken-spin, #awakenScreen .awaken-bindu{ animation:none; }
+    }
+  </style>
+  <svg viewBox="0 0 500 500" aria-hidden="true">
+    <defs>
+      <path id="awakenPetal" d="M250 82 C 238 60, 234 38, 250 22 C 266 38, 262 60, 250 82 Z" fill="none" stroke="#C9A227" stroke-width="1.6"/>
+    </defs>
+    <g class="awaken-spin" opacity=".9">
+      <circle cx="250" cy="250" r="232" fill="none" stroke="#C9A227" stroke-width="1.2"/>
+      <use href="#awakenPetal" transform="rotate(0 250 250)"/><use href="#awakenPetal" transform="rotate(30 250 250)"/>
+      <use href="#awakenPetal" transform="rotate(60 250 250)"/><use href="#awakenPetal" transform="rotate(90 250 250)"/>
+      <use href="#awakenPetal" transform="rotate(120 250 250)"/><use href="#awakenPetal" transform="rotate(150 250 250)"/>
+      <use href="#awakenPetal" transform="rotate(180 250 250)"/><use href="#awakenPetal" transform="rotate(210 250 250)"/>
+      <use href="#awakenPetal" transform="rotate(240 250 250)"/><use href="#awakenPetal" transform="rotate(270 250 250)"/>
+      <use href="#awakenPetal" transform="rotate(300 250 250)"/><use href="#awakenPetal" transform="rotate(330 250 250)"/>
+      <circle cx="250" cy="250" r="178" fill="none" stroke="#C9A227" stroke-width="1.2"/>
+    </g>
+    <g fill="none" stroke="#E3C878" stroke-width="1.6" stroke-linejoin="round" opacity=".95">
+      <polygon points="250,100 379.9,325 120.1,325"/>
+      <polygon points="250,400 120.1,175 379.9,175"/>
+      <polygon points="250,145 340.93,302.5 159.07,302.5"/>
+      <polygon points="250,355 159.07,197.5 340.93,197.5"/>
+      <polygon points="250,188 303.7,281 196.3,281"/>
+      <polygon points="250,312 196.3,219 303.7,219"/>
+    </g>
+    <circle class="awaken-bindu" cx="250" cy="250" r="5.5" fill="#F1E2C8"/>
+  </svg>
+  <div class="awaken-word">Chakrashri</div>
+  <div class="awaken-sub" id="awakenSub"></div>
+</div>
+
 <div class="toast-wrap" id="toastWrap" aria-live="polite"></div>
 
 <button class="to-top" id="toTopBtn" aria-label="Back to top">
@@ -1772,9 +1973,13 @@ a.p-media:focus-visible, a.p-name:focus-visible{ outline:2px solid var(--oxblood
             </div>
             <div>
               <div class="mega-col-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 17.3L6.2 21l1.5-6.6L2.5 9.8l6.7-.6L12 3l2.8 6.2 6.7.6-5.2 4.6 1.5 6.6z"/></svg>Popular Picks</div>
-              <a class="mega-link" href="#" onclick="openProduct('lin-01'); return false;">Natural Sphatik Shivling – 2"</a>
-              <a class="mega-link" href="#" onclick="openProduct('mal-01'); return false;">5 Mukhi Rudraksha Mala – 108</a>
-              <a class="mega-link" href="#" onclick="openProduct('idl-02'); return false;">Brass Lakshmi‑Ganesha Pair</a>
+              <!-- Filled by renderMegaMenuPicks() from the real catalog. These
+                   three links used to be hardcoded to demo product ids
+                   (lin-01, mal-01, idl-02) that exist in no real catalog, so
+                   every click landed on "that product could not be found" and
+                   bounced the customer to /shop. Empty until there is something
+                   true to put here. -->
+              <div id="megaPicks"></div>
             </div>
             <div class="mega-promo">
               <strong>Book a Puja Online</strong>
@@ -2279,10 +2484,10 @@ a.p-media:focus-visible, a.p-name:focus-visible{ outline:2px solid var(--oxblood
         </div>
       </div>
 
-      <div class="related-scroll">
+      <div class="related-scroll" id="relatedSection">
         <div class="section-head reveal">
           <div class="eyebrow">You May Also Like</div>
-          <h2 class="section-title">Related Products</h2>
+          <h2 class="section-title" id="relatedTitle">Related Products</h2>
         </div>
         <div class="product-grid reveal" id="relatedGrid"></div>
       </div>
@@ -2410,7 +2615,7 @@ a.p-media:focus-visible, a.p-name:focus-visible{ outline:2px solid var(--oxblood
               <div class="summary-line" id="ckCodRow" style="display:none;"><span>COD Fee</span><span>₹40</span></div>
               <div class="summary-line total"><span>Total</span><span id="ckTotal">₹0</span></div>
             </div>
-            <button class="btn btn-primary btn-block btn-lg" style="margin-top:20px;" onclick="placeOrder()">Place Order &amp; Pay</button>
+            <button class="btn btn-primary btn-block btn-lg" id="placeOrderBtn" style="margin-top:20px;" onclick="placeOrder()">Place Order &amp; Pay</button>
             <div class="trust-mini-list">
               <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>256-bit encrypted checkout</div>
               <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>7-day easy returns</div>
@@ -3008,6 +3213,52 @@ a.p-media:focus-visible, a.p-name:focus-visible{ outline:2px solid var(--oxblood
 <!-- ============================================================
      QUICK VIEW MODAL
 ============================================================ -->
+<!-- ===================================================================
+     The "getting things ready" experience.
+     ===================================================================
+     Shown ONLY when a customer asks for something that genuinely cannot
+     happen without the backend — pay, or book — and the backend is not
+     confirmed awake. See withBackendReady(). When it is awake this never
+     appears and nothing is delayed.
+
+     It is not a spinner with products bolted on. The wait is real and has to
+     be spent somewhere, so it is spent on the one thing that is genuinely
+     useful to both sides: what else goes with what they are already buying.
+     Everything shown comes from the last catalog the site actually served,
+     never invented — and adding from here is a local cart write, so it works
+     with the server still cold.
+     =================================================================== -->
+<div class="modal-wrap" id="waitModal" role="dialog" aria-modal="true" aria-labelledby="waitTitle">
+  <div class="modal-backdrop"></div>
+  <div class="modal-box wait-box">
+    <div class="wait-head">
+      <div class="wait-mark" aria-hidden="true">
+        <svg viewBox="0 0 500 500">
+          <g class="wait-spin">
+            <circle cx="250" cy="250" r="232" fill="none" stroke="currentColor" stroke-width="6"/>
+            <circle cx="250" cy="250" r="178" fill="none" stroke="currentColor" stroke-width="6"/>
+          </g>
+          <g fill="none" stroke="currentColor" stroke-width="8" stroke-linejoin="round">
+            <polygon points="250,100 379.9,325 120.1,325"/>
+            <polygon points="250,400 120.1,175 379.9,175"/>
+          </g>
+          <circle class="wait-bindu" cx="250" cy="250" r="26" fill="currentColor"/>
+        </svg>
+      </div>
+      <div>
+        <h3 id="waitTitle">Preparing your secure checkout</h3>
+        <p class="wait-status" id="waitStatus">Connecting to our payment service…</p>
+      </div>
+    </div>
+    <div class="wait-progress"><div class="wait-progress-bar" id="waitBar"></div></div>
+    <div class="wait-body" id="waitBody"></div>
+    <div class="wait-foot">
+      <button class="btn btn-ghost btn-sm" id="waitCancelBtn" onclick="cancelWaitingExperience()">Cancel</button>
+      <span class="wait-note" id="waitNote">Your cart is saved. Nothing has been charged.</span>
+    </div>
+  </div>
+</div>
+
 <div class="modal-wrap" id="qvModal">
   <div class="modal-backdrop" onclick="closeModal('qvModal')"></div>
   <div class="modal-box">
@@ -3268,27 +3519,53 @@ async function apiFetch(path, opts){
   const method = (opts.method || 'GET').toUpperCase();
   const attempts = isRetryableRequest(path, method) ? 3 : 1;
 
-  let res = null, networkError = null;
-  for(let i = 0; i < attempts; i++){
-    networkError = null;
-    try{
-      const controller = new AbortController();
-      const timer = setTimeout(function(){ controller.abort(); }, 30000);
-      try{
-        res = await fetch(API_BASE + path, Object.assign({}, opts, { headers, credentials: 'include', signal: controller.signal }));
-      } finally { clearTimeout(timer); }
-      break;
-    }catch(e){
-      networkError = e;
-      if(i < attempts - 1) await new Promise(function(r){ setTimeout(r, 2000 * (i + 1)); });
-    }
-  }
-  if(networkError){
-    throw { error: attempts > 1
-      ? 'Could not reach the server — it may be starting up. Please try again in a moment.'
-      : 'The server did not respond, so this may not have gone through. Please check before trying again.' };
-  }
+  /* COLD START. A request nobody is waiting on — the background catalog
+     refresh, the category rail, the session check — gets a long timeout and no
+     UI, because the visitor is already reading a page rendered from the
+     snapshot. Aborting those at 30s and retrying just cancels a request the
+     waking server was about to answer.
 
+     A request someone IS waiting on keeps the shorter timeout, so a genuinely
+     dead server surfaces as an honest error rather than a minute of silence,
+     and it drives the "waking up" notice. */
+  const background = opts.background === true;
+  const timeoutMs = background ? 75000 : 30000;
+
+  if(!background) beginApiWait();
+  try{
+    let res = null, networkError = null;
+    for(let i = 0; i < attempts; i++){
+      networkError = null;
+      try{
+        const controller = new AbortController();
+        const timer = setTimeout(function(){ controller.abort(); }, timeoutMs);
+        try{
+          res = await fetch(API_BASE + path, Object.assign({}, opts, { headers, credentials: 'include', signal: controller.signal }));
+        } finally { clearTimeout(timer); }
+        break;
+      }catch(e){
+        networkError = e;
+        if(i < attempts - 1) await new Promise(function(r){ setTimeout(r, 2000 * (i + 1)); });
+      }
+    }
+    if(networkError){
+      throw { error: attempts > 1
+        ? 'Could not reach the server — it may be starting up. Please try again in a moment.'
+        : 'The server did not respond, so this may not have gone through. Please check before trying again.' };
+    }
+    // Any answer at all — including a 4xx — proves the process and its route
+    // handler are running, which is what the readiness cache is tracking.
+    // Free, and it means an active session almost never has to probe.
+    markBackendAwake();
+    return await readApiResponse(res);
+  } finally {
+    // finally, not after the return: an error path that left the counter
+    // incremented would pin the notice on screen for the rest of the session.
+    if(!background) endApiWait();
+  }
+}
+
+async function readApiResponse(res){
   const text = await res.text();
   let body = null;
   try{ body = text ? JSON.parse(text) : null; }catch(e){ body = text; }
@@ -3303,7 +3580,7 @@ async function loadCurrentUser(){
   currentUser = null;
   if(!getAuthToken()) return null;
   try{
-    const result = await apiFetch('/api/auth/me');
+    const result = await apiFetch('/api/auth/me', { background: true });
     currentUser = result && result.user ? result.user : null;
   }catch(e){ currentUser = null; }
   updateAccountUI();
@@ -3549,134 +3826,28 @@ function mediaStyle(cat, idx){
 }
 
 /* ---------- Product catalogue ---------- */
-let PRODUCTS = [
-  { id:'lin-01', name:'Natural Sphatik Shivling – 2 Inch', cat:'lingam', price:1299, mrp:1799, rating:4.7, reviews:312, badge:'bestseller', stock:true, sku:'CHK-LIN-001', material:'Natural Clear Quartz (Sphatik)',
-    shortDesc:'A hand-polished 2-inch clear quartz shivling, ideal for daily home puja.',
-    longDesc:'Carved from a single piece of natural sphatik and hand-polished to a smooth, cool-to-touch finish, this 2-inch shivling is sized for a home altar or travel puja box. Each piece is checked for clarity and weight before it ships, and comes with a small stand and a card noting its approximate carat weight.' },
-  { id:'lin-02', name:'Natural Sphatik Shivling – 3 Inch', cat:'lingam', price:2499, mrp:3199, rating:4.8, reviews:187, badge:null, stock:true, sku:'CHK-LIN-002', material:'Natural Clear Quartz (Sphatik)',
-    shortDesc:'A larger 3-inch sphatik shivling with excellent clarity, suited to a dedicated puja room.',
-    longDesc:'This 3-inch shivling is cut from higher-grade sphatik with fewer internal inclusions, giving it a noticeably clearer look under light. Popular as a centrepiece for a home mandir or as a gift for a housewarming.' },
-  { id:'lin-03', name:'Premium Clear Quartz Shivling – 4 Inch', cat:'lingam', price:4999, mrp:6499, rating:4.9, reviews:64, badge:'new', stock:true, sku:'CHK-LIN-003', material:'Premium Grade Clear Quartz',
-    shortDesc:'Our largest and clearest sphatik shivling, for a serious daily abhishekam practice.',
-    longDesc:'Selected from premium-grade rough quartz for maximum clarity and minimal cloudiness, this 4-inch shivling holds up well to daily abhishekam (ritual bathing) without dulling. Comes with a wider brass-finished base for stability.' },
-  { id:'lin-04', name:'Sphatik Shivling With Silver-Plated Base', cat:'lingam', price:1899, mrp:1899, rating:4.6, reviews:98, badge:null, stock:true, sku:'CHK-LIN-004', material:'Sphatik with Silver-Plated Brass Base',
-    shortDesc:'A 2.5-inch shivling seated on an ornate silver-plated base.',
-    longDesc:'The shivling itself is natural sphatik; the base is brass with a silver plating and a simple lotus-petal border, giving it a more finished, gift-ready presentation for a home altar.' },
-  { id:'lin-05', name:'Miniature Sphatik Shivling – Pocket Size', cat:'lingam', price:699, mrp:999, rating:4.5, reviews:210, badge:'sale', stock:true, sku:'CHK-LIN-005', material:'Natural Clear Quartz (Sphatik)',
-    shortDesc:'A 1-inch pocket shivling for travel, office desks, or car altars.',
-    longDesc:'Small enough to carry in a pocket or handbag, this 1-inch shivling is a popular choice for frequent travellers who want to keep a puja routine going on the road, or for a compact office desk altar.' },
-  { id:'lin-06', name:'Sphatik Shivling & Yoni Base Set', cat:'lingam', price:3299, mrp:3299, rating:4.7, reviews:45, badge:null, stock:true, sku:'CHK-LIN-006', material:'Sphatik with Marble Yoni Base',
-    shortDesc:'A 2.5-inch sphatik shivling paired with a traditional marble yoni base.',
-    longDesc:'This set pairs a 2.5-inch sphatik shivling with a hand-carved white marble yoni base, following traditional proportions used in home and temple settings. Sold as a matched pair, not individually.' },
+/* ---------------------------------------------------------------------------
+   THE CATALOG. Empty until a real source fills it — and that is the point.
+   ---------------------------------------------------------------------------
+   This used to be 128 lines of demo products: "Natural Sphatik Shivling – 2
+   Inch" at ₹1,299, ids like lin-01, invented ratings and review counts. They
+   were the last-resort fallback when the API could not be reached, which
+   means the failure mode of a sleeping backend was a storefront full of
+   items that do not exist, cannot be added to a cart that would accept them,
+   and quote prices nobody would honour.
 
-  { id:'yan-01', name:'Panchdhatu Sri Yantra – 3 Inch', cat:'yantra', price:1199, mrp:1199, rating:4.6, reviews:156, badge:null, stock:true, sku:'CHK-YAN-001', material:'Panchdhatu (Five-Metal Alloy)',
-    shortDesc:'A 3-inch Sri Yantra cast in traditional five-metal panchdhatu alloy.',
-    longDesc:'Cast in panchdhatu — a traditional alloy of five metals — this 3-inch Sri Yantra follows classical proportions for the interlocking triangles and surrounding lotus petals. A widely chosen size for a home mandir shelf.' },
-  { id:'yan-02', name:'Sphatik (Crystal) Sri Yantra', cat:'yantra', price:2799, mrp:2799, rating:4.8, reviews:132, badge:'bestseller', stock:true, sku:'CHK-YAN-002', material:'Natural Sphatik (Crystal)',
-    shortDesc:'Sri Yantra engraved on natural sphatik for clarity and presence.',
-    longDesc:'The yantra geometry is precision-engraved into a polished sphatik base, giving it a translucent quality unlike metal versions. A popular choice for meditation and vastu correction in study or work spaces.' },
-  { id:'yan-03', name:'Gold-Polished Sri Yantra Locket', cat:'yantra', price:499, mrp:699, rating:4.4, reviews:289, badge:'sale', stock:true, sku:'CHK-YAN-003', material:'Gold-Polished Metal Alloy',
-    shortDesc:'A wearable pocket-sized Sri Yantra locket on a cord.',
-    longDesc:'A compact, gold-polished Sri Yantra locket small enough to wear on a cord or keep in a wallet — a popular everyday option for people who want the yantra with them outside the home.' },
-  { id:'yan-04', name:'Copper Sri Yantra For Temple & Home', cat:'yantra', price:899, mrp:899, rating:4.5, reviews:77, badge:null, stock:true, sku:'CHK-YAN-004', material:'Pure Copper',
-    shortDesc:'A 3-inch pure copper Sri Yantra, a traditional metal choice for this geometry.',
-    longDesc:'Copper is one of the more traditional metals used for Sri Yantra plates. This 3-inch piece is hand-finished and suitable for both home altars and small temple installations.' },
-  { id:'yan-05', name:'Meru Sri Yantra – 3D Raised', cat:'yantra', price:3999, mrp:3999, rating:4.9, reviews:38, badge:'new', stock:true, sku:'CHK-YAN-005', material:'Silver-Plated Brass',
-    shortDesc:'A three-dimensional, pyramid-raised (Meru) Sri Yantra in silver-plated brass.',
-    longDesc:'Unlike a flat-plate yantra, the Meru form rises into a stepped pyramid at the centre, following the classical three-dimensional Meru Prastara design. Silver-plated brass construction with a weighted base.' },
+   Showing a visitor fabricated stock is worse than showing them nothing. It
+   is also the one thing a customer cannot detect: an empty grid is obviously
+   a site with a problem, whereas a full grid of fake products is a site that
+   looks fine right up until they try to buy.
 
-  { id:'idl-01', name:'Panchdhatu Ganesha Idol – 6 Inch', cat:'idols', price:2999, mrp:2999, rating:4.7, reviews:143, badge:null, stock:true, sku:'CHK-IDL-001', material:'Panchdhatu (Five-Metal Alloy)',
-    shortDesc:'A 6-inch seated Ganesha idol cast in traditional panchdhatu.',
-    longDesc:'This seated Ganesha idol is cast using the panchdhatu method and hand-finished for detail on the crown, ears and modak. A popular choice for new-home and new-venture pujas.' },
-  { id:'idl-02', name:'Brass Lakshmi-Ganesha Pair', cat:'idols', price:3499, mrp:3499, rating:4.8, reviews:201, badge:'bestseller', stock:true, sku:'CHK-IDL-002', material:'Solid Brass',
-    shortDesc:'A matched solid brass Lakshmi and Ganesha pair for Diwali and daily puja.',
-    longDesc:'Cast in solid brass with a hand-polished finish, this Lakshmi-Ganesha pair is sized to sit comfortably together on a puja mandir shelf and is one of our most gifted items around Diwali.' },
-  { id:'idl-03', name:'Marble Dust Krishna Idol', cat:'idols', price:1799, mrp:2299, rating:4.6, reviews:88, badge:'sale', stock:true, sku:'CHK-IDL-003', material:'Marble Dust Composite, Hand-Painted',
-    shortDesc:'A hand-painted marble dust idol of Krishna with the flute.',
-    longDesc:'Cast from marble dust composite for a smooth, stone-like finish and hand-painted in traditional colours, this Krishna idol depicts the classic flute-playing pose (Venugopala).' },
-  { id:'idl-04', name:'White Marble Hanuman Idol – 5 Inch', cat:'idols', price:2199, mrp:2199, rating:4.7, reviews:66, badge:null, stock:true, sku:'CHK-IDL-004', material:'White Makrana Marble',
-    shortDesc:'A hand-carved 5-inch white marble Hanuman idol in Sankat Mochan pose.',
-    longDesc:'Carved from white Makrana marble by artisans in Rajasthan, this Hanuman idol is finished with fine detailing on the mace (gada) and mane, in the traditional Sankat Mochan standing pose.' },
-  { id:'idl-05', name:'Brass Nataraja (Dancing Shiva)', cat:'idols', price:4499, mrp:4499, rating:4.9, reviews:51, badge:'new', stock:true, sku:'CHK-IDL-005', material:'Solid Brass',
-    shortDesc:'A detailed brass Nataraja idol depicting Shiva\u2019s cosmic dance within a ring of fire.',
-    longDesc:'This Nataraja casting follows the classical Chola-era proportions — one foot raised, the ring of fire (prabhamandala) encircling the figure, and the drum (damaru) and fire in each hand. A statement piece for a living room or dedicated shrine.' },
-  { id:'idl-06', name:'Panchmukhi Hanuman Wall Idol', cat:'idols', price:1599, mrp:1599, rating:4.5, reviews:39, badge:null, stock:false, sku:'CHK-IDL-006', material:'Resin Composite, Antique Finish',
-    shortDesc:'A wall-mountable five-faced (Panchmukhi) Hanuman relief in an antique finish.',
-    longDesc:'A relief-style wall idol depicting the five-faced Panchmukhi Hanuman form, finished to look like aged bronze. Currently out of stock while we restock from our Moradabad workshop.' },
-  { id:'idl-07', name:'Radha Krishna Brass Idol Pair', cat:'idols', price:3999, mrp:4999, rating:4.8, reviews:112, badge:'sale', stock:true, sku:'CHK-IDL-007', material:'Solid Brass',
-    shortDesc:'A brass Radha Krishna pair in the classic Raas pose.',
-    longDesc:'This brass pair depicts Radha and Krishna in the traditional Raas standing pose, hand-finished with detailing on the crowns and drapery. A popular gift for weddings and anniversaries.' },
-
-  { id:'mal-01', name:'5 Mukhi Rudraksha Mala – 108 Beads', cat:'malas', price:1499, mrp:1499, rating:4.8, reviews:356, badge:'bestseller', stock:true, sku:'CHK-MAL-001', material:'5 Mukhi Rudraksha Seeds', options:['6mm','8mm','10mm'], optionLabel:'Bead Size',
-    shortDesc:'A traditional 108-bead 5 Mukhi rudraksha mala for daily japa.',
-    longDesc:'Strung with 108 natural 5 Mukhi rudraksha beads plus a guru bead, this mala is the most commonly recommended starting mala for daily mantra japa across most traditions. Each bead is checked for natural mukhi lines.' },
-  { id:'mal-02', name:'Tulsi Mala – 108 Beads', cat:'malas', price:399, mrp:549, rating:4.6, reviews:267, badge:'sale', stock:true, sku:'CHK-MAL-002', material:'Sacred Basil (Tulsi) Wood', options:['6mm','8mm'], optionLabel:'Bead Size',
-    shortDesc:'A classic 108-bead tulsi (holy basil) mala, favoured for Vaishnav practice.',
-    longDesc:'Made from tulsi wood beads, this mala is traditionally favoured by Vaishnav practitioners for japa and is also worn daily as a simple protective mala.' },
-  { id:'mal-03', name:'Sphatik (Crystal) Mala – 108 Beads, 8mm', cat:'malas', price:899, mrp:899, rating:4.7, reviews:178, badge:null, stock:true, sku:'CHK-MAL-003', material:'Natural Sphatik', options:['6mm','8mm','10mm'], optionLabel:'Bead Size',
-    shortDesc:'A cooling, clear sphatik mala often used for Goddess Lakshmi mantra japa.',
-    longDesc:'Natural sphatik beads are traditionally associated with a cooling energy and are commonly recommended for Lakshmi or Chandra (Moon) related mantra practice.' },
-  { id:'mal-04', name:'Sandalwood Mala – 108 Beads', cat:'malas', price:699, mrp:699, rating:4.6, reviews:134, badge:null, stock:true, sku:'CHK-MAL-004', material:'Red Sandalwood', options:['6mm','8mm'], optionLabel:'Bead Size',
-    shortDesc:'A fragrant sandalwood mala that carries a natural scent for months.',
-    longDesc:'Sandalwood beads carry their own natural fragrance for months of regular handling, and are a popular gentle option for beginners starting a daily japa practice.' },
-  { id:'mal-05', name:'Lotus Seed Mala – 108 Beads', cat:'malas', price:549, mrp:549, rating:4.5, reviews:52, badge:'new', stock:true, sku:'CHK-MAL-005', material:'Dried Lotus Seed',
-    shortDesc:'A textured mala made from dried lotus seeds, associated with Lakshmi puja.',
-    longDesc:'Lotus seed beads have a distinctive bumpy texture and are traditionally connected with Lakshmi worship and prosperity-focused mantra practice.' },
-  { id:'mal-06', name:'Rose Quartz Mala For Meditation', cat:'malas', price:799, mrp:999, rating:4.7, reviews:91, badge:'sale', stock:true, sku:'CHK-MAL-006', material:'Natural Rose Quartz', options:['6mm','8mm'], optionLabel:'Bead Size',
-    shortDesc:'A soft pink rose quartz mala, popular for meditation and heart-centred practice.',
-    longDesc:'Rose quartz is widely used in meditation practices focused on the heart centre. This 108-bead mala is finished with a tassel and is comfortable for extended japa sessions.' },
-  { id:'mal-07', name:'7 Mukhi Rudraksha Combination Mala', cat:'malas', price:2299, mrp:2299, rating:4.8, reviews:47, badge:null, stock:true, sku:'CHK-MAL-007', material:'7 Mukhi Rudraksha Seeds',
-    shortDesc:'A 108-bead mala of 7 Mukhi rudraksha, associated with Goddess Mahalakshmi.',
-    longDesc:'Strung from natural 7 Mukhi rudraksha beads, this mala is traditionally associated with Mahalakshmi worship and is chosen by practitioners continuing an established rudraksha practice.' },
-
-  { id:'bra-01', name:'Rudraksha & Sphatik Combination Bracelet', cat:'bracelets', price:349, mrp:349, rating:4.5, reviews:203, badge:null, stock:true, sku:'CHK-BRA-001', material:'Rudraksha & Natural Sphatik', options:['S','M','L'], optionLabel:'Wrist Size',
-    shortDesc:'An everyday bracelet alternating rudraksha and sphatik beads.',
-    longDesc:'This bracelet alternates rudraksha seeds with clear sphatik beads on an elastic cord, designed for daily wear rather than formal japa.' },
-  { id:'bra-02', name:'Tiger Eye Stone Bracelet', cat:'bracelets', price:399, mrp:549, rating:4.6, reviews:156, badge:'sale', stock:true, sku:'CHK-BRA-002', material:'Natural Tiger Eye', options:['S','M','L'], optionLabel:'Wrist Size',
-    shortDesc:'A warm brown-gold tiger eye bracelet, popular for confidence and focus work.',
-    longDesc:'Natural tiger eye beads with their characteristic golden-brown chatoyant sheen, strung on a durable elastic cord sized to your wrist.' },
-  { id:'bra-03', name:'Amethyst Crystal Bracelet', cat:'bracelets', price:449, mrp:449, rating:4.7, reviews:89, badge:'new', stock:true, sku:'CHK-BRA-003', material:'Natural Amethyst', options:['S','M','L'], optionLabel:'Wrist Size',
-    shortDesc:'A violet amethyst bead bracelet, often chosen for calm and clarity.',
-    longDesc:'Natural amethyst beads in a deep violet tone, a widely chosen stone for calming and clarity-focused daily wear.' },
-  { id:'bra-04', name:'Red Sandalwood Bead Bracelet', cat:'bracelets', price:299, mrp:299, rating:4.4, reviews:122, badge:null, stock:false, sku:'CHK-BRA-004', material:'Red Sandalwood',
-    shortDesc:'A simple, fragrant red sandalwood bead bracelet.',
-    longDesc:'A minimal red sandalwood bracelet with a light natural fragrance. Currently out of stock — restocking within two weeks.' },
-  { id:'bra-05', name:'Black Obsidian Protection Bracelet', cat:'bracelets', price:379, mrp:379, rating:4.6, reviews:67, badge:null, stock:true, sku:'CHK-BRA-005', material:'Natural Black Obsidian', options:['S','M','L'], optionLabel:'Wrist Size',
-    shortDesc:'A deep black obsidian bracelet, commonly worn as a grounding stone.',
-    longDesc:'Polished black obsidian beads on an elastic cord — a popular grounding stone choice for daily wear, especially during travel.' },
-  { id:'bra-06', name:'Rose Quartz Love & Healing Bracelet', cat:'bracelets', price:429, mrp:429, rating:4.8, reviews:144, badge:'bestseller', stock:true, sku:'CHK-BRA-006', material:'Natural Rose Quartz', options:['S','M','L'], optionLabel:'Wrist Size',
-    shortDesc:'A soft pink rose quartz bracelet, our most-gifted bracelet.',
-    longDesc:'Smooth rose quartz beads in a gentle pink tone — our best-selling bracelet, often bought as a gift alongside a greeting card.' },
-
-  { id:'bok-01', name:'Shrimad Bhagavad Gita – Hindi/English', cat:'books', price:249, mrp:249, rating:4.9, reviews:412, badge:null, stock:true, sku:'CHK-BOK-001', material:'Paperback, 620 pages', options:['Hindi','English'], optionLabel:'Language',
-    shortDesc:'A complete Bhagavad Gita with word-by-word meaning and commentary.',
-    longDesc:'A widely used edition of the Bhagavad Gita including the original Sanskrit verses, transliteration, and a word-by-word translation with commentary, available in Hindi or English editions.' },
-  { id:'bok-02', name:'Hanuman Chalisa With Meaning', cat:'books', price:99, mrp:149, rating:4.7, reviews:358, badge:'sale', stock:true, sku:'CHK-BOK-002', material:'Paperback, 48 pages',
-    shortDesc:'A pocket-sized Hanuman Chalisa booklet with line-by-line meaning.',
-    longDesc:'A compact booklet containing the Hanuman Chalisa in Devanagari with transliteration and a simple line-by-line meaning, sized to keep in a puja box or bag.' },
-  { id:'bok-03', name:'Complete Puja Vidhi Handbook', cat:'books', price:349, mrp:349, rating:4.5, reviews:76, badge:null, stock:true, sku:'CHK-BOK-003', material:'Paperback, 210 pages',
-    shortDesc:'A practical step-by-step guide to common home puja procedures.',
-    longDesc:'Covers step-by-step vidhi (procedure) for common home pujas — daily worship, Satyanarayan puja, Griha Pravesh and more — written for householders performing their own rituals.' },
-  { id:'bok-04', name:'Shiv Purana (Sachitra, Hindi)', cat:'books', price:499, mrp:499, rating:4.8, reviews:94, badge:'bestseller', stock:true, sku:'CHK-BOK-004', material:'Hardbound, Illustrated, 540 pages',
-    shortDesc:'An illustrated Hindi edition of the Shiv Purana.',
-    longDesc:'A hardbound, illustrated Hindi-language edition of the Shiv Purana, presenting the traditional stories and teachings associated with Lord Shiva.' },
-  { id:'bok-05', name:'Vedic Astrology For Beginners', cat:'books', price:399, mrp:399, rating:4.6, reviews:58, badge:'new', stock:true, sku:'CHK-BOK-005', material:'Paperback, 260 pages',
-    shortDesc:'An introductory guide to reading a Vedic birth chart.',
-    longDesc:'Written for readers with no prior background, this book introduces the twelve houses, nine planets and basic chart-reading principles used in Vedic (Jyotish) astrology.' },
-
-  { id:'sam-01', name:'Satyanarayan Puja Complete Kit', cat:'samagri', price:899, mrp:899, rating:4.6, reviews:87, badge:null, stock:true, sku:'CHK-SAM-001', material:'Assorted Puja Samagri',
-    shortDesc:'Everything needed for a Satyanarayan puja at home, pre-measured.',
-    longDesc:'A pre-assembled kit with the samagri typically required for a Satyanarayan puja — including panchamrit ingredients, kalash cloth, supari, and a printed vidhi sheet — so nothing is missed on the day.' },
-  { id:'sam-02', name:'Griha Pravesh Puja Samagri Box', cat:'samagri', price:1299, mrp:1299, rating:4.7, reviews:54, badge:'new', stock:true, sku:'CHK-SAM-002', material:'Assorted Puja Samagri',
-    shortDesc:'A complete samagri box for a house-warming (Griha Pravesh) ceremony.',
-    longDesc:'Assembled for a Griha Pravesh ceremony, this box includes the mango leaves, coconut, kalash cloth, havan samagri and other items typically needed, alongside a printed checklist.' },
-  { id:'sam-03', name:'Daily Puja Thali Set (Brass)', cat:'samagri', price:1099, mrp:1099, rating:4.8, reviews:132, badge:'bestseller', stock:true, sku:'CHK-SAM-003', material:'Brass',
-    shortDesc:'A complete brass puja thali set with diya, bell, and incense holder.',
-    longDesc:'A brass thali set including a diya, small bell, incense stick holder, kumkum and chandan boxes, and a water vessel — a practical starting set for a new home altar.' },
-  { id:'sam-04', name:'Navratri Puja Kit', cat:'samagri', price:799, mrp:999, rating:4.5, reviews:43, badge:'sale', stock:true, sku:'CHK-SAM-004', material:'Assorted Puja Samagri',
-    shortDesc:'A nine-day Navratri samagri kit with daily-use items pre-sorted.',
-    longDesc:'Pre-sorted for the nine days of Navratri, this kit includes akhand jyot supplies, chunri, kumkum, and a small idol of the Goddess for the kalash sthapana.' }
-];
+   So the seed data is gone. Every product on the storefront now comes from
+   one of three real sources, in this order (see hydrateCatalogFromCache and
+   loadCatalog): the build-time snapshot, this browser's last-seen copy, or
+   the live API. If all three fail, the grids say so honestly rather than
+   inventing inventory.
+   --------------------------------------------------------------------------- */
+let PRODUCTS = [];
 
 /* ---------- Puja services ---------- */
 /* ---------- Puja services — fetched from the real backend catalog (see loadBookingServices()) ---------- */
@@ -3753,25 +3924,62 @@ function bookPujaFromHome(serviceId){
   }, 60);
 }
 
+/* The "Popular Picks" column of the Shop mega-menu, from the real catalog.
+   Bestsellers first, then whatever is best reviewed, so the column is useful
+   rather than arbitrary. Renders nothing at all when there is no catalog yet —
+   an empty column is honest, and three dead links were not. */
+function renderMegaMenuPicks(){
+  const holder = qs('#megaPicks');
+  if(!holder) return;
+  if(!catalogSource || catalogSource === 'unavailable' || !PRODUCTS.length){ holder.innerHTML = ''; return; }
+  const ranked = PRODUCTS.slice().sort(function(a, b){
+    const badge = (b.badge === 'bestseller' ? 1 : 0) - (a.badge === 'bestseller' ? 1 : 0);
+    if(badge) return badge;
+    return (Number(b.reviews) || 0) - (Number(a.reviews) || 0);
+  }).slice(0, 3);
+  holder.innerHTML = ranked.map(function(p){
+    return '<a class="mega-link" href="' + escapeHtml(productHref(p)) + '" onclick="openProduct(\'' + escapeHtml(String(p.id)) + '\'); return false;">' +
+      escapeHtml(p.name) + '</a>';
+  }).join('');
+}
+
+/* Renders the category rail from rows already in hand. Split out from
+   loadTopCategories so the build-time snapshot can fill it with no request at
+   all — see hydrateCatalogFromCache. */
+function renderTopCategories(cats){
+  const grid = qs('#catGrid');
+  if(!grid) return;
+  cats = cats || [];
+  if(!cats.length){
+    grid.innerHTML = '';
+    grid.dataset.state = 'empty';
+    return;
+  }
+  grid.innerHTML = cats.map(function(c){
+    const icon = CAT_ICONS[c.category] || DEFAULT_CAT_ICON;
+    const count = c.product_count === 1 ? '1 item' : c.product_count + ' items';
+    return '<a href="#" class="cat-card" onclick="openShopWithCategory(\'' + escapeHtml(c.category) + '\'); return false;">' +
+      '<div class="cat-ring"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.6">' + icon + '</svg></div>' +
+      '<span class="name">' + escapeHtml(catLabel(c.category)) + '</span>' +
+      '<span class="count">' + count + '</span>' +
+    '</a>';
+  }).join('');
+  grid.dataset.state = 'ready';
+}
+
 async function loadTopCategories(){
   const grid = qs('#catGrid');
   if(!grid) return;
   try{
-    const body = await apiFetch('/api/products/meta/top-categories?limit=7');
-    const cats = body.categories || [];
-    if(!cats.length){ grid.innerHTML = ''; return; }
-    grid.innerHTML = cats.map(function(c){
-      const icon = CAT_ICONS[c.category] || DEFAULT_CAT_ICON;
-      const count = c.product_count === 1 ? '1 item' : c.product_count + ' items';
-      return '<a href="#" class="cat-card" onclick="openShopWithCategory(\'' + escapeHtml(c.category) + '\'); return false;">' +
-        '<div class="cat-ring"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.6">' + icon + '</svg></div>' +
-        '<span class="name">' + escapeHtml(catLabel(c.category)) + '</span>' +
-        '<span class="count">' + count + '</span>' +
-      '</a>';
-    }).join('');
+    const body = await apiFetch('/api/products/meta/top-categories?limit=7', { background: true });
+    renderTopCategories(body.categories || []);
   }catch(e){
     console.warn('Could not load categories', e);
-    grid.innerHTML = '';
+    // Deliberately NOT clearing the rail. If the snapshot already filled it,
+    // a failed background refresh must not replace real categories with
+    // nothing. The one case that does need clearing is a rail still showing
+    // skeletons, which would otherwise pulse forever.
+    if(grid.dataset.state === 'skeleton'){ grid.innerHTML = ''; grid.dataset.state = 'empty'; }
   }
 }
 
@@ -3804,6 +4012,15 @@ async function verifyPaymentWithRetry(payload, attempts){
   throw lastErr;
 }
 
+/* Whether the visitor has done anything at all yet. Used to decide if a
+   cache-busting reload is still safe — see checkSiteVersion. Passive and
+   once-only, so it costs nothing after the first event. */
+let userHasInteracted = false;
+function hasUserInteracted(){ return userHasInteracted; }
+['pointerdown', 'keydown', 'touchstart', 'wheel', 'scroll'].forEach(function(evt){
+  window.addEventListener(evt, function(){ userHasInteracted = true; }, { once: true, passive: true });
+});
+
 async function checkSiteVersion(){
   try{
     const res = await fetch(API_BASE + '/api/site/version', { cache:'no-store' });
@@ -3812,7 +4029,20 @@ async function checkSiteVersion(){
     const seen = localStorage.getItem('chakrashri_content_version');
     if(seen && seen !== String(data.version)){
       localStorage.setItem('chakrashri_content_version', String(data.version));
-      if(!sessionStorage.getItem('chakrashri_reloaded_once')){
+      // A HARD RELOAD, ONLY WHILE NOBODY IS USING THE PAGE.
+      //
+      // This check runs over the network, so on a cold API it resolves 30-60
+      // seconds into the visit. Before the storefront rendered from a snapshot
+      // that landed on a visitor still staring at an empty page, and reloading
+      // cost them nothing. Now they are a minute into reading a product, and
+      // yanking the page out from under them — losing their scroll position,
+      // their open drawer, a half-filled address form — is far worse than
+      // serving a slightly stale shell for one more navigation.
+      //
+      // So: reload only if they have not touched anything yet. Otherwise the
+      // new version is picked up on their next visit, which is soon enough for
+      // a cache-busting handshake.
+      if(!sessionStorage.getItem('chakrashri_reloaded_once') && !hasUserInteracted()){
         sessionStorage.setItem('chakrashri_reloaded_once', '1');
         if(window.caches && caches.keys){
           try{ const keys = await caches.keys(); await Promise.all(keys.map(function(k){ return caches.delete(k); })); }catch(e){}
@@ -3825,24 +4055,43 @@ async function checkSiteVersion(){
   }catch(e){ /* never block the page over a version check */ }
 }
 
+/* Maps and stores booking services from rows already in hand, then re-renders
+   anything on screen that shows them. Split out from loadBookingServices so
+   the build-time snapshot can populate both lists with no request — the puja
+   showcase on the home page is otherwise blank for the whole cold start. */
+function applyBookingServices(puja, astro){
+  function map(rows, icons, fallbackIcon){
+    return (rows || []).map(function(s){
+      return { id: s.id, name: s.name, price: (s.price_paise || 0) / 100, duration: s.duration_label || '', desc: s.description || '', icon: icons[s.name] || fallbackIcon };
+    });
+  }
+  if(Array.isArray(puja)) PUJA_SERVICES = map(puja, PUJA_SERVICE_ICONS, DEFAULT_PUJA_ICON);
+  if(Array.isArray(astro)) ASTRO_SERVICES = map(astro, ASTRO_SERVICE_ICONS, DEFAULT_ASTRO_ICON);
+
+  try{
+    renderPujaShowcase();
+    const active = qs('.page.active');
+    const id = active ? active.id : '';
+    if(id === 'page-puja' && typeof renderPujaPage === 'function') renderPujaPage();
+    else if(id === 'page-astrology' && typeof renderAstroPage === 'function') renderAstroPage();
+  }catch(e){ /* the lists are stored either way; a render failure must not lose them */ }
+}
+
 async function loadBookingServices(){
   try{
     const [pujaRes, astroRes] = await Promise.all([
-      apiFetch('/api/booking-services?type=puja'),
-      apiFetch('/api/booking-services?type=astrology')
+      apiFetch('/api/booking-services?type=puja', { background: true }),
+      apiFetch('/api/booking-services?type=astrology', { background: true })
     ]);
-    PUJA_SERVICES = (pujaRes.services || []).map(function(s){
-      return { id: s.id, name: s.name, price: (s.price_paise || 0) / 100, duration: s.duration_label || '', desc: s.description || '', icon: PUJA_SERVICE_ICONS[s.name] || DEFAULT_PUJA_ICON };
-    });
-    ASTRO_SERVICES = (astroRes.services || []).map(function(s){
-      return { id: s.id, name: s.name, price: (s.price_paise || 0) / 100, duration: s.duration_label || '', desc: s.description || '', icon: ASTRO_SERVICE_ICONS[s.name] || DEFAULT_ASTRO_ICON };
-    });
+    applyBookingServices(pujaRes.services || [], astroRes.services || []);
   }catch(e){
     console.warn('Could not load booking services', e);
-    PUJA_SERVICES = []; ASTRO_SERVICES = [];
+    // Previously this set both lists to [], which is now actively wrong: the
+    // snapshot may already have filled them, and wiping real services because
+    // a background refresh failed would empty the puja showcase and both
+    // booking pages for a visitor who was looking at them.
   }
 }
-
 /* ---------- Blog posts (seed data — admin-editable) ---------- */
 let BLOG_POSTS = [
   { id:'post-01', title:"How To Choose Your First Rudraksha Mala", category:"Product Guides", author:"Team Chakrashri", date:"2026-06-02", readTime:"4 min read",
@@ -3979,17 +4228,173 @@ async function saveWishlist(){
    it also means it is NOT private to just you. See the admin panel
    disclaimer and the technical report for what this does and doesn't
    cover for a real production deployment. */
+/* ===========================================================================
+   COLD START — second of three places this is handled: the catalog itself.
+   ===========================================================================
+   THE PROBLEM THIS SOLVES
+   The API sleeps on Render's free plan and takes 30-60 seconds to wake. This
+   function used to be the only source of products, and init() awaited it before
+   rendering anything, so the first visitor after a quiet hour watched an empty
+   storefront for the length of that boot. On a shared product link it was worse
+   still: routing ran after the await, so they sat on the HOME page for a minute
+   and were then thrown to the product.
+
+   THE FIX: three sources, fastest first, each a fallback for the one above.
+
+     1. catalog.json  — a build-time snapshot on Netlify's edge, fetched from
+                        the <head> before this script even parses. ~50ms.
+                        Written by scripts/generate-catalog-snapshot.js.
+     2. localStorage  — the last catalog this browser saw. Covers a returning
+                        visitor when the snapshot 404s or the edge is slow.
+     3. the live API  — always fetched, always wins, but in the BACKGROUND.
+                        Whatever it returns replaces tiers 1 and 2 and is
+                        written back to tier 2 for next time.
+
+   So the page renders from tier 1 or 2 in well under a second, and tier 3
+   corrects it silently a few seconds later. The visitor is reading a real
+   storefront during the entire cold start rather than waiting for one.
+
+   WHAT THIS IS NOT
+   Tiers 1 and 2 are DISPLAY data and must never be trusted for money. Price and
+   stock in a snapshot can be minutes or days old. The server re-checks both at
+   add-to-cart and again at checkout (utils/stock.js, utils/orders.js), which is
+   what makes a stale snapshot a cosmetic problem rather than a mispriced order.
+   Do not compute a total from these.
+   =========================================================================== */
+
+const CATALOG_CACHE_KEY = 'chakrashri_catalog_v2';
+/* Older than this and the localStorage copy is discarded rather than shown. A
+   week-old price is worse than a skeleton: the visitor believes it. */
+const CATALOG_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+/* How long to wait on the edge snapshot before giving up and painting
+   skeletons. The API is the slow thing here, not Netlify — if the CDN has not
+   answered in this long it is not going to rescue the first paint. */
+const SNAPSHOT_WAIT_MS = 2500;
+
+/* Which source the catalog on screen came from. Read by the boot sequence to
+   decide whether to paint skeletons, and useful in the console when something
+   looks stale. */
+let catalogSource = null;
+
+/* ONE mapping, shared by every source. The API row shape is identical whether a
+   product arrived in the build snapshot, from localStorage or from a live
+   request, so this must not be duplicated per path — two sources drifting in
+   how they build a product object is how you get a card that renders from the
+   network and blank from the cache. */
+function mapApiProduct(p){
+  return {
+    id: String(p.id),
+    slug: p.slug,
+    name: p.name,
+    cat: p.category || 'lingam',
+    price: Number(p.price_paise) / 100,
+    mrp: Number(p.mrp_paise || p.price_paise) / 100,
+    // BIZ-04 — preserve NULL. Number(p.rating) || 4.5 turned every unrated
+    // product back into 4.5 stars on the client, silently undoing the whole
+    // point of removing the fabricated database default. null means "no reviews
+    // yet" and is rendered as exactly that.
+    rating: (p.rating === null || p.rating === undefined) ? null : Number(p.rating),
+    reviews: p.review_count || 0,
+    badge: p.badge,
+    stock: (p.stock_qty || 0) > 0,
+    // The real quantity, not just the in/out boolean — the quick-add stepper
+    // needs it to stop a customer clicking past what is available.
+    stockQty: Number(p.stock_qty || 0),
+    hasVariants: !!p.has_variants,
+    sku: p.sku || '',
+    shortDesc: p.short_desc || p.name,
+    longDesc: p.long_desc || p.short_desc || p.name,
+    material: p.material || '',
+    imageUrl: p.image_url || null, // lightweight primary photo for the grids — see renderProductDetail() for the full gallery fetch
+    images: [] // full gallery populated lazily on the detail page
+  };
+}
+
+function readCachedCatalog(){
+  try{
+    const raw = localStorage.getItem(CATALOG_CACHE_KEY);
+    if(!raw) return null;
+    const box = JSON.parse(raw);
+    if(!box || !Array.isArray(box.products) || !box.products.length) return null;
+    if(!box.at || (Date.now() - box.at) > CATALOG_CACHE_MAX_AGE_MS) return null;
+    return box.products;
+  }catch(e){ return null; }
+}
+
+function writeCachedCatalog(rows){
+  try{
+    localStorage.setItem(CATALOG_CACHE_KEY, JSON.stringify({ at: Date.now(), products: rows }));
+  }catch(e){ /* quota, or private mode — the snapshot and the API both still work */ }
+}
+
+/* Resolves the <head>'s snapshot promise, bounded. Returns the parsed snapshot
+   or null. Never throws: every caller treats null as "try the next tier". */
+async function readBootSnapshot(){
+  try{
+    const pending = (window.__BOOT__ && window.__BOOT__.snapshot) ? window.__BOOT__.snapshot : null;
+    if(!pending) return null;
+    const snap = await Promise.race([
+      pending,
+      new Promise(function(resolve){ setTimeout(function(){ resolve(null); }, SNAPSHOT_WAIT_MS); })
+    ]);
+    // schema is bumped only when the shape changes; refusing an unrecognised
+    // one beats rendering fields that have moved.
+    if(!snap || snap.schema !== 1 || !Array.isArray(snap.products) || !snap.products.length) return null;
+    return snap;
+  }catch(e){ return null; }
+}
+
+/* Tiers 1 and 2. Fills PRODUCTS (and, from a snapshot, the category rail and
+   booking services too) WITHOUT touching the API, so the caller can route and
+   render immediately. Returns the source name, or null if neither tier had
+   anything and the page must show skeletons instead. */
+/* A prerendered product page (scripts/generate-product-pages.js) ships that one
+   product inline, so its detail view can render before catalog.json has even
+   been fetched. Seeded BEFORE the snapshot is awaited — the whole point of a
+   prerendered page is that it needs nothing else — and deliberately WITHOUT
+   setting catalogSource, because one product is not a catalog: the grids must
+   keep showing skeletons until a real tier answers. */
+function seedPrerenderedProduct(){
+  try{
+    const row = window.__PRERENDER__ && window.__PRERENDER__.product;
+    if(!row || !row.slug) return false;
+    if(PRODUCTS.some(function(p){ return p.slug === row.slug; })) return false;
+    PRODUCTS = [mapApiProduct(row)];
+    return true;
+  }catch(e){ return false; }
+}
+
+async function hydrateCatalogFromCache(){
+  seedPrerenderedProduct();
+  const snap = await readBootSnapshot();
+  if(snap){
+    PRODUCTS = snap.products.map(mapApiProduct);
+    writeCachedCatalog(snap.products);
+    if(Array.isArray(snap.categories) && snap.categories.length) renderTopCategories(snap.categories);
+    if(snap.bookingServices) applyBookingServices(snap.bookingServices.puja, snap.bookingServices.astrology);
+    catalogSource = 'snapshot';
+    return catalogSource;
+  }
+  const cached = readCachedCatalog();
+  if(cached){
+    PRODUCTS = cached.map(mapApiProduct);
+    catalogSource = 'localStorage';
+    return catalogSource;
+  }
+  return null;
+}
+
+/* Tier 3 — the live catalog. Always runs, always wins, and is deliberately not
+   awaited by the boot sequence. */
 async function loadCatalog(){
-  // Try loading live catalog from the backend API; if that fails, fall back to demo/shared storage.
   try{
     if(typeof apiFetch === 'function'){
       // This used to be one request asking for a thousand products. The API
       // clamps the limit to 100 — deliberately, so no client can force a
       // full-table scan — and returns pagination.totalCount alongside. Asking
       // for more and keeping whatever came back therefore meant the 101st
-      // product would silently never appear
-      // on the storefront: no error, no warning, and a request that "succeeded".
-      // Nothing in the logs would have pointed at it either.
+      // product would silently never appear on the storefront: no error, no
+      // warning, and a request that "succeeded".
       //
       // So page until we actually have them all, and say so loudly if we do not.
       const PAGE_SIZE = 100;
@@ -3997,13 +4402,13 @@ async function loadCatalog(){
       let totalCount = null;
       // Whether the API ANSWERED, which is a different question from whether it
       // returned any products. An empty catalog is a legitimate answer — every
-      // product deactivated, say — and must win over the stale copy in local
-      // storage. Gating on rows.length instead would mean emptying the catalog
+      // product deactivated, say — and must win over the snapshot and the local
+      // cache. Gating on rows.length instead would mean emptying the catalog
       // silently resurrects old products and shows customers things that are no
       // longer for sale, which is worse than showing nothing.
       let apiAnswered = false;
       for(let page = 1; page <= 50; page++){   // 50 pages = 5,000 products; a runaway loop is worse than a truncated catalog
-        const body = await apiFetch(`/api/products?limit=${PAGE_SIZE}&page=${page}`);
+        const body = await apiFetch(`/api/products?limit=${PAGE_SIZE}&page=${page}`, { background: true });
         if(!body || !Array.isArray(body.products)) break;
         apiAnswered = true;
         rows = rows.concat(body.products);
@@ -4018,44 +4423,144 @@ async function loadCatalog(){
         console.warn(`Catalog is INCOMPLETE: loaded ${rows.length} of ${totalCount} products. Some products will not be visible to customers.`);
       }
       if(apiAnswered){
-        const body = { products: rows };
-        PRODUCTS = body.products.map(p => ({
-          id: String(p.id),
-          slug: p.slug,
-          name: p.name,
-          cat: p.category || 'lingam',
-          price: Number(p.price_paise) / 100,
-          mrp: Number(p.mrp_paise || p.price_paise) / 100,
-          // BIZ-04 — preserve NULL. `Number(p.rating) || 4.5` turned every
-          // unrated product back into 4.5 stars on the client, silently undoing
-          // the whole point of removing the fabricated database default. null
-          // means "no reviews yet" and is rendered as exactly that.
-          rating: (p.rating === null || p.rating === undefined) ? null : Number(p.rating),
-          reviews: p.review_count || 0,
-          badge: p.badge,
-          stock: (p.stock_qty || 0) > 0,
-          // The real quantity, not just the in/out boolean — the quick-add
-          // stepper needs it to stop a customer clicking past what's available.
-          stockQty: Number(p.stock_qty || 0),
-          hasVariants: !!p.has_variants,
-          sku: p.sku || '',
-          shortDesc: p.short_desc || p.name,
-          longDesc: p.long_desc || p.short_desc || p.name,
-          material: p.material || '',
-          imageUrl: p.image_url || null, // lightweight primary photo for shop grid/home/quick-view — see renderProductDetail() for the full gallery fetch
-          images: [] // full gallery populated lazily on the detail page — see renderProductDetail()
-        }));
-        return;
+        PRODUCTS = rows.map(mapApiProduct);
+        writeCachedCatalog(rows);
+        catalogSource = 'api';
+        return true;
       }
     }
-  }catch(e){ console.warn('Could not load catalog from API — using embedded/shared catalog.', e); }
+  }catch(e){ console.warn('Could not load catalog from API — keeping whatever the snapshot or cache provided.', e); }
 
-  // fallback to demo/shared storage if available
+  // Everything below is the last resort, reached only when the API never
+  // answered AND neither cache tier had anything. If a cache tier did fill
+  // PRODUCTS, leave it alone — a stale real catalog beats demo data.
+  if(catalogSource) return false;
+
   try{
     const r = (window.storage && window.storage.get) ? await window.storage.get('catalog_products', true) : null;
-    if(r && r.value){ PRODUCTS = JSON.parse(r.value); return; }
-  }catch(e){ /* fall through to embedded PRODUCTS */ }
+    if(r && r.value){ PRODUCTS = JSON.parse(r.value); catalogSource = 'shared-storage'; return false; }
+  }catch(e){ /* fall through to the embedded seed catalog */ }
+
+  // TERMINAL state, and the reason renderGridInto can trust catalogSource.
+  // Every source failed: no build snapshot, no local cache, no API, no shared
+  // storage. Resolve the state anyway — skeletons that pulse forever look
+  // exactly like a broken site, so the visitor leaves instead of waiting.
+  //
+  // What they get instead is an honest message. There is deliberately no
+  // fabricated catalog to fall back on any more: inventing products is the one
+  // failure a customer cannot see through.
+  catalogSource = 'unavailable';
+  return false;
 }
+
+/* Backs the "Try Again" button on the unavailable state. Resets to the loading
+   state first so the button cannot be mistaken for having done nothing, then
+   re-runs the real load path. */
+async function retryCatalogLoad(){
+  catalogSource = null;
+  try{
+    renderFeaturedGrid();
+    renderDealGrid();
+    const active = qs('.page.active');
+    if(active && active.id === 'page-shop') renderShopGrid();
+  }catch(e){ /* the reload below is what matters */ }
+  const changed = await loadCatalog();
+  refreshCatalogViews();
+  return changed;
+}
+
+/* Re-renders the views that read PRODUCTS, after the live catalog has replaced
+   whatever the snapshot provided.
+
+   The product DETAIL page is deliberately absent: it runs its own
+   /api/products/:slug fetch (see renderProductDetail) and re-rendering it here
+   would reset the reader's tab and scroll mid-read. What that fetch does NOT
+   refresh is price and stock, so those two are synced surgically instead —
+   they are the only fields where staleness costs the customer something. */
+/* A product deep link that arrived before any catalog did. Held by navigateTo
+   rather than 404-ed; resolved here. */
+let pendingProductSlug = null;
+
+function refreshCatalogViews(){
+  try{
+    // Before any rendering: a line whose product has just become resolvable
+    // must carry the fresh name and price into the views below, and a line
+    // that never had a snapshot gets one now.
+    backfillCartSnapshots();
+    if(pendingProductSlug){
+      const slug = pendingProductSlug;
+      pendingProductSlug = null;
+      // silent + replace: the visitor is already AT this URL, so this must not
+      // scroll them or add a history entry their Back button then trips over.
+      navigateTo('product/' + slug, { silent: true, replace: true });
+    }
+    renderFeaturedGrid();
+    renderDealGrid();
+    renderMegaMenuPicks();
+    updateCartUI();
+    updateWishUI();
+    const active = qs('.page.active');
+    const id = active ? active.id : '';
+    if(id === 'page-shop') renderShopGrid();
+    else if(id === 'page-wishlist') renderWishlistGrid();
+    else if(id === 'page-cart') renderCartPage();
+    else if(id === 'page-product'){
+      syncProductDetailPricing();
+      // A prerendered page starts with a catalog of exactly one product, so
+      // its "you may also like" rail is empty until the real catalog lands.
+      const p = currentProductId ? getProduct(currentProductId) : null;
+      if(p && typeof renderRelatedProducts === 'function') renderRelatedProducts(p);
+    }
+    refreshReveal();
+  }catch(e){ console.warn('Could not refresh views after the live catalog arrived', e); }
+}
+
+/* Corrects the two fields on an open product page that a stale snapshot could
+   get wrong in a way the customer would notice: the price, and whether the item
+   can be bought at all. Surgical on purpose — a full re-render would throw the
+   reader back to the first tab. */
+function syncProductDetailPricing(){
+  try{
+    if(!currentProductId) return;
+    const p = getProduct(currentProductId);
+    if(!p) return;
+
+    // Only when the product has no variants. With variants the selector owns
+    // the displayed price and has its own live data; overwriting it here would
+    // replace a chosen variant's price with the base one.
+    //
+    // Built with DOM calls rather than an innerHTML string for two reasons:
+    // it leaves the existing #pdPriceNow node in place (the variant selector
+    // holds a reference to it), and a second pdPriceNow id attribute in the
+    // source reads as a duplicate id to any static scan — including the one in
+    // test/frontend.test.js, which caught exactly this. That scan reads
+    // comments too, so this one deliberately does not spell the attribute out.
+    if(!p.hasVariants){
+      const nowEl = qs('#pdPriceNow');
+      if(nowEl) nowEl.textContent = formatINR(p.price);
+      const priceEl = qs('#pdInfo .pd-price');
+      if(priceEl){
+        qsa('.was, .save', priceEl).forEach(function(el){ el.remove(); });
+        if(p.mrp > p.price){
+          const was = document.createElement('span');
+          was.className = 'was';
+          was.textContent = formatINR(p.mrp);
+          const save = document.createElement('span');
+          save.className = 'save';
+          save.textContent = 'Save ' + Math.round((1 - p.price / p.mrp) * 100) + '%';
+          priceEl.appendChild(was);
+          priceEl.appendChild(save);
+        }
+      }
+    }
+
+    const atc = qs('#pdAtcBtn');
+    if(atc){ atc.disabled = !p.stock; atc.textContent = p.stock ? 'Add to Cart' : 'Out of Stock'; }
+    const buy = qs('#pdBuyNowBtn');
+    if(buy){ buy.disabled = !p.stock; }
+  }catch(e){ /* never let a cosmetic sync break the page */ }
+}
+
 async function saveCatalog(){
   // In production, catalog updates should be performed via the admin API.
   try{
@@ -4140,13 +4645,31 @@ const SITE_ORIGIN = (function(){
     // canonical/OG tags never emit a "null" or "file://" URL.
     return (location.protocol === 'http:' || location.protocol === 'https:')
       ? location.origin
-      : 'https://www.chakrashri.com';
-  } catch(e){ return 'https://www.chakrashri.com'; }
+      // Only reached on file://, where location.origin is not a real origin.
+      // Must match the live domain in the head above.
+      : 'https://chakrashri.netlify.app';
+  } catch(e){ return 'https://chakrashri.netlify.app'; }
 })();
 
 function setMetaTag(selector, attr, value){
   const el = document.head.querySelector(selector);
   if(el) el.setAttribute(attr, value);
+}
+
+/* The primary image URL for social cards and structured data, or undefined.
+
+   THE BUG THIS FIXES: the social-card and JSON-LD code both read `p.img`, and
+   NO product object in this file has ever had an `img` field — mapApiProduct
+   builds `imageUrl`, and the embedded seed catalog has no image field at all.
+   So og:image was removed on every product page and the JSON-LD image array
+   was always empty. Every product link shared on WhatsApp showed no picture,
+   and Google never had an image to attach to the result. It failed silently
+   because reading a missing property is undefined, not an error.
+
+   Kept as one function so the two call sites cannot drift apart again. */
+function productImageUrl(p){
+  const url = (p && (p.imageUrl || p.image_url || p.img)) || '';
+  return /^https?:\/\//.test(url) ? url : undefined;
 }
 
 /* Rewrites title, description, canonical, robots and the social tags for the
@@ -4193,15 +4716,31 @@ function injectProductJsonLd(product, detail){
   if(!el) return;
   if(!product){ el.textContent = ''; return; }
 
+  const primary = productImageUrl(product);
   const images = (detail && Array.isArray(detail.images) && detail.images.length)
     ? detail.images
-    : (product.img ? [product.img] : []);
+    : (primary ? [primary] : []);
+
+  /* Accept BOTH shapes on purpose. This is called with a mapApiProduct object
+     from the storefront (shortDesc / stockQty / reviews) and with a raw API row
+     from scripts/generate-product-pages.js (short_desc / stock_qty /
+     review_count). Reading only the raw names — which is what this did — meant
+     every product Google saw had an empty description, was advertised as In
+     Stock whether or not it was, and never carried its star rating. */
+  const shortDesc = product.shortDesc || product.short_desc || product.desc || '';
+  const stockQty =
+    (product.stockQty !== undefined && product.stockQty !== null) ? Number(product.stockQty) :
+    (product.stock_qty !== undefined && product.stock_qty !== null) ? Number(product.stock_qty) :
+    (product.stock === false ? 0 : null);
+  const reviewCount = Number(
+    (product.reviews !== undefined && product.reviews !== null) ? product.reviews : (product.review_count || 0)
+  );
 
   const data = {
     '@context': 'https://schema.org',
     '@type': 'Product',
     name: product.name,
-    description: (product.short_desc || product.desc || '').slice(0, 500),
+    description: shortDesc.slice(0, 500),
     sku: product.sku || undefined,
     category: product.cat ? catLabel(product.cat) : undefined,
     image: images.filter(function(u){ return typeof u === 'string' && /^https?:\/\//.test(u); }),
@@ -4210,7 +4749,10 @@ function injectProductJsonLd(product, detail){
       url: SITE_ORIGIN + pathForRoute('product', product.slug),
       priceCurrency: 'INR',
       price: (Number(product.price) || 0).toFixed(2),
-      availability: (product.stock_qty === undefined || product.stock_qty === null || product.stock_qty > 0)
+      // null means "genuinely unknown" and stays optimistic; a real 0 does not.
+      // Advertising an out-of-stock product as InStock is a structured-data
+      // mismatch Google issues manual actions over.
+      availability: (stockQty === null || stockQty > 0)
         ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
       seller: { '@type': 'Organization', name: 'Chakrashri' }
     }
@@ -4220,7 +4762,7 @@ function injectProductJsonLd(product, detail){
   // aggregateRating for a product with zero reviews is precisely the fabricated
   // rating the audit flagged, and Google's structured-data policy treats it as
   // a manual-action risk on top of the consumer-law problem.
-  const count = Number(product.review_count || 0);
+  const count = reviewCount;
   const rating = Number(product.rating);
   if(count > 0 && rating > 0){
     data.aggregateRating = {
@@ -4353,16 +4895,26 @@ function navigateTo(pageId, opts){
       updatePageMeta('product', p.slug, {
         title: p.name + ' — Buy Online | Chakrashri',
         description: (p.short_desc || p.desc || ('Buy ' + p.name + ' from Chakrashri — authentic, carefully sourced, delivered across India.')).slice(0, 300),
-        image: p.img && /^https?:\/\//.test(p.img) ? p.img : undefined
+        image: productImageUrl(p)
       });
       injectProductJsonLd(p);
       renderProductDetail(p.id);
     } else if(param){
-      // A slug that doesn't match any product (deleted product, bad/old
-      // link) — redirect to the shop with an explanation instead of
-      // silently showing a blank page.
-      toast('That product could not be found — it may have been removed.', 'err');
-      navigateTo('shop');
+      // COLD START: a slug we cannot resolve because NO catalog has loaded yet
+      // is not a missing product. Bouncing a visitor who followed a shared
+      // WhatsApp link to /shop with "that product could not be found" would be
+      // both untrue and exactly the experience this work exists to remove.
+      // Hold the slug, show the product skeleton, and resolve it the moment a
+      // catalog arrives (see refreshCatalogViews).
+      if(!catalogSource){
+        pendingProductSlug = param;
+        paintProductSkeleton();
+      } else {
+        // A slug that genuinely matches no product (deleted, or an old link) —
+        // redirect to the shop with an explanation rather than a blank page.
+        toast('That product could not be found — it may have been removed.', 'err');
+        navigateTo('shop');
+      }
     }
   }
   refreshReveal();
@@ -4402,6 +4954,11 @@ function openShopWithCategory(cat){
 }
 
 window.addEventListener('popstate', function(){
+  // Back/forward while a payment or booking is waiting: the modal is not a
+  // page, so nothing else would close it, and the intent behind it would still
+  // fire on wake — placing an order from a screen the customer had already
+  // left. Leaving is an unambiguous "not now".
+  if(waitState && waitState.open) cancelWaitingExperience();
   const parsed = routeFromLocation();
   navigateTo(parsed.route || 'home', { silent:false });
 });
@@ -4651,6 +5208,35 @@ function productCardHTML(p, idx){
 function renderGridInto(containerId, list){
   const el = qs('#' + containerId);
   if(!el) return;
+
+  // COLD START: until some tier has actually answered, this grid cannot be
+  // shown — not as an empty state, and not as a partial one. catalogSource is
+  // null in exactly that window.
+  //
+  // The check is on catalogSource and NOT on list.length, which is the subtle
+  // part: a prerendered product page seeds PRODUCTS with the single product it
+  // ships inline, and that one row was enough to make the featured grid render
+  // one lonely card where eight belong. One product is not a catalog.
+  //
+  // It covers the featured, deal, shop, wishlist and related grids at once, and
+  // it terminates: loadCatalog() always resolves catalogSource, falling back to
+  // 'embedded' when every source has failed, so these can never pulse forever.
+  if(!catalogSource){ el.innerHTML = skeletonCardsHTML(8); return; }
+
+  // Every source failed. Say so, and offer the one action that helps. Note this
+  // is NOT the same message as an empty result — "no products match your
+   // filters" and "we could not load the catalog" are different problems and a
+  // customer given the wrong one wastes their time on the wrong fix.
+  if(catalogSource === 'unavailable'){
+    el.innerHTML = '<div class="empty-state" style="grid-column:1/-1;">' +
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M12 9v4"/><path d="M12 17h.01"/><circle cx="12" cy="12" r="9"/></svg>' +
+      '<h3>We could not load the collection</h3>' +
+      '<p>This is on us, not on you — our storefront is waking up. Please try again in a moment.</p>' +
+      '<button class="btn btn-primary" onclick="retryCatalogLoad()">Try Again</button>' +
+    '</div>';
+    return;
+  }
+
   if(list.length === 0){
     el.innerHTML = '<div class="empty-state" style="grid-column:1/-1;">' +
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>' +
@@ -4676,11 +5262,13 @@ async function notifyStock(id, variantId){
     if(!email) return;
   }
   try{
-    const res = await apiFetch('/api/engage/stock-notify', {
-      method:'POST',
-      body: JSON.stringify({ productId: id, variantId: variantId || null, email: email })
-    });
-    toast((res && res.message) || "You're on the list.");
+    // queuedPost, not apiFetch: a cold instance used to turn this into "Could
+    // not add you to the list. Please try again", which is a dead end and not
+    // even true — nothing was wrong with the request except its timing. The
+    // server upserts on conflict, so a replay is harmless.
+    const res = await queuedPost('/api/engage/stock-notify', { productId: id, variantId: variantId || null, email: email });
+    if(res.delivered) toast((res.body && res.body.message) || "You're on the list.");
+    else toast("You're on the list — we'll email you the moment it's back in stock.");
   }catch(err){
     /* An in-stock item is not an error the customer should see as one — it is
        good news, and the server says so. */
@@ -4721,7 +5309,9 @@ function addToCart(id, qty, variant, variantId, variantImage){
     if(variantId && !line.variantId) line.variantId = variantId;
     if(variantImage && !line.variantImage) line.variantImage = variantImage;
   } else {
-    cart.push({ id:id, qty:qty, variant: variant || '', variantId: variantId || null, variantImage: variantImage || null });
+    // snap: what this line needs to render itself when the catalog is not
+    // available — see the comment on getCartLinesWithProducts.
+    cart.push({ id:id, qty:qty, variant: variant || '', variantId: variantId || null, variantImage: variantImage || null, snap: cartLineSnapshot(p) });
   }
   saveCart();
   updateCartUI();
@@ -4752,8 +5342,106 @@ function changeCartQty(id, variant, delta){
   saveCart();
   updateCartUI();
 }
+/* ---------------------------------------------------------------------------
+   THE CART BUG THIS FIXES — the most commercially serious one in this area.
+   ---------------------------------------------------------------------------
+   A cart line stores only { id, qty, variant }. Every price and name shown for
+   it was looked up live in PRODUCTS. So for as long as PRODUCTS was empty —
+   the whole of a 30-60 second cold start, and longer still on a prerendered
+   product page, which seeds exactly one product — getProduct() returned
+   undefined for every line and the filter below discarded all of them.
+
+   What the shopper saw: the cart badge reading "3", and "Your cart is empty"
+   inside the drawer, the cart page and the checkout. Worse, getCartSubtotal()
+   sums the same filtered list, so the checkout total read the wrong number —
+   and the order still went through at the correct price, because the client
+   sends only { productId, variantId, quantity } and the server computes every
+   amount from the database (see utils/orders.js). Being charged an amount you
+   were never shown is a trust failure whatever the cause.
+
+   THE FIX: a line records what it needs to describe itself at the moment it is
+   added, and falls back to that when the catalog cannot answer. The live
+   product always wins when present, so a price change is picked up as soon as
+   the catalog lands.
+
+   The snapshot is DISPLAY DATA and nothing else. It is never sent to the
+   server and never used to compute what anyone pays. cartHasUnresolvedLines()
+   below is what stops a customer paying against a total we are not sure of.
+   --------------------------------------------------------------------------- */
+function cartLineSnapshot(p){
+  if(!p) return null;
+  return {
+    name: p.name,
+    price: p.price,
+    mrp: p.mrp,
+    cat: p.cat,
+    slug: p.slug,
+    sku: p.sku,
+    imageUrl: p.imageUrl || null
+  };
+}
+
+/* Rebuilds a product-shaped object from a line's own snapshot. Marked with
+   fromSnapshot so a caller that needs certainty can tell the difference. */
+function productFromCartLine(l){
+  if(!l || !l.snap || !l.snap.name) return null;
+  return {
+    id: l.id,
+    slug: l.snap.slug,
+    name: l.snap.name,
+    cat: l.snap.cat || 'lingam',
+    price: Number(l.snap.price) || 0,
+    mrp: Number(l.snap.mrp) || Number(l.snap.price) || 0,
+    rating: null,
+    reviews: 0,
+    badge: null,
+    // Assumed buyable: it was in stock when it went into the cart, and the
+    // server re-checks stock at checkout regardless. Guessing "out of stock"
+    // here would disable the customer's own cart for no reason.
+    stock: true,
+    stockQty: l.qty,
+    hasVariants: !!l.variantId,
+    sku: l.snap.sku || '',
+    shortDesc: l.snap.name,
+    longDesc: l.snap.name,
+    material: '',
+    imageUrl: l.snap.imageUrl || null,
+    images: [],
+    fromSnapshot: true
+  };
+}
+
 function getCartLinesWithProducts(){
-  return cart.map(function(l){ return { line:l, product:getProduct(l.id) }; }).filter(function(x){ return x.product; });
+  return cart.map(function(l){
+    return { line: l, product: getProduct(l.id) || productFromCartLine(l) };
+  }).filter(function(x){ return x.product; });
+}
+
+/* True when at least one line can be described by NEITHER the live catalog nor
+   its own snapshot — a cart saved before snapshots existed, opened while the
+   API is still cold. Those lines are invisible in the totals, so anything that
+   quotes a price to the customer must refuse to proceed while this is true. */
+function cartHasUnresolvedLines(){
+  return cart.some(function(l){ return !getProduct(l.id) && !productFromCartLine(l); });
+}
+
+/* Fills in snapshots for lines saved before this existed, and refreshes stale
+   ones once the real catalog is available. Called after every catalog load, so
+   a cart becomes self-describing after a single visit with a working API and
+   stays correct through every cold start after that. */
+function backfillCartSnapshots(){
+  let changed = false;
+  cart.forEach(function(l){
+    const p = getProduct(l.id);
+    if(!p) return;
+    const fresh = cartLineSnapshot(p);
+    if(!l.snap || l.snap.name !== fresh.name || l.snap.price !== fresh.price || l.snap.mrp !== fresh.mrp){
+      l.snap = fresh;
+      changed = true;
+    }
+  });
+  if(changed) saveCart();
+  return changed;
 }
 function getCartCount(){ return cart.reduce(function(s,l){ return s + l.qty; }, 0); }
 function getCartSubtotal(){
@@ -5764,8 +6452,57 @@ function seededPick(arr, seedStr, offset){
    misleading to customers. Real reviews are rendered by renderReviewsTab()
    from the product_reviews table, gated to genuine delivered purchases. */
 
+/* "You may also like".
+
+   THE BUG THIS FIXES: this passed the same-category matches straight to
+   renderGridInto, and when a category had no other products that renders the
+   SHOP grid's empty state — "No products found. Try adjusting your filters, or
+   ask Chakra AI for a recommendation." with a Clear Filters button. On a
+   product page there are no filters to clear, so the rail asked the customer
+   to fix a problem that did not exist, in the middle of the page where a
+   recommendation belongs. With a catalog spread thinly across categories —
+   which is the normal state of a growing shop — that was most product pages.
+
+   Two changes. Same-category first, then topped up with the rest of the
+   catalog so the rail is useful rather than empty; and if there is genuinely
+   nothing to show (a one-product catalog, or nothing loaded yet), the whole
+   section is hidden instead of explaining itself. */
 function renderRelatedProducts(p){
-  const related = PRODUCTS.filter(function(x){ return x.cat === p.cat && x.id !== p.id; }).slice(0,4);
+  const section = qs('#relatedSection');
+  const title = qs('#relatedTitle');
+
+  // Still loading: leave the skeletons renderGridInto paints, and say nothing.
+  if(!catalogSource){
+    if(section) section.style.display = '';
+    renderGridInto('relatedGrid', []);
+    return;
+  }
+
+  const sameCat = PRODUCTS.filter(function(x){ return x.cat === p.cat && x.id !== p.id; });
+  let related = sameCat.slice(0, 4);
+
+  if(related.length < 4){
+    const taken = {};
+    related.forEach(function(r){ taken[r.id] = true; });
+    taken[p.id] = true;
+    const fill = PRODUCTS.filter(function(x){ return !taken[x.id] && x.stock; })
+      .sort(function(a, b){
+        const badge = (b.badge === 'bestseller' ? 1 : 0) - (a.badge === 'bestseller' ? 1 : 0);
+        if(badge) return badge;
+        return (Number(b.reviews) || 0) - (Number(a.reviews) || 0);
+      })
+      .slice(0, 4 - related.length);
+    related = related.concat(fill);
+  }
+
+  if(!related.length){
+    // A shop with one product. Nothing to recommend, so do not pretend.
+    if(section) section.style.display = 'none';
+    return;
+  }
+  if(section) section.style.display = '';
+  // Honest heading: only call them related when they actually share a category.
+  if(title) title.textContent = sameCat.length ? 'Related Products' : 'More From Chakrashri';
   renderGridInto('relatedGrid', related);
 }
 /* ---------- Cart page ---------- */
@@ -5976,9 +6713,44 @@ function selectPayMethod(el){
   if(r) r.checked = true;
   updateCheckoutTotals();
 }
+/* The customer-facing entry point. Validates, then waits for the backend if it
+   has to — see withBackendReady. The order itself is placeOrderNow(), which
+   runs only once the backend AND database are confirmed up.
+
+   The split matters for one specific reason: the cart is read inside
+   placeOrderNow, not here, so anything the customer adds from the waiting
+   screen is part of the order they end up placing. */
 async function placeOrder(){
   // Checked FIRST: making someone complete the whole address form before
   // telling them they need an account is a needless dead end.
+  if(!getAuthToken()){
+    await promptLoginRequired('Please log in or create an account to place your order.');
+    return;
+  }
+
+  const checks0 = [
+    validateField('ckName','text'), validateField('ckPhone','phone'), validateField('ckEmail','email'),
+    validateField('ckAddress','text'), validateField('ckCity','text'), validateField('ckState','text'), validateField('ckPin','text')
+  ];
+  if(!checks0.every(Boolean)){
+    toast('Please check the highlighted fields — a valid email and phone number are needed.', 'err');
+    return;
+  }
+  if(!cart.length){
+    toast('Your cart is empty.', 'err');
+    navigateTo('cart');
+    return;
+  }
+
+  return withBackendReady(placeOrderNow, {
+    title: 'Preparing your secure checkout',
+    status: 'Connecting to our payment service…',
+    note: 'Your cart is saved. Nothing has been charged.',
+    busyButton: '#placeOrderBtn'
+  });
+}
+
+async function placeOrderNow(){
   if(!getAuthToken()){
     await promptLoginRequired('Please log in or create an account to place your order.');
     return;
@@ -6003,6 +6775,17 @@ async function placeOrder(){
   // build items array expected by backend
   const items = cart.map(function(l){ return { productId: l.id, variantId: l.variantId || null, quantity: l.qty }; });
   if(!items.length){ toast('Your cart is empty.', 'err'); navigateTo('cart'); return; }
+
+  // The server computes every amount from the database, so this order would be
+  // priced correctly whatever we display. That is exactly the problem: with a
+  // line we cannot describe, the total on screen is lower than the amount that
+  // would be charged, and the customer would be agreeing to a number that was
+  // never true. Wait for the catalog instead — it is seconds away, and the
+  // background refresh re-enables this on its own.
+  if(cartHasUnresolvedLines()){
+    toast('Still loading the latest prices for your cart — one moment, then try again.', 'err');
+    return;
+  }
 
   qs('#checkoutLayout').style.display = 'none';
   const emptyEl = document.getElementById('checkoutEmptyState'); if(emptyEl) emptyEl.style.display = 'none';
@@ -6333,6 +7116,9 @@ function openBookingReview(type){
   openModal('bookingReviewModal');
 }
 
+/* A booking cannot be queued: a slot has to be held against real availability,
+   and confirming a pandit before anything confirmed one is worse than any
+   wait. So it waits — with something worth looking at while it does. */
 async function confirmPujaBooking(){
   if(!selectedPuja){ toast('Please select a puja first.', 'err'); return; }
   const checks = [ validateField('pjName','text'), validateField('pjPhone','phone'), validateField('pjEmail','email') ];
@@ -6341,6 +7127,15 @@ async function confirmPujaBooking(){
   }
   if(!checks.every(Boolean)){ toast('Please check the highlighted fields — a valid email and phone number are needed.', 'err'); return; }
   if(!getAuthToken()){ await promptLoginRequired('Please log in or create an account to book a puja.'); return; }
+
+  return withBackendReady(confirmPujaBookingNow, {
+    title: 'Confirming your puja booking',
+    status: 'Checking the pandit\'s availability…',
+    note: 'Nothing has been charged and your details are saved.'
+  });
+}
+
+async function confirmPujaBookingNow(){
 
   const svc = PUJA_SERVICES.find(function(s){ return s.id === selectedPuja; });
   if(!svc){ toast('Please select a puja first.', 'err'); return; }
@@ -6488,6 +7283,15 @@ async function confirmAstroBooking(){
   const checks = [ validateField('asName','text'), validateField('asPhone','phone'), validateField('asEmail','email'), validateField('asDob','text') ];
   if(!checks.every(Boolean)){ toast('Please check the highlighted fields — a valid email and phone number are needed.', 'err'); return; }
   if(!getAuthToken()){ await promptLoginRequired('Please log in or create an account to book a consultation.'); return; }
+
+  return withBackendReady(confirmAstroBookingNow, {
+    title: 'Confirming your consultation',
+    status: 'Checking the astrologer\'s availability…',
+    note: 'Nothing has been charged and your details are saved.'
+  });
+}
+
+async function confirmAstroBookingNow(){
 
   const svc = ASTRO_SERVICES.find(function(s){ return s.id === selectedAstro; });
   if(!svc){ toast('Please select a service first.', 'err'); return; }
@@ -6806,8 +7610,13 @@ async function handleNewsletterSubmit(e){
   const btn = e.target.querySelector('button[type="submit"]');
   if(btn){ btn.disabled = true; }
   try{
-    const res = await apiFetch('/api/engage/newsletter', { method:'POST', body: JSON.stringify({ email: email }) });
-    toast((res && res.message) || 'Check your inbox to confirm.');
+    const res = await queuedPost('/api/engage/newsletter', { email: email });
+    if(res.delivered) toast((res.body && res.body.message) || 'Check your inbox to confirm.');
+    // Deliberately different wording when queued. The confirmation email is
+    // sent by the server, so promising them to "check your inbox" while the
+    // request is still sitting in localStorage would send them looking for
+    // something that has not been sent yet.
+    else toast('Subscription saved — your confirmation email is on its way shortly.');
     e.target.reset();
   }catch(err){
     toast((err && err.error) ? err.error : 'Could not subscribe right now. Please try again.', 'err');
@@ -6834,8 +7643,9 @@ async function handleContactSubmit(e){
   const btn = e.target.querySelector('button[type="submit"]');
   if(btn){ btn.disabled = true; }
   try{
-    const res = await apiFetch('/api/engage/contact', { method:'POST', body: JSON.stringify(payload) });
-    toast((res && res.message) || 'Thank you — your message is with our team.');
+    const res = await queuedPost('/api/engage/contact', payload);
+    if(res.delivered) toast((res.body && res.body.message) || 'Thank you — your message is with our team.');
+    else toast('Thank you — your message is saved and will reach our team in a moment.');
     e.target.reset();
   }catch(err){
     toast((err && err.error) ? err.error : 'Could not send your message. Please try again.', 'err');
@@ -6916,15 +7726,951 @@ function debounce(fn, wait){
 /* ============================================================
    INIT — wires up every control on the page
 ============================================================ */
-async function init(){
-  await Promise.all([loadCart(), loadWishlist(), loadCatalog(), loadBlogPosts(), loadOrders(), loadBookingServices(), loadTopCategories()]);
-  renderPujaShowcase(); // depends on loadBookingServices() having resolved above
-  checkSiteVersion();
-  await loadCurrentUser();
+/* ===========================================================================
+   COLD START — third of three places this is handled: the boot ORDER.
+   ===========================================================================
+   THE BUG THIS FIXES, stated plainly, because it was the expensive one:
+
+     await Promise.all([loadCart(), loadWishlist(), loadCatalog(), ...]);
+     ... 150 lines of listener wiring ...
+     navigateTo(parsed.route || 'home');          // <- routing, LAST
+
+   Routing was the last thing init() did, and #page-home is the only page
+   marked active in the static HTML. So a visitor opening a shared product link
+   on a cold API sat on the HOME page — with empty product grids — for the
+   whole 30-60 second boot, and was then thrown to the product page without
+   warning. Nothing was broken; everything was simply waiting on a request that
+   had no business gating the first paint.
+
+   The order below is: local state, then the cached catalog, then ROUTE AND
+   RENDER, then listeners, then the live API in the background. Nothing that
+   touches the network stands between the visitor and a finished page.
+   =========================================================================== */
+
+/* ===========================================================================
+   BACKEND READINESS — the primitive both the outbox and the waiting
+   experience are built on.
+   ===========================================================================
+   "Is the backend awake?" is not a question with a permanent answer. Render
+   spins the instance down after ~15 minutes idle and Neon suspends after ~5,
+   so a session that started warm can go cold while the visitor is still
+   reading. window.__BOOT__.awake answers this once, at page load, and is
+   therefore the wrong thing to consult before taking a payment ten minutes in.
+
+   So: a cached, refreshable answer. /api/ready is the right probe because it
+   runs SELECT 1 — it reports on the database as well as the web process, which
+   is exactly the pair that has to be up before an order can be written.
+   ========================================================================== */
+
+/* How long an "awake" answer is trusted before it is re-checked. Comfortably
+   under Render's ~15 minute idle window and Neon's ~5, so a cached yes can
+   never outlive the thing it describes by long. */
+const BACKEND_READY_TTL_MS = 45000;
+const BACKEND_PROBE_TIMEOUT_MS = 8000;
+
+let backendReady = { awake: false, at: 0, inFlight: null };
+
+/* Any successful API call is proof of life, and free. Called from apiFetch so
+   an active session almost never has to probe at all. */
+function markBackendAwake(){
+  const wasAsleep = !isBackendKnownAwake();
+  backendReady.awake = true;
+  backendReady.at = Date.now();
+  if(wasAsleep) onBackendAwake();
+}
+
+function isBackendKnownAwake(){
+  return backendReady.awake && (Date.now() - backendReady.at) < BACKEND_READY_TTL_MS;
+}
+
+/* One probe at a time: a page with several things waiting must not fire a
+   probe each. Everyone shares the in-flight promise. */
+function probeBackend(){
+  if(backendReady.inFlight) return backendReady.inFlight;
+  backendReady.inFlight = (async function(){
+    try{
+      const controller = new AbortController();
+      const timer = setTimeout(function(){ controller.abort(); }, BACKEND_PROBE_TIMEOUT_MS);
+      try{
+        const res = await fetch(API_BASE + '/api/ready', { cache:'no-store', signal: controller.signal });
+        // 503 means the process answered but the database has not resumed yet.
+        // That is NOT ready — an order written now would fail — but it does
+        // mean the knock landed and Neon is waking.
+        if(res.ok){ markBackendAwake(); return true; }
+        return false;
+      } finally { clearTimeout(timer); }
+    }catch(e){ return false; }
+    finally { backendReady.inFlight = null; }
+  })();
+  return backendReady.inFlight;
+}
+
+/* Resolves true once the backend AND database are confirmed up, or false if
+   they are still not up after maxMs. onTick reports each attempt so a waiting
+   UI can stay honest about what is happening. */
+async function ensureBackendAwake(opts){
+  opts = opts || {};
+  const maxMs = opts.maxMs || 120000;
+  const deadline = Date.now() + maxMs;
+  let attempt = 0;
+
+  if(isBackendKnownAwake()) return true;
+
+  while(Date.now() < deadline){
+    attempt++;
+    if(typeof opts.onTick === 'function') opts.onTick(attempt, Date.now() - (deadline - maxMs));
+    if(await probeBackend()) return true;
+    if(opts.cancelled && opts.cancelled()) return false;
+    // Steady 2s. Not exponential: a cold Render boot is 30-60s of nothing
+    // followed by a sudden yes, so backing off only delays noticing the yes.
+    await new Promise(function(r){ setTimeout(r, 2000); });
+  }
+  return false;
+}
+
+/* ===========================================================================
+   THE OUTBOX — actions taken while the backend is asleep.
+   ===========================================================================
+   The cart and the wishlist already live in localStorage, so they work with no
+   server at all. Everything else a visitor can DO — a restock alert, a
+   newsletter signup, a contact message — was a bare POST that simply failed
+   while the instance was cold. They saw "Could not add you to the list. Please
+   try again", which is both a dead end and untrue: nothing was wrong with what
+   they asked for, only with when they asked it.
+
+   So those actions are now recorded locally, confirmed to the customer
+   immediately, and delivered the moment the backend answers. From their side
+   the site behaves identically whether it was awake or asleep.
+
+   WHAT MAY BE QUEUED, AND WHAT MAY NEVER BE
+   Only actions where "we will do this shortly" is an honest thing to say. A
+   payment, an order, a booking and a login all give the customer something
+   back that we cannot invent — money moves, a slot is held, a token is issued.
+   Those must WAIT for the real backend, which is what the waiting experience
+   below is for. Queueing them would mean telling someone their booking is
+   confirmed before anything has confirmed it.
+
+   DUPLICATES
+   stock-notify and newsletter are safe to retry: both are ON CONFLICT upserts
+   server-side (see engagement.routes.js), so replaying one changes nothing.
+   contact is a plain INSERT, so a replay would open a second support ticket.
+   It is therefore dispatched at most twice and then handed back to the
+   customer rather than retried forever — see flushOutbox.
+   ========================================================================== */
+
+const OUTBOX_KEY = 'chakrashri_outbox_v1';
+const OUTBOX_MAX_ITEMS = 40;
+const OUTBOX_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+/* The allowlist IS the safety mechanism. A path that is not named here can
+   never be queued, so a future call site cannot accidentally make a payment
+   fire-and-forget by passing the wrong helper. */
+const OUTBOX_ROUTES = {
+  '/api/engage/stock-notify': { idempotent: true,  label: 'restock alert',      done: "You're on the list — we'll email you the moment it's back." },
+  '/api/engage/newsletter':   { idempotent: true,  label: 'newsletter signup',  done: 'Subscription confirmed — check your inbox to complete it.' },
+  '/api/engage/contact':      { idempotent: false, label: 'message',            done: 'Your message has reached our team.' }
+};
+
+function readOutbox(){
+  try{
+    const raw = localStorage.getItem(OUTBOX_KEY);
+    if(!raw) return [];
+    const items = JSON.parse(raw);
+    if(!Array.isArray(items)) return [];
+    // Drop anything too old to still be wanted. A restock alert requested last
+    // month is not something to deliver silently now.
+    const cutoff = Date.now() - OUTBOX_MAX_AGE_MS;
+    return items.filter(function(i){ return i && i.at && i.at > cutoff; });
+  }catch(e){ return []; }
+}
+
+function writeOutbox(items){
+  try{ localStorage.setItem(OUTBOX_KEY, JSON.stringify(items.slice(-OUTBOX_MAX_ITEMS))); }
+  catch(e){ /* quota or private mode — the live path below still works */ }
+}
+
+function outboxCount(){ return readOutbox().length; }
+
+/* A POST that survives a sleeping backend.
+
+   Returns { delivered: true, body } when it went through immediately, or
+   { delivered: false, queued: true } when it was stored for later. Callers use
+   that to say the right thing — never to decide whether to reassure the
+   customer, because in both cases the answer to them is yes. */
+async function queuedPost(path, payload, opts){
+  opts = opts || {};
+  const route = OUTBOX_ROUTES[path];
+  if(!route) throw new Error('queuedPost called for a path that is not queueable: ' + path);
+
+  // Attempt live delivery ONLY when the backend is known to be up.
+  //
+  // THE BUG THIS FIXES: this condition used to read
+  //   isBackendKnownAwake() OR-ELSE a tryLiveFirst option compared against false
+  // — and that option is undefined at every real call site, so the comparison
+  // `undefined !== false` made the right-hand side permanently true and the
+  // whole OR always true. Every queued action therefore attempted a live POST
+  // first — against a sleeping instance, with apiFetch's 30-second timeout and
+  // no retry (engage routes are not in isRetryableRequest). A customer tapping
+  // "Notify me" on a cold site waited half a minute, watched the "our server is
+   // waking up" notice appear, and only then got their confirmation.
+  //
+  // That is the precise experience this outbox exists to remove. When the
+  // backend is not known to be up, the action is recorded and confirmed
+  // immediately, and flushOutbox delivers it in the background.
+  if(isBackendKnownAwake() || opts.tryLiveFirst === true){
+    try{
+      const body = await apiFetch(path, { method: 'POST', body: JSON.stringify(payload) });
+      return { delivered: true, body: body };
+    }catch(err){
+      // A 4xx is a real answer: the address was invalid, the item is in stock,
+      // the message was rejected. Queueing that would replay a rejection.
+      // Only a transport failure — which is what a sleeping instance looks
+      // like — is worth keeping.
+      if(!isTransportFailure(err)) throw err;
+    }
+  }
+
+  const items = readOutbox();
+  items.push({
+    id: 'ob_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8),
+    path: path,
+    payload: payload,
+    at: Date.now(),
+    attempts: 0,
+    dispatched: 0
+  });
+  writeOutbox(items);
+  scheduleOutboxFlush();
+  return { delivered: false, queued: true };
+}
+
+/* apiFetch throws a plain { error } object for a transport failure and the
+   server's own JSON body for anything it actually answered. That difference is
+   what separates "try again later" from "this was refused". */
+function isTransportFailure(err){
+  if(!err) return true;
+  if(err.status || err.statusCode) return false;
+  const msg = String((err && err.error) || err.message || err);
+  return /could not reach|did not respond|starting up|failed to fetch|network/i.test(msg);
+}
+
+let outboxFlushing = false;
+
+async function flushOutbox(){
+  if(outboxFlushing) return 0;
+  let items = readOutbox();
+  if(!items.length) return 0;
+
+  // The lock is claimed BEFORE the probe, not after. The probe awaits, so two
+  // callers arriving together — a wake notification and a visibilitychange, say
+  // — would both get past an unclaimed lock and then both deliver the same
+  // items. Released in the finally below.
+  outboxFlushing = true;
+  try{
+    if(!isBackendKnownAwake() && !(await probeBackend())){ outboxFlushing = false; return 0; }
+  }catch(e){ outboxFlushing = false; return 0; }
+  let delivered = 0;
+  const messages = [];
+  try{
+    // Serial, oldest first. Parallel delivery would reorder a customer's own
+    // actions and multiply the load on an instance that has just woken up.
+    // Every branch that removes an item MUST persist immediately. An earlier
+    // version filtered the in-memory array and relied on a later write that
+    // never came on this path, so a give-up item stayed at dispatched=2
+    // forever: it could never be sent, never be cleared, and re-toasted its
+    // failure on every single flush for the rest of the visit. drop() exists
+    // so that cannot be forgotten again.
+    const drop = function(id){
+      items = items.filter(function(i){ return i.id !== id; });
+      writeOutbox(items);
+    };
+
+    for(const item of items.slice()){
+      const route = OUTBOX_ROUTES[item.path];
+      // A path that is no longer queueable — the allowlist changed between
+      // visits. Nothing can be done with it, so it must not be kept.
+      if(!route){ drop(item.id); continue; }
+
+      // At-most-twice for anything that is not an upsert server-side. Beyond
+      // that the risk of a duplicate support ticket outweighs the chance the
+      // first two never landed.
+      if(!route.idempotent && item.dispatched >= 2){
+        drop(item.id);
+        toast('We could not send your ' + route.label + '. Please try again when you have a moment.', 'err');
+        continue;
+      }
+
+      item.dispatched++;
+      item.attempts++;
+      writeOutbox(items);
+
+      try{
+        await apiFetch(item.path, { method: 'POST', body: JSON.stringify(item.payload), background: true });
+        drop(item.id);
+        delivered++;
+        if(messages.indexOf(route.done) === -1) messages.push(route.done);
+      }catch(err){
+        if(isTransportFailure(err)){
+          // Still asleep, or asleep again. Leave it queued and stop — the rest
+          // will fail the same way and hammering a waking instance helps nobody.
+          break;
+        }
+        // The server answered and refused. Replaying it would replay the
+        // refusal, so drop it and say so once.
+        drop(item.id);
+        const why = (err && err.error) ? err.error : ('Your ' + route.label + ' could not be completed.');
+        toast(why, 'err');
+      }
+    }
+  } finally {
+    outboxFlushing = false;
+  }
+
+  // One toast per kind, not one per item: a visitor who set three restock
+  // alerts should be told once that they are set.
+  messages.forEach(function(m){ toast(m); });
+  return delivered;
+}
+
+let outboxTimer = null;
+function scheduleOutboxFlush(delayMs){
+  if(outboxTimer) clearTimeout(outboxTimer);
+  outboxTimer = setTimeout(function(){
+    outboxTimer = null;
+    flushOutbox();
+  }, delayMs || 1500);
+}
+
+/* Called the moment the backend goes from unknown/asleep to awake. */
+function onBackendAwake(){
+  if(outboxCount()) scheduleOutboxFlush(300);
+}
+
+/* Two more chances to deliver, both free:
+   - coming back to the tab, which is when a customer returns after the
+     instance has had time to wake on its own;
+   - the browser regaining a connection.
+   Neither probes unless something is actually waiting to be sent. */
+document.addEventListener('visibilitychange', function(){
+  if(document.visibilityState === 'visible' && outboxCount()) scheduleOutboxFlush(500);
+});
+window.addEventListener('online', function(){ if(outboxCount()) scheduleOutboxFlush(500); });
+
+/* ===========================================================================
+   THE WAITING EXPERIENCE — for the things that genuinely cannot be queued.
+   ===========================================================================
+   A restock alert can be recorded locally and delivered later; the outbox
+   above does that. A PAYMENT cannot. Neither can a booking: a slot has to be
+   held against real availability, and telling someone their pandit is confirmed
+   before anything confirmed it is worse than any wait.
+
+   So for those, the wait is unavoidable — the only question is what it is
+   spent on. This spends it on the one thing useful to both sides: what else
+   goes with what they are already buying. Every item shown is real, from the
+   last catalog the site actually served, and adding one is a local cart write
+   that works with the server still cold.
+
+   THE RULE THAT MATTERS: the intent is never lost. Whether they add three
+   things, dismiss every suggestion, or sit and read, the moment the backend
+   and the database both answer, the original action continues on its own —
+   with whatever they added along the way included, because placeOrder reads
+   the cart when it runs, not when it was asked for.
+
+   And when the backend is already awake, none of this happens at all. There is
+   no artificial delay anywhere in here.
+   ========================================================================== */
+
+const WAIT_STRATEGY_KEY = 'chakrashri_wait_seen_v1';
+const WAIT_MAX_MS = 120000;
+
+let waitState = { open: false, cancelled: false, rotateTimer: null, shown: [] };
+
+/* Categories that genuinely belong together on an altar, so the pairing reads
+   as a suggestion from someone who knows the subject rather than as a random
+   upsell. Falls back to "anything else" when a category has no listed partner. */
+const RITUAL_PAIRS = {
+  lingam:    ['samagri', 'malas', 'yantra'],
+  yantra:    ['samagri', 'lingam', 'books'],
+  idols:     ['samagri', 'yantra', 'books'],
+  malas:     ['books', 'bracelets', 'samagri'],
+  bracelets: ['malas', 'books'],
+  books:     ['malas', 'yantra'],
+  samagri:   ['lingam', 'idols', 'yantra']
+};
+
+function waitSeenStrategies(){
+  try{ return JSON.parse(sessionStorage.getItem(WAIT_STRATEGY_KEY) || '[]'); }catch(e){ return []; }
+}
+function waitMarkStrategySeen(id){
+  try{
+    const seen = waitSeenStrategies();
+    seen.push(id);
+    sessionStorage.setItem(WAIT_STRATEGY_KEY, JSON.stringify(seen.slice(-12)));
+  }catch(e){ /* private mode — rotation just restarts, which is not a failure */ }
+}
+
+function cartProductIds(){ return cart.map(function(l){ return String(l.id); }); }
+function notInCart(p){ return cartProductIds().indexOf(String(p.id)) === -1; }
+function buyable(p){ return p && p.stock && notInCart(p); }
+
+/* Each strategy returns null when it has nothing genuinely useful to say, and
+   the picker moves on. A strategy that pads itself out with whatever is left
+   is how a suggestion column stops being read. */
+const WAIT_STRATEGIES = [
+  {
+    id: 'complete-ritual',
+    build: function(){
+      const cats = {};
+      cart.forEach(function(l){ const p = getProduct(l.id); if(p && p.cat) cats[p.cat] = true; });
+      const wanted = [];
+      Object.keys(cats).forEach(function(c){ (RITUAL_PAIRS[c] || []).forEach(function(w){ if(wanted.indexOf(w) === -1) wanted.push(w); }); });
+      if(!wanted.length) return null;
+      const items = PRODUCTS.filter(function(p){ return buyable(p) && wanted.indexOf(p.cat) > -1; }).slice(0, 3);
+      if(items.length < 2) return null;
+      return {
+        title: 'Complete the ritual',
+        sub: 'These are what people most often set up alongside what you have chosen.',
+        items: items
+      };
+    }
+  },
+  {
+    id: 'free-shipping',
+    build: function(){
+      const subtotal = getCartSubtotal();
+      if(subtotal <= 0 || subtotal >= 999) return null;
+      const gap = 999 - subtotal;
+      // Only items that actually cross the threshold, and cheapest first, so
+      // this is a real saving rather than a nudge to spend more than the
+      // shipping costs.
+      const items = PRODUCTS.filter(function(p){ return buyable(p) && p.price >= gap; })
+        .sort(function(a, b){ return a.price - b.price; }).slice(0, 3);
+      if(!items.length) return null;
+      return {
+        title: 'Free shipping is ' + formatINR(gap) + ' away',
+        sub: 'Orders over ' + formatINR(999) + ' ship free across India. Any of these would cover it.',
+        items: items
+      };
+    }
+  },
+  {
+    id: 'small-additions',
+    build: function(){
+      const items = PRODUCTS.filter(function(p){ return buyable(p) && p.price > 0 && p.price <= 500; })
+        .sort(function(a, b){ return (Number(b.reviews) || 0) - (Number(a.reviews) || 0); }).slice(0, 3);
+      if(items.length < 2) return null;
+      return {
+        title: 'Small things worth having',
+        sub: 'Under ' + formatINR(500) + ', and the pieces customers most often add at the last moment.',
+        items: items
+      };
+    }
+  },
+  {
+    id: 'bestsellers',
+    build: function(){
+      const items = PRODUCTS.filter(function(p){ return buyable(p) && p.badge === 'bestseller'; })
+        .sort(function(a, b){ return (Number(b.reviews) || 0) - (Number(a.reviews) || 0); }).slice(0, 3);
+      if(items.length < 2) return null;
+      return {
+        title: 'Most chosen this season',
+        sub: 'The pieces our customers come back for.',
+        items: items
+      };
+    }
+  },
+  {
+    id: 'care-note',
+    build: function(){
+      // No products at all. A wait spent entirely on selling reads as a wait
+      // spent selling; one card of genuine care guidance is what makes the
+      // rotation feel like a shop rather than a funnel.
+      const NOTES = {
+        lingam: 'Sphatik is natural quartz, so rinse it with plain water after abhishekam and dry it with a soft cloth. Avoid soap and direct sunlight for long periods — both dull the clarity over time.',
+        malas: 'A rudraksha mala should not be washed with detergent. Wipe it, let it dry away from direct heat, and oil it lightly once a month to stop the beads drying out and cracking.',
+        yantra: 'A copper yantra will darken as it oxidises — that is the metal behaving normally, not a defect. A paste of lemon and salt restores the shine whenever you want it back.',
+        idols: 'Brass and panchdhatu develop a patina with time. Many families keep it deliberately; if you prefer the original finish, a soft dry cloth weekly is enough to hold it.',
+        bracelets: 'Take a bead bracelet off before bathing or swimming. Elastic cords last far longer dry, and most breakages happen when the cord has been repeatedly soaked.',
+        books: 'Keep scripture on a raised shelf away from damp. If a book is used daily, a cloth cover is the traditional protection and genuinely doubles its life.',
+        samagri: 'Store samagri sealed and away from moisture. Camphor and loban in particular lose their potency quickly once air reaches them.'
+      };
+      const first = cart.map(function(l){ return getProduct(l.id); }).filter(Boolean)[0];
+      const cat = first && first.cat;
+      const text = (cat && NOTES[cat]) || null;
+      if(!text) return null;
+      return {
+        title: 'Looking after it',
+        sub: null,
+        note: text,
+        items: []
+      };
+    }
+  },
+  {
+    id: 'journal',
+    build: function(){
+      if(typeof BLOG_POSTS === 'undefined' || !BLOG_POSTS.length) return null;
+      const post = BLOG_POSTS[Math.floor(Math.random() * BLOG_POSTS.length)];
+      if(!post) return null;
+      return {
+        title: 'From the Journal',
+        sub: null,
+        note: '<strong>' + escapeHtml(post.title) + '</strong><br>' + escapeHtml((post.excerpt || '').slice(0, 220)),
+        noteIsHtml: true,
+        items: []
+      };
+    }
+  }
+];
+
+/* Picks a strategy that has something to say AND has not been used yet this
+   session. The user asked specifically that the same thing must not simply
+   reappear to fill time — so once every usable strategy has been shown, the
+   list resets while still excluding whichever one was on screen last. */
+function pickWaitStrategy(){
+  const built = WAIT_STRATEGIES.map(function(s){
+    let payload = null;
+    try{ payload = s.build(); }catch(e){ payload = null; }
+    return payload ? { id: s.id, payload: payload } : null;
+  }).filter(Boolean);
+
+  if(!built.length) return null;
+
+  const seen = waitSeenStrategies();
+  const last = waitState.shown[waitState.shown.length - 1];
+  let fresh = built.filter(function(b){ return seen.indexOf(b.id) === -1; });
+  if(!fresh.length) fresh = built.filter(function(b){ return b.id !== last; });
+  if(!fresh.length) fresh = built;
+
+  const chosen = fresh[Math.floor(Math.random() * fresh.length)];
+  waitMarkStrategySeen(chosen.id);
+  waitState.shown.push(chosen.id);
+  return chosen;
+}
+
+function waitItemHTML(p){
+  const id = escapeHtml(String(p.id));
+  return '<div class="wait-item" data-wait-item="' + id + '">' +
+    '<div class="thumb" style="' + mediaStyle(p.cat, 0) + '">' + productMediaSVG(p.cat) + '</div>' +
+    '<div class="nm">' + escapeHtml(p.name) + '</div>' +
+    '<div class="pr">' + formatINR(p.price) + '</div>' +
+    '<button class="btn btn-outline btn-sm" onclick="waitAddSuggestion(\'' + id + '\')">Add</button>' +
+  '</div>';
+}
+
+function renderWaitSuggestion(){
+  const body = qs('#waitBody');
+  if(!body) return;
+  const chosen = pickWaitStrategy();
+  if(!chosen){
+    body.innerHTML = '<div class="wait-note-card">Hold tight — we are opening a secure connection to complete your order. Your cart is saved exactly as it is.</div>';
+    return;
+  }
+  const s = chosen.payload;
+  let html = '<p class="wait-suggest-title">' + escapeHtml(s.title) + '</p>';
+  if(s.sub) html += '<p class="wait-suggest-sub">' + escapeHtml(s.sub) + '</p>';
+  if(s.note) html += '<div class="wait-note-card">' + (s.noteIsHtml ? s.note : escapeHtml(s.note)) + '</div>';
+  if(s.items && s.items.length){
+    html += '<div class="wait-items">' + s.items.map(waitItemHTML).join('') + '</div>';
+    html += '<div class="wait-actions"><button class="btn btn-ghost btn-sm" onclick="renderWaitSuggestion()">Show me something else</button></div>';
+  }
+  body.innerHTML = html;
+}
+
+/* Adding from the waiting screen is a plain local cart write, which is exactly
+   why it can be offered at all while the server is still cold. The card
+   confirms in place rather than re-rendering the panel, so the rotation does
+   not jump under their finger the moment they tap. */
+function waitAddSuggestion(id){
+  const p = getProduct(id);
+  if(!p) return;
+  addToCart(String(id), 1);
+  const card = qs('[data-wait-item="' + id + '"]');
+  if(card){
+    const btn = card.querySelector('button');
+    if(btn) btn.outerHTML = '<div class="added"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>Added</div>';
+  }
+  const note = qs('#waitNote');
+  if(note) note.textContent = 'Added — it will be included when your order goes through.';
+}
+
+function setWaitStatus(text){
+  const el = qs('#waitStatus');
+  if(el) el.textContent = text;
+}
+
+function cancelWaitingExperience(){
+  waitState.cancelled = true;
+  closeWaitingExperience();
+  toast('No problem — your cart is saved. Try again whenever you are ready.');
+}
+
+function closeWaitingExperience(){
+  waitState.open = false;
+  if(waitState.rotateTimer){ clearInterval(waitState.rotateTimer); waitState.rotateTimer = null; }
+  const m = qs('#waitModal');
+  if(m) m.classList.remove('show');
+  updateBodyScrollLock();
+}
+
+function openWaitingExperience(context){
+  context = context || {};
+  // Defence in depth alongside the intentInFlight guard: reopening without
+   // clearing would abandon the previous interval, which then keeps re-rendering
+  // suggestions into a modal nobody is looking at for the rest of the session.
+  if(waitState.rotateTimer){ clearInterval(waitState.rotateTimer); waitState.rotateTimer = null; }
+  waitState.open = true;
+  waitState.cancelled = false;
+  waitState.shown = [];
+
+  const title = qs('#waitTitle');
+  if(title) title.textContent = context.title || 'Preparing your secure checkout';
+  setWaitStatus(context.status || 'Connecting to our payment service…');
+  const note = qs('#waitNote');
+  if(note) note.textContent = context.note || 'Your cart is saved. Nothing has been charged.';
+
+  renderWaitSuggestion();
+  const m = qs('#waitModal');
+  if(m) m.classList.add('show');
+  updateBodyScrollLock();
+
+  // Rotate only if they are still here. Twelve seconds is long enough to read
+   // a card and short enough that a 45-second boot shows three different things
+  // rather than one thing three times.
+  waitState.rotateTimer = setInterval(function(){
+    if(!waitState.open) return;
+    renderWaitSuggestion();
+  }, 12000);
+}
+
+/* THE GATE. Runs `intent` immediately when the backend is already up — which
+   is the common case and must stay free of any added delay — and otherwise
+   holds it behind the waiting experience until the backend AND the database
+   both answer, then runs it.
+
+   Returns whatever the intent returns, or undefined if the customer cancelled
+   or the backend never came up. Callers must treat undefined as "did not
+   happen" and leave the cart untouched. */
+/* Exactly one money action may be in flight at a time.
+
+   THE BUG THIS FIXES: "Place Order & Pay" is a plain onclick with no guard of
+   its own. That was safe before, because placeOrder synchronously hid the
+   checkout layout and showed the processing pane, so the button was gone within
+   a frame. Introducing the wait moved that swap AFTER a pause of up to two
+   minutes, leaving the button live and clickable the entire time. Two taps —
+   which is exactly what an impatient shopper does when nothing appears to be
+   happening — meant two waiting screens and, on wake, TWO ORDERS AND TWO
+   CHARGES.
+
+   The guard lives here rather than in each caller so it covers the bookings
+   too, and so any money path added later inherits it by construction. */
+let intentInFlight = false;
+
+async function withBackendReady(intent, context){
+  context = context || {};
+
+  if(intentInFlight){
+    toast('That is already in progress — one moment.', 'err');
+    return undefined;
+  }
+  intentInFlight = true;
+
+  // A disabled button is the honest signal that the tap registered. Restored in
+  // the finally below on every path, including a thrown intent.
+  const busyBtn = context.busyButton ? qs(context.busyButton) : null;
+  const busyLabel = busyBtn ? busyBtn.textContent : null;
+  if(busyBtn){ busyBtn.disabled = true; }
+
+  try{
+    return await runWithBackendReady(intent, context);
+  } finally {
+    intentInFlight = false;
+    if(busyBtn){ busyBtn.disabled = false; if(busyLabel !== null) busyBtn.textContent = busyLabel; }
+  }
+}
+
+async function runWithBackendReady(intent, context){
+  if(isBackendKnownAwake()) return intent();
+
+  // One fast probe before showing anything. An instance that is merely between
+  // requests answers in well under a second, and flashing a waiting screen at
+  // someone who never needed to wait is its own kind of broken.
+  if(await probeBackend()) return intent();
+
+  openWaitingExperience(context);
+  const started = Date.now();
+
+  const ready = await ensureBackendAwake({
+    maxMs: WAIT_MAX_MS,
+    cancelled: function(){ return waitState.cancelled; },
+    onTick: function(attempt){
+      const secs = Math.round((Date.now() - started) / 1000);
+      if(secs < 12) setWaitStatus('Connecting to our payment service…');
+      else if(secs < 30) setWaitStatus('Our server is waking up — this happens on the first order after a quiet spell.');
+      else setWaitStatus('Almost there. Thank you for your patience — we are nearly connected.');
+    }
+  });
+
+  if(waitState.cancelled){ closeWaitingExperience(); return undefined; }
+  closeWaitingExperience();
+
+  if(!ready){
+    // Honest, and non-destructive: nothing was charged, nothing was lost, and
+    // the cart still holds everything including whatever they added while
+    // waiting.
+    toast('We could not reach our server just now. Nothing has been charged and your cart is saved — please try again in a minute.', 'err');
+    return undefined;
+  }
+
+  // The backend and the database are both confirmed up. Continue to exactly
+   // where they were going, with anything added during the wait included.
+  return intent();
+}
+
+/* ---------------------------------------------------------------------------
+   The awakening screen (the markup for it is at the top of <body>).
+   ---------------------------------------------------------------------------
+   Two bounds, and the reason for each:
+
+   AWAKEN_MIN_MS — a floor. Below roughly this, an overlay appearing and
+     vanishing reads as a glitch rather than as a deliberate moment. With the
+     catalog snapshot in place the page is usually ready in ~300ms, so without
+     a floor the brand mark would flash and disappear.
+
+   AWAKEN_MAX_MS — a ceiling, set to the four seconds asked for. This is the
+     longest anyone is held behind the mark, no matter what is still loading.
+     It is a CEILING and not a fixed duration on purpose: a splash that always
+     runs its full length would make every visit slower than the storefront
+     actually is, delay Largest Contentful Paint on every page, and cost
+     conversions on exactly the mobile connections this market runs on. The
+     screen therefore lifts the moment the page behind it is genuinely ready.
+     To make it a flat four seconds instead, set AWAKEN_MIN_MS to 4000.
+
+   The timer starts at document parse (window.__BOOT__.t0), not when this
+   script runs, so the floor measures what the visitor actually experienced. */
+const AWAKEN_MIN_MS = 900;
+const AWAKEN_MAX_MS = 4000;
+let awakenHidden = false;
+
+function hideAwakeningScreen(){
+  if(awakenHidden) return;
+  awakenHidden = true;
+  const el = qs('#awakenScreen');
+  if(!el) return;
+  el.classList.add('awaken-done');
+  // Removed rather than left hidden: it is fixed and full-viewport, and a
+  // stale overlay that ever regains pointer events would swallow every click
+  // on the site. 700ms clears the 550ms fade with room to spare.
+  setTimeout(function(){ if(el.parentNode) el.parentNode.removeChild(el); }, 700);
+}
+
+/* Called once the route has rendered. Waits out the remainder of the floor if
+   the page beat it, and is force-dismissed by the ceiling below regardless. */
+function releaseAwakeningScreen(){
+  const started = (window.__BOOT__ && window.__BOOT__.t0) || Date.now();
+  const elapsed = Date.now() - started;
+  if(elapsed >= AWAKEN_MIN_MS) hideAwakeningScreen();
+  else setTimeout(hideAwakeningScreen, AWAKEN_MIN_MS - elapsed);
+}
+
+/* The ceiling, armed immediately. This is the safety net that matters: if
+   init() throws before it reaches releaseAwakeningScreen — a syntax error in a
+   later edit, a browser that fails one of the APIs above — the visitor must
+   still get their site. Never let a loading screen be able to become the site. */
+setTimeout(hideAwakeningScreen, AWAKEN_MAX_MS);
+
+/* Second and third lines of defence, on the same principle. If anything in the
+   boot path fails, the overlay comes off at once rather than holding the
+   visitor for the full ceiling.
+
+   BOTH listeners are needed: init() is an async function, so a throw inside it
+   surfaces as an unhandled promise REJECTION and never fires an error event.
+   Registering only the first would have left exactly the failure this guards
+   against — a boot that dies quietly behind a full-screen overlay — uncovered. */
+window.addEventListener('error', function(){ hideAwakeningScreen(); });
+window.addEventListener('unhandledrejection', function(){ hideAwakeningScreen(); });
+
+/* Only speaks when the wait is long enough to be worth explaining. Silence for
+   the first two seconds is correct — narrating a wait that is not happening
+   invents a problem the visitor did not have. */
+setTimeout(function(){
+  const sub = qs('#awakenSub');
+  if(sub && !awakenHidden) sub.textContent = 'Waking the server — first visit after a quiet spell';
+}, 2000);
+
+/* Product-card skeletons. Deliberately the same box model as a real card so
+   the grid does not reflow when the real ones replace them. */
+function skeletonCardsHTML(n){
+  let html = '';
+  for(let i = 0; i < n; i++){
+    html += '<div class="sk-card" aria-hidden="true">' +
+      '<div class="sk sk-media"></div>' +
+      '<div class="sk-body">' +
+        '<div class="sk sk-line w40"></div>' +
+        '<div class="sk sk-line w85"></div>' +
+        '<div class="sk sk-line w60"></div>' +
+      '</div></div>';
+  }
+  return html;
+}
+
+/* The category rail is the one grid that does not go through renderGridInto,
+   so it needs painting explicitly. */
+function paintCatalogSkeletons(){
+  const grid = qs('#catGrid');
+  if(grid && !grid.innerHTML.trim()){
+    let html = '';
+    for(let i = 0; i < 7; i++) html += '<div class="sk-cat" aria-hidden="true"><div class="sk sk-ring"></div><div class="sk sk-line w60"></div></div>';
+    grid.innerHTML = html;
+    grid.dataset.state = 'skeleton';
+  }
+}
+
+/* Shown when a shared product link arrives before any catalog does. The
+   alternative — bouncing the visitor to /shop with "that product could not be
+   found" — is both wrong and precisely the experience this work removes. */
+function paintProductSkeleton(){
+  try{
+    const main = qs('#pdMainImage');
+    if(main) main.innerHTML = '<div class="sk" style="width:100%;height:100%;border-radius:inherit;"></div>';
+    const thumbs = qs('#pdThumbs');
+    if(thumbs) thumbs.innerHTML = '<div class="sk" style="width:72px;height:72px;"></div><div class="sk" style="width:72px;height:72px;"></div><div class="sk" style="width:72px;height:72px;"></div>';
+    const info = qs('#pdInfo');
+    if(info) info.innerHTML =
+      '<div class="sk sk-line w40" style="height:13px;margin-bottom:16px;"></div>' +
+      '<div class="sk sk-line w85" style="height:30px;margin-bottom:14px;"></div>' +
+      '<div class="sk sk-line w60" style="height:13px;margin-bottom:22px;"></div>' +
+      '<div class="sk sk-line w40" style="height:26px;margin-bottom:22px;"></div>' +
+      '<div class="sk sk-line w85" style="margin-bottom:9px;"></div>' +
+      '<div class="sk sk-line w85" style="margin-bottom:9px;"></div>' +
+      '<div class="sk sk-line w60"></div>';
+  }catch(e){ /* cosmetic only */ }
+}
+
+/* ---------------------------------------------------------------------------
+   "The server is waking up" notice.
+   ---------------------------------------------------------------------------
+   Driven from apiFetch, so it appears when — and only when — something is
+   genuinely waiting on the API. Browsing never triggers it, because browsing
+   is served from the catalog snapshot; what does trigger it is add-to-cart,
+   login and checkout, which cannot be served from anywhere else.
+
+   The escalation matters. Silence past a few seconds reads as breakage, and a
+   spinner that never resolves reads as worse. Saying what is actually
+   happening, once it has been long enough to be worth saying, reads as a site
+   that knows what it is doing. */
+let apiWaitDepth = 0;
+let wakingTimers = [];
+
+function showWakingNotice(text){
+  let el = qs('#wakingNotice');
+  if(!el){
+    el = document.createElement('div');
+    el.id = 'wakingNotice';
+    el.className = 'waking';
+    // polite, not assertive: this is reassurance, not an alert, and it must
+    // not interrupt whatever a screen-reader user is currently hearing.
+    el.setAttribute('role', 'status');
+    el.setAttribute('aria-live', 'polite');
+    document.body.appendChild(el);
+  }
+  el.innerHTML = '<span class="dot"></span><span></span>';
+  el.querySelector('span:last-child').textContent = text;
+}
+
+function hideWakingNotice(){
+  const el = qs('#wakingNotice');
+  if(el && el.parentNode) el.parentNode.removeChild(el);
+}
+
+function beginApiWait(){
+  apiWaitDepth++;
+  if(wakingTimers.length) return;
+  wakingTimers.push(
+    setTimeout(function(){ showWakingNotice('Just a moment — fetching the latest details…'); }, 4000),
+    setTimeout(function(){ showWakingNotice('Our server is waking up. This happens on the first visit after a quiet spell and takes a few seconds.'); }, 15000)
+  );
+}
+
+function endApiWait(){
+  apiWaitDepth = Math.max(0, apiWaitDepth - 1);
+  if(apiWaitDepth > 0) return;
+  wakingTimers.forEach(clearTimeout);
+  wakingTimers = [];
+  hideWakingNotice();
+}
+
+/* True when this URL is one of the four emailed links that must be handled
+   before normal routing. Checked synchronously and cheaply so the common case —
+   an ordinary visitor with no ?token= — routes immediately, while an emailed
+   link still takes the slower path that waits for listeners to be wired. */
+function isEmailActionLink(){
+  try{
+    if(!new URLSearchParams(location.search || '').get('token')) return false;
+    const path = (location.pathname || '').replace(/\/+$/, '');
+    return ['/verify-email', '/newsletter/confirm', '/unsubscribe', '/reset-password'].indexOf(path) > -1;
+  }catch(e){ return false; }
+}
+
+/* Accepts /product/slug (the present) and #product/slug (bookmarks, and links
+   in order emails already sitting in customers' inboxes). A legacy fragment is
+   honoured and then rewritten to its path form with replaceState, so the URL
+   becomes canonical without adding a history entry the Back button trips over. */
+function routeAndRenderNow(){
+  const parsed = routeFromLocation();
+  applyQueryFilters();
+  navigateTo(parsed.route || 'home', { silent: true, replace: parsed.fromHash });
   updateCartUI();
   updateWishUI();
+  // Called unconditionally, even with no catalog yet: renderGridInto paints
+  // skeletons rather than "No products found" while catalogSource is still
+  // null, so guarding here would leave the grids blank instead of loading.
   renderFeaturedGrid();
   renderDealGrid();
+  renderMegaMenuPicks();
+  renderPujaShowcase();
+  refreshReveal();
+
+  // The page behind the awakening screen is now real. Everything still
+  // outstanding (the live catalog, the session, categories) refreshes in place
+  // without the visitor waiting on it, so there is nothing left to hold them for.
+  releaseAwakeningScreen();
+}
+
+/* Everything that needs the API. Deliberately NOT awaited by init(): by the
+   time these resolve the visitor has been reading a fully rendered page for
+   some time, and each one refreshes its own corner when it lands.
+
+   background: true marks these as nobody-is-waiting requests — it suppresses
+   the "waking up" notice (a shopper browsing the snapshot must not be told to
+   wait for something they are not waiting for) and buys a longer timeout,
+   since there is no user to keep informed. */
+function bootLiveData(){
+  // Anything the visitor did on a previous visit while the backend was asleep
+  // is delivered as soon as it answers. Costs nothing when the queue is empty.
+  if(outboxCount()) scheduleOutboxFlush(1200);
+  loadCatalog().then(function(changed){ if(changed) refreshCatalogViews(); });
+  loadTopCategories();
+  loadBookingServices();
+  loadCurrentUser();
+  checkSiteVersion();
+}
+
+async function init(){
+  // --- 1. Local state. No network at all: these read localStorage and resolve
+  //        in the same tick on the real site. ---
+  await Promise.all([loadCart(), loadWishlist(), loadBlogPosts(), loadOrders()]);
+
+  // --- 2. The catalog, from the edge snapshot or this browser's cache. Still
+  //        no API call. ~50ms, and it is what makes the next step meaningful. ---
+  const source = await hydrateCatalogFromCache();
+  if(!source) paintCatalogSkeletons();
+
+  // --- 3. ROUTE AND RENDER. This used to be the last thing init() did. ---
+  const emailLink = isEmailActionLink();
+  if(!emailLink) routeAndRenderNow();
+
+  // --- 4. Wire up the interactive parts. ---
   updateCountdown();
   setInterval(updateCountdown, 1000);
   updateTestiTrack();
@@ -7006,6 +8752,10 @@ async function init(){
   window.addEventListener('resize', debounce(updateTestiTrack, 200));
   document.addEventListener('keydown', function(e){
     if(e.key === 'Escape'){
+      // Routed through cancelWaitingExperience, not closeModal: the waiting
+      // screen owns a pending intent, and hiding the box without cancelling it
+      // would leave an order firing later with nothing on screen to explain it.
+      if(waitState.open){ cancelWaitingExperience(); return; }
       closeAllDrawers();
       closeModal('qvModal');
       closeModal('acctModal');
@@ -7014,25 +8764,21 @@ async function init(){
     }
   });
 
-  // Accepts /product/slug (the present) and #product/slug (bookmarks, and links
-  // in order emails already sitting in customers' inboxes). A legacy fragment is
-  // honoured and then rewritten to its path form with replaceState, so the URL
-  // becomes canonical without adding a history entry the Back button trips over.
-  // AUTH-03 / AUTH-04 — handle the two emailed links BEFORE normal routing, so
-  // arriving from an inbox does the thing the email promised instead of landing
-  // on a 404-ish home page. Both strip their token from the URL afterwards.
-  if(await handlePasswordResetLink()) { refreshReveal(); return; }
-  if(await handleNewsletterConfirmLink()) { refreshReveal(); return; }
-  if(await handleUnsubscribeLink()) { refreshReveal(); return; }
-  await handleEmailVerificationLink();
+  // --- 5. Emailed links (AUTH-03 / AUTH-04). These take over the page, so
+  //        they run only when the URL actually carries one, and only here —
+  //        after the listeners above, since an early return skips the rest.
+  //        Both strip their token from the URL afterwards. ---
+  if(emailLink){
+    if(await handlePasswordResetLink()) { refreshReveal(); bootLiveData(); return; }
+    if(await handleNewsletterConfirmLink()) { refreshReveal(); bootLiveData(); return; }
+    if(await handleUnsubscribeLink()) { refreshReveal(); bootLiveData(); return; }
+    await handleEmailVerificationLink();
+    routeAndRenderNow();
+  }
 
-  const parsed = routeFromLocation();
-  applyQueryFilters();
-  navigateTo(parsed.route || 'home', { silent: true, replace: parsed.fromHash });
-  refreshReveal();
-}
-
-/* ---------------------------------------------------------------------------
+  // --- 6. The live API, in the background. ---
+  bootLiveData();
+}/* ---------------------------------------------------------------------------
    Nested-control click guard.
 
    Product cards are real <a href> elements so that crawlers can follow them and

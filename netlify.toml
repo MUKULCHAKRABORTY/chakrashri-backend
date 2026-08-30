@@ -12,7 +12,22 @@
   # deploy. A sitemap written by hand goes stale the first time a product is
   # added, which is worse than not having one: it tells Google about URLs that
   # no longer exist and omits the ones that do.
-  command = "node scripts/generate-sitemap.js"
+  #
+  # generate-catalog-snapshot.js writes catalog.json, the storefront's
+  # build-time catalog. index.html renders its first paint from that file rather
+  # than waiting on the API, which sleeps on Render's free plan and takes 30-60
+  # seconds to wake — see the COLD START comment blocks in index.html. It runs
+  # FIRST because it wakes the API by polling /api/health, which the sitemap
+  # generator then gets to use for free instead of timing out against a cold
+  # instance. Both fail soft: neither can block a deploy.
+  #
+  # generate-product-pages.js writes product/<slug>/index.html for every product,
+  # with that product's real title, description, image and Product JSON-LD baked
+  # into the head. WhatsApp, Facebook and every other link-preview crawler read
+  # the head and do NOT run JavaScript, so without this every shared product link
+  # showed the generic site title and no picture. It runs LAST because it reads
+  # the catalog.json the first command writes.
+  command = "node scripts/generate-catalog-snapshot.js && node scripts/generate-sitemap.js && node scripts/generate-product-pages.js"
 
 [build.environment]
   NODE_VERSION = "20"

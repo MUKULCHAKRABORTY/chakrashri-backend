@@ -1,0 +1,71 @@
+# Keeps the PUBLISHED catalog snapshot in step with the live catalog.
+#
+# WHY THIS EXISTS
+# index.html renders its first paint from catalog.json, which Netlify writes at
+# build time. A returning visitor also carries their own copy in localStorage,
+# refreshed on every visit, so they always see the last data the site actually
+# served them. A FIRST-TIME visitor has neither — all they get is whatever was
+# published on the last deploy. On a site that deploys rarely, that snapshot can
+# be weeks behind: a changed price, a sold-out item, a product that no longer
+# exists.
+#
+# This job compares the live catalog against the one currently being served and
+# asks Netlify to rebuild ONLY when they actually differ. The rebuild re-runs
+# the snapshot, the sitemap and every prerendered product page together.
+#
+# COST, AND WHY THE COMPARISON IS THE WHOLE POINT
+# Netlify's free plan allows 300 build minutes a month. Rebuilding on a timer
+# would exhaust that and then stop deploying anything at all — including real
+# code changes — which is a far worse failure than a stale price. A catalog
+# changes when someone edits a product: a handful of times a week. So this runs
+# often and builds rarely.
+#
+# This workflow itself is cheap: four runs a day, each a few seconds of network
+# wait, well inside the 2,000-minute allowance on a private repository. It is
+# nothing like the every-10-minutes keep-alive workflow that had to be disabled.
+#
+# SETUP (optional — without the secret this job does nothing and passes)
+#   1. Netlify -> Site configuration -> Build & deploy -> Build hooks -> Add
+#      build hook. Name it "catalog-refresh", branch main. Copy the URL.
+#   2. GitHub -> Settings -> Secrets and variables -> Actions -> New repository
+#      secret, named NETLIFY_BUILD_HOOK_URL, pasting that URL.
+#
+# The hook URL is a secret because anyone holding it can trigger builds and
+# burn the monthly allowance. It is not a data-access credential.
+name: Refresh published catalog
+
+on:
+  schedule:
+    # Every six hours. Frequent enough that a price edit reaches new visitors
+    # the same day; rare enough to be invisible in the Actions budget.
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+# Never let two of these overlap — both would see the same difference and
+# trigger two builds for one change.
+concurrency:
+  group: refresh-catalog
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    name: Rebuild only if the catalog changed
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      # The script uses only Node built-ins and global fetch, so nothing is
+      # installed. Keeping it dependency-free is deliberate: this job runs
+      # unattended and a dependency resolution failure would silently stop the
+      # storefront's data from ever refreshing.
+      - name: Compare live catalog against what is published
+        env:
+          NETLIFY_BUILD_HOOK_URL: ${{ secrets.NETLIFY_BUILD_HOOK_URL }}
+          API_BASE: https://chakrashri-api.onrender.com
+          SITE_ORIGIN: https://www.chakrashri.com
+        run: node scripts/publish-catalog-if-changed.js
