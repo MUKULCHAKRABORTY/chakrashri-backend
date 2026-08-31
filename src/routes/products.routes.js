@@ -35,14 +35,14 @@ const reviewLimiter = rateLimit({
 // so a future internal column (cost price, supplier, margin) is not published
 // to every visitor the moment it is added (HYG-04).
 const PUBLIC_PRODUCT_COLUMNS = `
-  p.id, p.sku, p.name, p.slug, p.category, p.price_paise, p.mrp_paise, p.material,
+  p.id, p.sku, p.name, p.slug, p.category, p.subcategory, p.price_paise, p.mrp_paise, p.material,
   p.short_desc, p.long_desc, p.badge, p.rating, p.review_count, p.stock_qty,
   p.hsn_code, p.gst_rate, p.created_at
 `;
 
 // ---------- Public: list products (with pagination + filters) ----------
 router.get('/', asyncHandler(async (req, res) => {
-  const { category, search } = req.query;
+  const { category, subcategory, search } = req.query;
   // Parse and clamp explicitly — req.query values are always strings, and an
   // unclamped limit (e.g. ?limit=999999999) would let any client force a
   // full-table scan/return, a cheap DoS vector against the DB.
@@ -55,6 +55,13 @@ router.get('/', asyncHandler(async (req, res) => {
   if (category) {
     params.push(normaliseTerm(category));
     conditions.push(`p.category = $${params.length}`);
+  }
+  // A subcategory is only ever meaningful under a category, but it is accepted
+  // on its own too: an admin browsing "everything tagged scripture" is a real
+  // need, and refusing it would be arbitrary. The composite index serves both.
+  if (subcategory) {
+    params.push(normaliseTerm(subcategory));
+    conditions.push(`p.subcategory = $${params.length}`);
   }
   if (search) {
     // HYG-07 — still ILIKE, but now backed by the pg_trgm GIN indexes added in
@@ -96,6 +103,35 @@ router.get('/', asyncHandler(async (req, res) => {
 // sold (paid orders only — pending/failed carts must not influence it), with
 // product count as the tie-breaker so a brand-new category with no sales yet
 // still surfaces above an empty one.
+/* Subcategories that ACTUALLY have products, optionally within one category.
+
+   Derived, never stored — the same law as /meta/top-categories above. A
+   subcategory exists because products use it and stops existing when none do,
+   so there is no orphan list to maintain and no way for the menu to advertise
+   a subcategory that would open an empty grid. */
+router.get('/meta/subcategories', asyncHandler(async (req, res) => {
+  const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 50));
+  const category = normaliseTerm(req.query.category);
+  const params = [];
+  let categoryFilter = '';
+  if (category) {
+    params.push(category);
+    categoryFilter = ` AND p.category = $${params.length}`;
+  }
+  params.push(limit);
+  const { rows } = await db.query(
+    `SELECT p.category, p.subcategory, COUNT(DISTINCT p.id)::int AS product_count
+       FROM products p
+      WHERE p.is_active = true
+        AND p.subcategory IS NOT NULL AND p.subcategory <> ''${categoryFilter}
+      GROUP BY p.category, p.subcategory
+      ORDER BY p.category ASC, product_count DESC, p.subcategory ASC
+      LIMIT $${params.length}`,
+    params
+  );
+  res.json({ subcategories: rows });
+}));
+
 router.get('/meta/top-categories', asyncHandler(async (req, res) => {
   const limit = Math.min(20, Math.max(1, parseInt(req.query.limit, 10) || 7));
   const { rows } = await db.query(
@@ -205,17 +241,17 @@ router.post(
   asyncHandler(async (req, res) => {
     const {
       sku, name, slug, category, price_paise, mrp_paise, material,
-      short_desc, long_desc, badge, stock_qty = 0, hsn_code, gst_rate = 3
+      short_desc, long_desc, badge, stock_qty = 0, hsn_code, gst_rate = 3, subcategory = null
     } = req.body;
 
     try {
       const result = await db.query(
         `INSERT INTO products
-          (sku, name, slug, category, price_paise, mrp_paise, material, short_desc, long_desc,
+          (sku, name, slug, category, subcategory, price_paise, mrp_paise, material, short_desc, long_desc,
            badge, stock_qty, hsn_code, gst_rate)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
          RETURNING *`,
-        [sku, name, slug, normaliseTerm(category), price_paise, mrp_paise, material, short_desc, long_desc,
+        [sku, name, slug, normaliseTerm(category), normaliseTerm(subcategory), price_paise, mrp_paise, material, short_desc, long_desc,
           normaliseTerm(badge), stock_qty, hsn_code, gst_rate]
       );
       await db.query(
@@ -234,7 +270,11 @@ router.post(
 // ---------- Admin: update product ----------
 router.put('/:id', requireAuth, requireCapability(C.CATALOG_WRITE), asyncHandler(async (req, res) => {
   const allowedFields = [
-    'name', 'category', 'price_paise', 'mrp_paise', 'material', 'short_desc',
+    // 'subcategory' sits next to 'category' on purpose. A field missing from
+    // this list is not rejected — it is silently dropped, so the admin saves,
+    // sees no error, and the value never lands. Anything added to the product
+    // form has to be added here in the same change.
+    'name', 'category', 'subcategory', 'price_paise', 'mrp_paise', 'material', 'short_desc',
     'long_desc', 'badge', 'stock_qty', 'is_active', 'hsn_code', 'gst_rate'
   ];
 
@@ -307,6 +347,10 @@ router.put('/:id', requireAuth, requireCapability(C.CATALOG_WRITE), asyncHandler
   // Canonical lowercase storage so "Malas"/"malas"/" MALAS " can never become
   // three separate categories in the shop filter.
   if (req.body.category !== undefined) req.body.category = normaliseTerm(req.body.category);
+  // Identical treatment to category, deliberately adjacent to it: these two
+  // must never drift apart, and the cheapest guarantee of that is that anyone
+  // editing one sees the other.
+  if (req.body.subcategory !== undefined) req.body.subcategory = normaliseTerm(req.body.subcategory);
   if (req.body.badge !== undefined) req.body.badge = normaliseTerm(req.body.badge);
 
   allowedFields.forEach((field) => {

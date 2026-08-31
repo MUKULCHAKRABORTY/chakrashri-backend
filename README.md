@@ -61,6 +61,288 @@ npm run check:storefront
 Reports what a visitor would actually get. Add `npm run check:share` after a
 deploy to confirm the live site serves it. Both are read-only.
 
+## Map of the cold-start and money-safety work — where everything lives
+
+Everything below was built so the storefront behaves correctly whether the
+backend is **warm** (answers immediately) or **cold** (Render's free instance
+takes 30–60s to boot). Each row says what the problem was, what now happens, and
+the exact function to open.
+
+### 1. The customer never waits on a blank page
+
+| What | Where |
+|---|---|
+| Welcome screen, two-layer gold wordmark | `index.html` → `#awakenScreen` markup **(~line 1908)** |
+| Catalog snapshot → localStorage → live API, in that order | `readBootSnapshot`, `hydrateCatalogFromCache`, `loadCatalog` |
+| Prerendered per-product pages for shared links | `scripts/generate-product-pages.js` |
+| Build-time catalog snapshot | `scripts/generate-catalog-snapshot.js` → `catalog.json` |
+
+The wordmark is built in **two stacked layers** and must stay that way: a
+`transform` on a letter breaks the parent's `background-clip:text` and the whole
+phrase renders invisible. Tested — every animation primitive does it.
+
+### 2. The wait itself is paced, and ends honestly
+
+| Phase | Window | Where |
+|---|---|---|
+| **Suggest** — one relevant suggestion | 0–20s | `WAIT_STRATEGIES` **(~line 9030)** |
+| **Progress** — step ladder + easing bar | 20–60s | `renderWaitProgressPanel` **(~line 9347)** |
+| **Overrun** — "taking longer than usual" | 60s+ | same function, `phase === 'overrun'` |
+| **Failure** — apology, what's safe, retry | gave up | `renderWaitFailurePanel` **(~line 9406)** |
+
+- Ladder wording per audience: `WAIT_FLOW` **(~line 8900)** — a booking never
+  mentions carts, items or payment sessions.
+- Bar curve: `waitBarPercent` **(~line 8949)** — never reaches 100% while waiting.
+- Retry re-enters the gate: `retryWaitIntent` **(~line 9455)**.
+- The gate itself: `runWithBackendReady` **(~line 9731)**.
+
+### 3. Money is never quoted wrongly — warm or cold
+
+| Problem | Fix | Where |
+|---|---|---|
+| Checkout showed **no GST** — every order under-quoted ~3% | totals mirror the server exactly | `calculateCartTotals` **(~line 5835)** |
+| Checkout total went **stale** when the cart changed (₹903 shown, ₹1,340 charged) | every mutation refreshes the page on screen | `updateCartUI` **(~line 5991)** → `refreshCartAndCheckoutViews` **(~line 7266)** |
+| Server price handed **straight to Razorpay** unchecked | compare, then ask | `confirmAmountChange` **(~line 9543)** |
+| Coupon discount went stale as the cart changed | debounced re-validation | `revalidateCouponNow` **(~line 7227)** |
+| Quantity had no ceiling, and `NaN` poisoned the total | one rule for every path | `normalizeCartQty` **(~line 5625)** |
+| Stock changed during the wait; cart still held the old figure | reconcile on wake | `reconcileCartWithCatalog` **(~line 5596)** |
+
+**The server is always the authority.** The client sends
+`{productId, variantId, quantity}` and a coupon **code** — never an amount.
+Everything above exists so the number on screen matches what will be charged,
+never to decide it.
+
+### 4. Combination defects — the ones that only appear where two fixes meet
+
+Each of these was *created* by a fix above and is invisible from the change that
+caused it. All were measured in a real browser, not reasoned about.
+
+| Defect | Where it lives now |
+|---|---|
+| A price question whose modal was closed elsewhere **never settled** — the payment path hung forever and the customer could not order again | `askInWaitModal` **(~line 9498)** registers `waitState.askResolve`; every close route answers it |
+| A background refresh **destroyed the order-confirmation screen** the instant an order succeeded | `checkoutIsShowingResult` **(~line 7294)** |
+| The same refresh could replace the **processing pane** mid-payment | same guard |
+| The wake refresh re-learned stock but never re-checked the cart | `reconcileCartWithCatalog` **(~line 5596)** |
+| The wake refresh **blocked the intent** — `loadCatalog()` is a background fetch with a 75s timeout, so a customer who had already waited out a cold start could wait again | raced against `WAKE_REFRESH_MAX_MS` (3.5s) in `runWithBackendReady` |
+| Reconciling shrank the cart but left the **coupon priced for the old one** | `reconcileCartWithCatalog` calls `revalidateCouponSoon()` |
+| Stock was capped **per line**, so two variant lines of five passed against eight in stock | `qtyHeldByOtherLines` + `normalizeCartQty(qty, product, heldElsewhere)` **(~line 5625)** |
+
+### 4a. What was checked and found already correct
+
+Not everything hunted turned out to be broken. These were tested and are sound —
+recorded so nobody re-opens them:
+
+| Checked | Result |
+|---|---|
+| Paise integrity across mixed carts | **exact** — `subtotal − discount + shipping + GST` sums back to the total |
+| A discount larger than the cart | clamped; the total floors at shipping and never goes negative |
+| Coupon injection from the client | impossible — only the **code** is sent, the server recomputes |
+| Variant products carrying separate stock | they do not in this catalog; the base `stockQty` is the only figure, so capping on it is correct |
+| `Infinity` as a quantity | collapses to **1**, not to all of stock — a nonsense input must never reserve the seller's inventory |
+
+### 4c. Variants — a variant is its own product
+
+`migrations/008_product_variants.sql` gives every variant its **own**
+`price_paise` (NULL = inherit the base) and its **own** `stock_qty`, and
+`utils/orders.js` checks each variant against its own figure. Everything the
+client does with money or stock has to follow that model or the two sides
+disagree.
+
+**The correction this pass made.** An earlier version of the stock ceiling keyed
+on the **product alone**, so a *Small* line and a *Large* line were made to
+compete for one pool — six of each was refused against a base figure of eight,
+even though the seller held six of each. That is the **opposite** failure to the
+one it was fixing, and the worse one commercially: it turns away orders that
+could be fulfilled.
+
+| Rule | Where |
+|---|---|
+| Lines compete only when **same product AND same variant** | `cartStockKey` + `qtyHeldByOtherLines` |
+| A variant is capped by **its own** `stock_qty` | `stockCeilingFor` |
+| Variant stock **unknown** → **no cap** (the server refuses precisely if it must) | `stockCeilingFor` returns `NaN` |
+| The product page is the only place a variant's stock is loaded, so it carries it onto the line | both `addToCart(id, pdQty, label, …, variantStock)` call sites |
+| A variant's own **price** drives subtotal *and* GST | `cartUnitPrice` → `calculateCartTotals` |
+| A variant line is **not** deleted because the base product shows sold out | `reconcileCartWithCatalog` |
+| A variant product is **never** offered by the waiting screen (no selector on a suggestion card) | `buyable` |
+
+Guessing a ceiling we do not have would cost the seller real sales; guessing too
+high only reaches a server that refuses precisely. So *unknown* means **no cap**,
+never zero — the same principle as the price guard.
+
+The differential fuzz already covers variant pricing: it assigns an independent
+unit price to every line, which is exactly what a variant line is.
+
+### 4b. The proof the money maths is right — differential fuzzing
+
+Hand-picked test cases prove a function works on the cases somebody thought of.
+`[fe-32]` instead runs the **real client function** against the **real server
+function** over thousands of generated carts, so the claim covers the input
+space rather than a shortlist. Neither function is reimplemented — both are
+lifted out of the files that ship (`index.html` and `src/utils/orders.js`).
+
+Each iteration randomises:
+
+| Dimension | Range |
+|---|---|
+| GST rate | 0%, 0.25%, 3%, 5%, 12%, 18%, 28% |
+| Unit price | ₹0.01 to ₹4,999.99, including sub-rupee values that expose float drift |
+| Lines per cart | 1–6, quantities 1–10 |
+| Free-shipping threshold | ₹0 / ₹500 / ₹999 / ₹1,500 / ₹1,999 — **including the exact boundary** |
+| Flat shipping | ₹0 / ₹49 / ₹79 / ₹99 / ₹120 |
+| Discount | ₹0, ₹1, 10%, 50%, exactly the cart, one paisa over, **three times the cart** |
+
+**Result: 25,000 carts, agreement to the paisa on every one.** Four invariants
+are asserted on every iteration too — the total is finite, never negative, the
+discount never exceeds the cart, and `subtotal − discount + shipping + GST`
+always sums back to the total.
+
+The generator is seeded, so a failure is reproducible rather than a flake. And
+the test has been shown to *fail*: rounding GST **per line** instead of once at
+the end — a one-paisa drift no human review would catch — is detected within
+6,000 iterations.
+
+**Warm and cold are proven equal.** A mixed cart totalled from the live catalog
+and the same cart totalled with the catalog blinded (every line resolving through
+`productFromCartLine`, exactly as during a boot) produce identical figures, with
+and without a coupon. That is what makes it safe to check out while the backend
+is still waking.
+
+**COD carries no divergent fee.** `codFee` is `0`, its row is hidden, and the
+server prices a COD order with the same `calculateOrderTotals` as a card order —
+so the two payment methods can never quote different numbers.
+
+### 4d. Future shapes — subcategories, new products, new stock
+
+Subcategories are not modelled in the database yet. The work here is that the
+day they arrive, nothing breaks *silently*.
+
+**Categories travel as a query parameter**, not a path segment, so a
+hierarchical slug never breaks routing. Verified in a browser that
+`books/scripture`, `books & gifts`, `books?x=1` and `माला` all URL-encode and
+round-trip back **byte-identical**.
+
+**Title-casing now works per hierarchy segment.** `books/scripture` used to
+render `Books/scripture` — one "word" to a whitespace splitter. Segments are
+cased independently and rejoined with the separator untouched, so the stored
+value is never rewritten and URLs, JSON-LD and the sitemap need learn no new
+format.
+
+There are **three** title-casers and **two** `catLabel`s:
+
+| Copy | File |
+|---|---|
+| storefront | `index.html` → `titleCaseTerm`, `catLabel` |
+| page generator | `scripts/generate-product-pages.js` → same two names |
+| server | `src/utils/text.js` → `displayTerm` |
+
+**This pair has now diverged twice.** Once on title-casing. The second time
+happened *while writing this section*: the storefront gained a guard for
+separator-only slugs (`///`, `-`, `_`) and the generator did not — so the
+storefront said *Uncategorized* while the Product JSON-LD carried an **empty
+category straight to Google**. Comparing the title-casers was not enough,
+because the guard lives one level up in `catLabel`. `[fe-34]` now compares
+**what actually reaches the page**, across 16 shapes including null, blank,
+Hindi and three-level hierarchies.
+
+**Nothing is keyed to a product that exists today.** A test scans for hardcoded
+UUIDs and finds none; stock and price are read from the catalog on every path;
+the free-shipping threshold comes from `site_settings`; and `RITUAL_PAIRS` falls
+back for a category it has never heard of, so suggestions keep firing for
+categories added later.
+
+### 4e. Subcategories — built, and where to look
+
+**The model, and why this one.** Categories here are not rows in a table. They
+are free-form normalised text on the product (`products.category`), and every
+menu is **derived** by aggregating the products that use them. Subcategories
+follow exactly the same law — you asked for the same law, and a second law would
+be a second thing to keep in step, which is how every real bug in this file
+started.
+
+So: one nullable column, `products.subcategory VARCHAR(80)`, normalised through
+the same `normaliseTerm()` and displayed through the same `displayTerm()`.
+
+*The alternative* — a `categories` table with `parent_id` — is what a very large
+catalog eventually needs. It buys two things this does not: a subcategory that
+exists with **no products in it**, and per-subcategory metadata (description,
+hero image, sort order). Neither is needed yet, and adopting it now would mean
+backfilling live rows, building tree CRUD and rewiring every read path at once.
+When either is genuinely wanted, promote the column to a table — the display
+layer already speaks the `category/subcategory` path, so that migration is
+additive rather than a rewrite.
+
+| Piece | Where |
+|---|---|
+| Schema, index, normalisation constraint | `migrations/016_product_subcategory.sql` |
+| Published, filtered, normalised on write | `src/routes/products.routes.js` |
+| Derived listing (`/api/products/meta/subcategories`) | same file, beside `top-categories` |
+| Admin field + category-aware datalist | `admin.html` → `#pfSubcategory`, `refreshSubcategoryDatalist()` |
+| The tree, derived from the catalog | `index.html` → `categoryTree()` |
+| The **dropdown** | `index.html` → `renderMegaMenu()` → `#megaCatsA` / `#megaCatsB` |
+| Shop filtering + deep links | `setSubcategoryFilter()`, `openShopWithCategory(cat, subcat)` |
+| Display path (`Books/Scripture`) | `catPath()` |
+| Structured data | `scripts/generate-product-pages.js` → `productJsonLd` |
+
+**Where the customer sees it.** The Shop dropdown in the main navigation. Each
+category is a bold link with its product count; its subcategories sit indented
+beneath it behind a hairline rule, each with its own count. Clicking a
+subcategory filters the shop to exactly that pair and writes
+`?category=…&subcategory=…` so the link is shareable.
+
+**The dropdown used to be seven hardcoded `<a>` tags** — a category an admin
+created was invisible in the navigation forever, and there was nowhere for a
+subcategory to appear at all. It is now built from `categoryTree()`.
+
+**It works during a cold start with no extra request.** The tree is derived from
+`PRODUCTS`, which is already the snapshot → localStorage → API ladder, so the
+menu is exactly as fresh as the catalog it describes and can never go stale
+separately from it. It renders on the first paint from the snapshot and is
+rebuilt when the live catalog lands.
+
+**Two things that are load-bearing and easy to undo:**
+
+- *Switching category clears the subcategory.* A subcategory belongs to one
+  category, so keeping it produces an impossible filter (`books` + `rudraksha`)
+  and an empty grid with nothing on screen to explain why. Clearing the
+  subcategory chip, by contrast, **keeps** the category — removing a refinement
+  should widen results by one step, not throw the customer back to everything.
+- *A slug reaching an `onclick` is escaped twice.* Category slugs are
+  admin-typed free text rendered into
+  `onclick="openShopWithCategory('…')"`. `escapeHtml` alone does not escape the
+  apostrophe or backslash that would close the JS string and run the rest as
+  code, so `jsAttr()` does `JSON.stringify` **then** `escapeHtml`, in that order.
+
+**Backward compatibility is the point.** Every product today has no subcategory
+and behaves exactly as it did: `mapApiProduct` normalises absent to `''` so
+there is one representation of "none", `catPath` emits no extra segment, and
+`[fe-35]` asserts all of it.
+
+### 5. Where the tests are
+
+`test/frontend.test.js`, by section — each one names the defect it locks shut:
+
+| Section | Covers |
+|---|---|
+| `[fe-23]` | the welcome screen |
+| `[fe-25]` | the wait fits what is being bought |
+| `[fe-27]` | the checkout total equals what the server charges |
+| `[fe-28]` | the wait is paced and ends honestly |
+| `[fe-29]` | the screen cannot go stale under the customer |
+| `[fe-30]` | the price on screen is the price charged |
+| `[fe-31]` | **combinations** — what the new pieces do to each other |
+| `[fe-32]` | **differential fuzz** — the client total *is* the server total |
+| `[fe-33]` | **variants** — priced and stocked separately from the base product |
+| `[fe-34]` | **future shapes** — hierarchical categories, new products, new stock |
+| `[fe-35]` | **subcategories** — schema, server, admin, dropdown, filtering, backward compatibility |
+
+```bash
+npm test
+```
+
+Every guard in `[fe-28]`–`[fe-31]` was verified by **reintroducing the original
+defect and watching the test fail**, then restoring. A test that has never failed
+has not been shown to test anything.
+
 ## Getting started
 
 ```bash
@@ -952,12 +1234,42 @@ block warning against reordering it.
 ##### The welcome screen
 
 The first thing a visitor sees is the hero Sri Yantra, the words **Welcome to**,
-and **CHAKRASHRI** rising one letter at a time under a slow gold sheen. It sits
-in the markup at the top of `<body>` with its own inline `<style>`, so it paints
-from the first bytes of the document rather than waiting on 460KB of app script
-or a stylesheet hundreds of KB further down.
+and **CHAKRASHRI** at display size, rising one letter at a time and then lit by a
+gold sheen that sweeps across the name continuously. The tagline *Sacred,
+Authentic, Pure & Trustworthy* settles underneath. It sits in the markup at the
+top of `<body>` with its own inline `<style>`, so it paints from the first bytes
+of the document rather than waiting on 460KB of app script or a stylesheet
+hundreds of KB further down.
 
-**2.6 seconds, shown once per session.** Both halves of that are deliberate, and
+**The wordmark is built in two stacked layers, and it has to stay that way.**
+`background-clip:text` paints a parent's gradient through its text — but give a
+*child* its own containing block and the parent can no longer paint into it, so
+the child renders fully transparent. Verified in a browser, **every** animation
+primitive does that: `transform`, `opacity`, `filter`, `position:relative`, even
+`will-change`. An earlier build put the gradient on `.awaken-brand` and a
+transform on each letter, and the entire phrase *Welcome to Chakrashri* rendered
+**invisible** — on the one screen whose whole job is to show the name. A test
+asserting a fallback colour and an `@supports` guard passed the whole time,
+because neither was what failed (`-webkit-text-fill-color` overrides `color`).
+
+So the two jobs are split:
+
+| Layer | Carries | May be animated? |
+|---|---|---|
+| the letters | a flat gold `color` — never transparent | yes, this is what rises |
+| `.aw-shine` | the gradient, `background-clip:text` | **never** — any transform stops it painting |
+
+`.aw-shine` repeats the same ten letter spans as the base layer. A plain text run
+does not line up with a row of inline-blocks — measured **28px too low and 47px
+too narrow**, which drew the word twice and covered the tagline. Identical boxes
+are the only thing that makes the layers register. If the shine layer is ever
+unsupported or removed, the flat gold letters still show the name.
+
+One more trap in the same markup: the gap in "Welcome to" is `&nbsp;`, not a
+normal space. An inline-block containing only a normal space **collapses to zero
+width**, which ran the two words together.
+
+**2.7 seconds, shown once per session.** Both halves of that are deliberate, and
 the number is bounded from both directions.
 
 *Why not longer.* The storefront renders from the catalog snapshot in ~300ms, so
@@ -965,7 +1277,7 @@ for almost every visit this screen is not masking work — it is holding a finis
 page back. A full-viewport overlay defers the real Largest Contentful Paint
 element until it lifts, so **the dismissal time IS the LCP**:
 
-| Threshold | Limit | At 5s | At 2.6s |
+| Threshold | Limit | At 5s | At 2.7s |
 |---|---|---|---|
 | Core Web Vitals LCP | ≤2.5s good, >4s poor | poor | needs-improvement |
 | Mobile abandonment | climbs sharply past 3s | past it | inside it |
@@ -975,10 +1287,11 @@ A product page opened from a shared WhatsApp link is the highest-intent arrival
 there is; gating the price behind five seconds is the worst place on the site to
 spend them.
 
-*Why not shorter.* The letter stagger finishes at 1.53s and the sheen begins at
-0.9s. Below about 2.4s the animation is cut mid-sweep and reads as a glitch
-rather than a greeting. 2600ms lands just past it — the welcome completes,
-settles for a beat, and lifts.
+*Why not shorter.* "Welcome to" lands at 1.13s, the name at 1.73s, and the
+tagline finishes fading in at 2.65s. Below that the animation is cut mid-sweep
+and reads as a glitch rather than a greeting. `AWAKEN_MIN_MS = 2700` lands just
+past the last of it — the welcome completes, settles for a beat, and lifts. It was
+2600ms, which clipped the tail of the tagline fade.
 
 *Once per session* is the larger win, and it is what brand-led storefronts
 actually ship. A shopper who opens six products should be greeted once, not six
@@ -1002,6 +1315,20 @@ Verified in a browser: first arrival paints it; a repeat load computes to
 `display:none` with **0px painted area**; private mode greets. Verified with a
 real page reload that the session flag survives, so **every reload loads the site
 directly** rather than replaying the welcome.
+
+**Sizing was measured, not guessed.** At 320 / 375 / 390 / 414 / 768 / 1440 /
+1920 and at 740x360 landscape the name fits with 14-533px of side margin and no
+horizontal scroll anywhere, and the two layers register to **0px** at every width.
+Re-measured with Cinzel forced to Georgia, Times New Roman and generic serif: a
+webfont that fails to load is wider, and at the previous size that left **2px** —
+the name would have run off a 320px screen. Reduced motion shows the *finished*
+state (letters at full opacity, no transform, the gradient parked mid-sweep);
+cancelling the animations without restoring opacity would leave the screen blank.
+
+The prerendered product pages under `/product/` embed the whole of `index.html`,
+so they carry this screen too. They are gitignored and regenerated by the Netlify
+build (`generate-product-pages.js`), which is why a change here reaches shared
+links without anything extra being committed.
 
 Three details that are easy to get wrong and are covered by tests:
 
@@ -1052,7 +1379,225 @@ needs no catalog and can create no side effect:
 > and tell you exactly which samagri to arrange, so nothing is left to the
 > morning of the ceremony.
 
-A strategy with no `contexts` (the Journal) suits all three.
+**And a strategy with no `contexts` suited all three — which was the hole.**
+`pickWaitStrategy` reads "no contexts" as "every context", so the *From the
+Journal* card was eligible everywhere: a customer one tap from paying, and
+somebody booking a pandit, could both be handed a blog excerpt instead of
+anything to do with what they were doing. It is deleted rather than re-scoped —
+there is no audience on a payment wait it belongs to. A test now fails if **any**
+strategy omits its `contexts`, because the omission is silent and lands in the
+money paths.
+
+Buying also means *products*. The picker chose at random among everything that
+built, so a checkout could show a care note while three perfectly good product
+suggestions sat unused. For the `order` audience it now prefers strategies that
+carry items; prose cards remain as the fallback for when everything is already
+in the cart or out of stock.
+
+##### The wait is paced in three phases, and it ends honestly
+
+A cold Render instance is 30–60 seconds of nothing followed by a sudden yes, and
+the customer is standing at the payment step while it happens. One screen cannot
+hold that time in one way, so it holds it in three:
+
+| Phase | Window | What is on screen |
+|---|---|---|
+| **Suggest** | 0–20s | **One** suggestion that fits what they are doing |
+| **Progress** | 20–60s | The selling stops. A step ladder of what is genuinely being done, and a bar easing across the cold-start budget |
+| **Overrun** | 60s+ | "This is taking longer than usual" — plainly said, way out kept visible, **no failure declared** |
+
+It used to rotate a fresh suggestion every 12 seconds, which turned a payment
+wait into a carousel of advertisements aimed at somebody who had **already
+decided to buy**. One card, then movement. *"Show me something else"* is still
+there for anyone who wants another; what they no longer get is a new pitch
+arriving on its own every twelve seconds.
+
+The phases are **display only**. Whether the intent runs is decided entirely by
+`ensureBackendAwake`, so a phase change can never charge, cancel, skip or
+duplicate anything.
+
+**Every line is true, and that constraint shaped the wording.** It would be easy
+to write *"redirecting you to payment"* at thirty seconds because it sounds
+reassuring — but if the boot then fails, the customer has been told something
+that did not happen while their money was on the table. The ladder describes
+what we are doing (*opening a secure connection*, *confirming your items and
+their prices*, *preparing your payment session*); only once the backend has
+actually answered does the screen say *"Secure session ready — taking you to
+payment."* Bookings get their own ladder that never mentions carts, items or
+payment sessions.
+
+The bar is determinate now and **never reaches 100% while still waiting** — it
+eases to 90% across a normal cold boot and creeps to 96% at the hard stop.
+Verified by running the real function across the whole window: monotonic, starts
+at 0, never full. A bar sitting at 100% while nothing happens is the least
+trustworthy thing a checkout can show, and it is why the old indeterminate
+slider read as *stuck* after thirty seconds.
+
+##### When it is not a cold start — Render, Neon or the network actually failing
+
+The overrun notice deliberately does **not** apologise: most boots that reach 60
+seconds still succeed, and saying sorry mid-wait invites worry about something
+that is about to work. Only when `ensureBackendAwake` genuinely gives up does the
+screen change character.
+
+That failure used to be a **toast** — the wrong weight entirely. A toast slides
+away by itself and leaves somebody who was about to spend money looking at a
+checkout with no explanation and no obvious next move. It is now a panel that
+stays, and it does the three things this situation calls for:
+
+1. **Says what happened without blaming them** — *"Our service did not respond in
+   time. We are sorry — this one is on us, not on you."*
+2. **Settles the money question first** — *"No payment was taken. No card or UPI
+   details were sent anywhere."* Then that the cart (or the booking) is saved
+   exactly as they left it, **including anything added while they waited**.
+3. **Gives a way forward that does not depend on the thing that just failed** —
+   *Try again*, plus the support email and phone number, because if the service
+   is down the retry may not help and a human can complete the order by hand.
+
+**Offline is distinguished from our outage.** `navigator.onLine === false` gets
+*"You appear to be offline"* instead, because telling somebody whose wifi dropped
+that our servers are down is both wrong and unfixable by them.
+
+Where an apology belongs is now enforced by test: banned in the waiting copy,
+required in the failure panel.
+
+**The retry re-enters `withBackendReady`, never the intent.** Calling `intent()`
+straight from a retry button bypasses `intentInFlight` — and a retry that
+bypasses the in-flight guard is precisely how a retry button becomes a double
+charge.
+
+Verified by driving the real page in a browser: warm path 0ms with no modal;
+cold-then-wakes shows the ladder, the success line, then runs the intent;
+cold-then-fails leaves the panel up and **never runs the intent**; a second tap
+during a wait produces exactly **one** order; and cancel works in all four
+phases without the intent ever firing. Reopening the screen does not accumulate
+timers, and closing it clears every one.
+
+##### The checkout summary went stale under the customer — three symptoms, one cause
+
+Found by asking what happens when the cart changes while somebody is *reading*
+the checkout. `updateCartUI()` refreshed the **cart page** and never the
+**checkout page**. Measured on the real page:
+
+| What the customer did | Screen said | Cart was actually worth |
+|---|---|---|
+| Added a suggestion from the waiting screen | **₹903** | **₹1,340.03** |
+| Removed a line from the drawer | ₹1,340 | ₹903 |
+| Emptied the cart | ₹903 + a live Place Order button | nothing |
+
+The first row is the serious one, and it is the **GST bug's twin**: the customer
+agrees to one number and is charged another. Worse, it is caused by the waiting
+screen's own **Add** button — the same shape as the variant defect that screen
+already guards against, where an action offered during the wait breaks the order
+the wait exists to protect. A 3% discrepancy was bad; this one was 48%.
+
+`refreshCartAndCheckoutViews()` **already existed and did exactly the right
+thing** — it was called only from the coupon paths, never from a cart mutation.
+That asymmetry was the whole bug. Routing every mutation through it fixes all
+three rows at once (it renders the empty state too), and anything added later
+inherits the behaviour.
+
+The risk this introduces is that the checkout now re-renders on every cart
+change, including while somebody is typing their address. It is safe because
+`renderCheckoutPage()` rewrites only the order-item list and the totals and
+never touches the form — verified in a browser that all seven fields *and* the
+focus survive, and locked by a test that fails if the re-render ever starts
+rewriting a field. Eighty mutations run in 133ms with no recursion.
+
+##### What a customer sees if a price changed while the backend was asleep
+
+This is the question that produced the largest finding in this file. The answer
+*used to be*: **a different number, appearing in the payment sheet, unexplained.**
+
+The client prices from a catalog that can be minutes old — and after a cold
+start, a whole boot old. The server prices from the database, returns the real
+figure as `amountPaise`, and the client passed it **straight to Razorpay** as
+`amount` without anyone comparing it to what the customer had been reading. Cash
+on delivery was worse: the server's `totalPaise` was ignored completely, the
+order was confirmed, and the first time the customer met the real price was at
+their door.
+
+Two things have to hold at once, and they pull against each other:
+
+- the **seller** must never be forced to honour a stale price — charging the old
+  figure would also make a stale snapshot a permanent discount;
+- the **customer** must never be charged a number they did not agree to.
+
+Both are satisfied by stopping and asking. Three layers, in order:
+
+1. **Refresh on wake.** `runWithBackendReady` now reloads the catalog and
+   re-renders the page the moment the backend answers, *before* the intent
+   commits anything. Most of the time this alone means the customer is already
+   looking at the correct price. A failed refresh is not fatal — layer 2 still
+   catches it.
+2. **Compare before charging.** Every path that reaches Razorpay — checkout,
+   puja, astrology — compares the server's `amountPaise` against the figure
+   captured from the customer's own screen. If they differ, a panel shows both
+   numbers and asks. **Nothing has been charged at that point**, so cancelling
+   is free; the order row is released by the server's expiry sweep.
+3. **Disclose for COD.** The server creates a COD order in the same call, so it
+   cannot be taken back from the client. Blocking is unavailable; telling the
+   truth is not. If the placed total differs, the customer is told the figure it
+   was actually placed at, then and there.
+
+The comparison is silent and instant whenever the two figures agree, which is
+the overwhelmingly common case — verified at 0ms with no modal. Tolerance is one
+paisa, because both sides compute in integer paise from the same rules. An
+unknown or malformed figure resolves to *agree*: refusing to sell because we
+cannot tell would be a worse bug than the one being fixed.
+
+##### Quantity is a number with a floor, a ceiling and no fractions
+
+Measured before this existed:
+
+| Input | Result |
+|---|---|
+| `9999` against 8 in stock | accepted — cart showed **₹79,99,200**, and the server would refuse the order at the payment step |
+| a non-numeric input | `Math.max(1, NaN)` → `NaN`, and **one NaN line turned the whole checkout total into NaN** |
+| `2.7` | accepted and priced as 2.7 units |
+
+`normalizeCartQty` is now the single rule, used by `addToCart`, `changeCartQty`
+and `setCartQty`. Floor 1, integers only, capped at real stock, and it says so
+when the ceiling bites rather than silently ignoring the tap.
+
+**The ceiling only applies when the stock figure is real.** `productFromCartLine`
+deliberately reports `stockQty` as the line's *own* quantity for a cart restored
+while the API was cold — capping on that would freeze the line and silently
+disable the customer's cart during exactly the outage this design exists to
+survive. `Infinity` collapses to **1**, not to all of stock: a nonsense input
+must never reserve the seller's entire remaining inventory.
+
+The money arithmetic itself was re-verified and is exact — paise integrity holds
+across mixed carts, and `subtotal − discount + shipping + GST` sums back to the
+total to the paisa.
+
+##### A coupon's value goes stale the moment the cart changes
+
+`appliedCoupon.discountPaise` is a number the **server** computed for the cart as
+it stood when Apply was tapped. Coupons here can be percentage-based and can
+carry a minimum order value (`validateAndComputeCoupon`), so once the cart moves
+that figure is no longer the one the server would produce:
+
+- a **percentage** coupon on a bigger cart discounts more than the screen says;
+- a **minimum-order** coupon on a smaller cart stops applying at all, and the
+  order is refused at the payment step — *after* the customer agreed to a total
+  that included the discount.
+
+The client cannot recompute either, because both rules live in the database. So
+it re-asks the server, and it is deliberately timid about the answer:
+
+- **debounced** — holding the `+` button sends one request, not ten (verified: 10
+  taps → 1 request);
+- **a transport failure changes nothing.** This *will* fail during a cold start,
+  and dropping a valid coupon because the server was asleep would be far worse
+  than a briefly stale discount. The transport check comes before the clear, and
+  a test fails if that order is ever reversed;
+- only a real server answer may change or clear the coupon, and the code is
+  re-checked before acting in case the customer swapped it mid-flight.
+
+The server remains the only authority on what a coupon is worth: `placeOrderNow`
+sends the **code** and nothing else. This exists so the number on screen matches
+what will be charged, never to decide it.
 
 ##### Everything here keeps working for products, services and categories added later
 

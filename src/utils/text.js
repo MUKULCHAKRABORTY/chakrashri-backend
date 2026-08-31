@@ -33,14 +33,24 @@ const MINOR_WORDS = new Set(['and', 'or', 'of', 'the', 'a', 'an', 'for', 'in', '
 function displayTerm(value) {
   const cleaned = normaliseTerm(value);
   if (!cleaned) return '';
+  // Cased per hierarchy segment, so a future "books/scripture" reads correctly
+  // and matches catLabel() in index.html exactly. See the note there.
   return cleaned
-    .split(' ')
-    .map((word, i) => {
-      if (i > 0 && MINOR_WORDS.has(word)) return word;
-      // Preserve inner punctuation like "murtis & idols" or "5-mukhi"
-      return word.charAt(0).toUpperCase() + word.slice(1);
-    })
-    .join(' ');
+    .split('/')
+    .map((segment) =>
+      segment
+        .trim()
+        .split(' ')
+        .filter(Boolean)
+        .map((word, i) => {
+          if (i > 0 && MINOR_WORDS.has(word)) return word;
+          // Preserve inner punctuation like "murtis & idols" or "5-mukhi"
+          return word.charAt(0).toUpperCase() + word.slice(1);
+        })
+        .join(' ')
+    )
+    .filter(Boolean)
+    .join('/');
 }
 
 module.exports = { normaliseTerm, displayTerm };

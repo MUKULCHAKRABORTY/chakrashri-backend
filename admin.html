@@ -730,9 +730,14 @@ code.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.78rem; 
         <div class="field"><label for="pfSku">SKU *</label><input id="pfSku"><div class="err" id="pfSkuErr">SKU is required.</div></div>
         <div class="field"><label for="pfSlug">Slug *</label><input id="pfSlug" placeholder="rudraksha-mala-5-mukhi"><div class="hint">URL-safe, lowercase, hyphens only.</div><div class="err" id="pfSlugErr">Valid slug required.</div></div>
         <div class="field"><label for="pfCategory">Category *</label>
-          <input id="pfCategory" list="pfCategoryList" placeholder="rudraksha, idols, gemstones…" autocomplete="off">
+          <input id="pfCategory" list="pfCategoryList" placeholder="rudraksha, idols, gemstones…" autocomplete="off" oninput="refreshSubcategoryDatalist()">
           <datalist id="pfCategoryList"></datalist>
           <div class="hint">Pick an existing one from the list, or type a new name. Casing doesn't matter — "Malas" and "malas" are treated as the same category.</div>
+        </div>
+        <div class="field"><label for="pfSubcategory">Subcategory</label>
+          <input id="pfSubcategory" list="pfSubcategoryList" placeholder="scripture, 5-mukhi, brass…" autocomplete="off">
+          <datalist id="pfSubcategoryList"></datalist>
+          <div class="hint">Optional. Same rules as Category — pick one from the list or type a new name, casing doesn't matter. The list shows subcategories already used <strong>in the category above</strong>.</div>
         </div>
         <div class="field"><label for="pfPrice">Price (₹) *</label><input id="pfPrice" type="number" min="1" step="0.01"><div class="err" id="pfPriceErr">Valid price required.</div></div>
         <div class="field"><label for="pfMrp">MRP (₹)</label><input id="pfMrp" type="number" min="1" step="0.01"></div>
@@ -1459,7 +1464,7 @@ async function loadLowStock(){
 /* =========================================================================
    PRODUCTS
    ========================================================================= */
-let productsState = { page: 1, categories: new Set(), badges: new Set() };
+let productsState = { page: 1, categories: new Set(), badges: new Set(), subcategoriesByCat: new Map() };
 const debounceLoadProducts = debounce(() => loadProducts(1), 350);
 
 async function loadProducts(page){
@@ -1480,6 +1485,12 @@ async function loadProducts(page){
     products.forEach((p) => {
       productsState.categories.add(p.category);
       if (p.badge) productsState.badges.add(p.badge);
+      if (p.subcategory) {
+        // Grouped under the category, so the datalist can offer only the ones
+        // that make sense for what is being edited.
+        if (!productsState.subcategoriesByCat.has(p.category)) productsState.subcategoriesByCat.set(p.category, new Set());
+        productsState.subcategoriesByCat.get(p.category).add(p.subcategory);
+      }
     });
     refreshCategoryFilterOptions();
     refreshBadgeFilterOptions();
@@ -1534,6 +1545,30 @@ function refreshTermDatalists(){
     badgeList.innerHTML = Array.from(productsState.badges).filter(Boolean).sort()
       .map((v) => `<option value="${esc(titleCaseTerm(v))}"></option>`).join('');
   }
+  refreshSubcategoryDatalist();
+}
+
+/* Offers the subcategories already used IN THE CATEGORY currently typed.
+
+   Normalised the same way the server will normalise it, so "Scripture",
+   "scripture" and " SCRIPTURE " all match the same existing entry and the admin
+   sees it is already in use rather than creating a near-duplicate. When the
+   category is new or empty, every known subcategory is offered — that is more
+   useful than an empty list, and the server normalises whatever is chosen. */
+function refreshSubcategoryDatalist() {
+  const list = qs('#pfSubcategoryList');
+  if (!list) return;
+  const typed = (qs('#pfCategory') ? qs('#pfCategory').value : '').trim().toLowerCase().replace(/\s+/g, ' ');
+  let values;
+  if (typed && productsState.subcategoriesByCat.has(typed)) {
+    values = Array.from(productsState.subcategoriesByCat.get(typed));
+  } else {
+    const all = new Set();
+    productsState.subcategoriesByCat.forEach((set) => set.forEach((v) => all.add(v)));
+    values = Array.from(all);
+  }
+  list.innerHTML = values.filter(Boolean).sort()
+    .map((v) => `<option value="${esc(titleCaseTerm(v))}"></option>`).join('');
 }
 
 const DL_MINOR = ['and','or','of','the','a','an','for','in','on','with','to'];
@@ -1572,7 +1607,7 @@ async function openProductForm(id){
   editingProductOptions = [];
   editingProductVariants = [];
   qs('#productModalTitle').textContent = id ? 'Edit Product' : 'Add Product';
-  ['pfName','pfSku','pfSlug','pfCategory','pfPrice','pfMrp','pfStock','pfHsn','pfBadge','pfMaterial','pfShortDesc','pfLongDesc'].forEach((f) => qs('#'+f).value = '');
+  ['pfName','pfSku','pfSlug','pfCategory','pfSubcategory','pfPrice','pfMrp','pfStock','pfHsn','pfBadge','pfMaterial','pfShortDesc','pfLongDesc'].forEach((f) => qs('#'+f).value = '');
   qs('#pfGst').value = '3';
   qs('#pfActive').checked = true;
   qs('#pfImagesSection').style.display = id ? '' : 'none';
@@ -1588,6 +1623,8 @@ async function openProductForm(id){
       qs('#pfSku').value = p.sku || '';
       qs('#pfSlug').value = p.slug || '';
       qs('#pfCategory').value = p.category || '';
+      qs('#pfSubcategory').value = p.subcategory || '';
+      refreshSubcategoryDatalist();
       qs('#pfPrice').value = (p.price_paise / 100).toFixed(2);
       qs('#pfMrp').value = p.mrp_paise ? (p.mrp_paise / 100).toFixed(2) : '';
       qs('#pfStock').value = p.stock_qty;
@@ -2020,6 +2057,10 @@ async function saveProduct(){
     sku: qs('#pfSku').value.trim(),
     slug: qs('#pfSlug').value.trim(),
     category: qs('#pfCategory').value.trim() || 'general',
+    // Empty string, not undefined: the server normalises '' to NULL, which is
+    // how a subcategory is REMOVED. Sending undefined would leave the old value
+    // in place and make clearing the field impossible.
+    subcategory: qs('#pfSubcategory').value.trim(),
     price_paise: Math.round(priceRupees * 100),
     mrp_paise: Math.round((mrpRupees && mrpRupees > 0 ? mrpRupees : priceRupees) * 100),
     stock_qty: parseInt(qs('#pfStock').value, 10) || 0,

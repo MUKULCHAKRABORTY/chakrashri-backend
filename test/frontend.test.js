@@ -1078,8 +1078,15 @@ section('[fe-18] The wait before a payment is spent well, and never loses the in
 
   test('the wait is bounded and fails honestly', () => {
     assert.match(html, /WAIT_MAX_MS/);
-    assert.match(html, /Nothing has been charged and your cart is saved/,
+    // This used to be a toast. A toast is the wrong weight for a payment that
+    // did not happen: it slides away by itself and leaves somebody who was
+    // about to spend money looking at a checkout with no explanation. It is now
+    // a panel that stays, and the first thing it settles is whether they were
+    // charged.
+    assert.match(html, /No payment was taken/,
       'a timeout must say plainly that no money moved');
+    assert.match(html, /is saved exactly as you left it/,
+      'and that nothing they had chosen was lost');
   });
 }
 
@@ -1123,10 +1130,16 @@ section('[fe-19] Regressions found in the final audit — locked shut');
       'browser-back leaves the modal open and the intent live — it would place an order from a screen the customer had already left');
   });
 
-  test('the suggestion rotation timer cannot be orphaned', () => {
-    const fn = html.slice(html.indexOf('function openWaitingExperience'), html.indexOf('function openWaitingExperience') + 700);
-    assert.match(fn, /if\(waitState\.rotateTimer\)\{ clearInterval/,
-      'reopening without clearing abandons the previous interval, which keeps re-rendering into a modal nobody is looking at');
+  test('no wait timer can be orphaned', () => {
+    // There used to be exactly one interval here, cleared by name. The wait now
+    // runs two phase hand-offs and a tick, so they go through a registry and
+    // clearWaitTimers() empties all of it -- a timer added later is covered by
+    // construction rather than by somebody remembering to clear it.
+    const fn = html.slice(html.indexOf('function openWaitingExperience'), html.indexOf('function openWaitingExperience') + 900);
+    assert.match(fn, /clearWaitTimers\(\)/,
+      'reopening without clearing abandons the previous timers, which keep re-rendering into a modal nobody is looking at');
+    assert.ok(!/setInterval\(|setTimeout\(/.test(fn.replace(/waitAfter\(|waitEvery\(/g, '')),
+      'a raw timer here would not be in the registry, so closing the screen could not stop it');
   });
 
   test('the outbox flush lock is claimed before the probe it awaits', () => {
@@ -1213,11 +1226,16 @@ section('[fe-20] A variant is priced at what the customer is actually charged');
   });
 
   test('BOTH variant paths record the price — Add to Cart and Buy Now', () => {
-    const calls = html.match(/addToCart\(id, pdQty, label,[\s\S]{0,220}?\);/g) || [];
+    const calls = html.match(/addToCart\(id, pdQty, label,[\s\S]{0,600}?\);/g) || [];
     assert.strictEqual(calls.length, 2, 'expected exactly two variant-carrying addToCart calls');
     calls.forEach((c, i) => {
       assert.ok(/variantUnitPrice\(p, pdSelectedVariant\)/.test(c),
         'variant call site ' + (i + 1) + ' does not pass the variant price — Buy Now goes straight to checkout, so missing it there is worse');
+      // The product page is the ONLY place a variant's own stock_qty is loaded,
+      // so it is the only place that can put it on the cart line. Without it
+      // the cart has no ceiling for that variant at all.
+      assert.ok(/pdSelectedVariant \? pdSelectedVariant\.stock_qty/.test(c),
+        'variant call site ' + (i + 1) + ' does not carry the variant stock onto the line');
     });
   });
 
@@ -1286,7 +1304,34 @@ section('[fe-21] The waiting screen sells rather than apologises');
       assert.ok(!re.test(code), 'customer-facing copy still ' + why);
     }
     assert.match(code, /Setting up your secure payment/, 'the replacement copy should describe THEIR order');
-    assert.match(code, /Confirming availability and preparing your order/);
+    // The rolling status text is now the step ladder, so the ladder carries the
+    // same duty: describe what is happening to THEIR order, never our servers.
+    assert.match(code, /Confirming your items and their prices/,
+      'the order ladder should describe their order, not our infrastructure');
+    assert.match(code, /Preparing your payment session/);
+
+    // WHERE an apology belongs, made explicit rather than left to wording luck.
+    //
+    // Apologising in the WAITING copy names a fault the customer never saw --
+    // most cold boots succeed, and saying sorry mid-wait invites them to worry
+    // about something that is about to work. Apologising in the FAILURE panel
+    // is the opposite: it is a real fault they did experience, and industry
+    // practice is to own it plainly.
+    function fnSrc(name) {
+      const i = code.indexOf('function ' + name + '(');
+      if (i < 0) throw new Error('missing ' + name);
+      let d = 0; const s = code.indexOf('{', i);
+      for (let k = s; k < code.length; k++) {
+        if (code[k] === '{') d++;
+        else if (code[k] === '}') { d--; if (!d) return code.slice(i, k + 1); }
+      }
+    }
+    const waiting = fnSrc('openWaitingExperience') + fnSrc('renderWaitProgressPanel') +
+      code.slice(code.indexOf('const WAIT_FLOW'), code.indexOf('const WAIT_STEP_ICON'));
+    assert.ok(!/\bsorry\b/i.test(waiting),
+      'the waiting copy apologises for a cold start the customer has not been harmed by, and usually will not be');
+    assert.match(fnSrc('renderWaitFailurePanel'), /sorry/i,
+      'a wait that actually failed SHOULD apologise — that fault is real and they lived through it');
   });
 
   test('THE TRAP: transport failures are detected by a flag, never by their wording', () => {
@@ -1370,13 +1415,28 @@ section('[fe-23] The welcome screen');
     const markup = screen.slice(screen.indexOf('<div class="awaken-welcome"'));
     const greet = markup.slice(markup.indexOf('awaken-greet'), markup.indexOf('awaken-brand'));
     const brand = markup.slice(markup.indexOf('awaken-brand'), markup.indexOf('awaken-tagline'));
-    assert.strictEqual((greet.match(/<span aria-hidden="true">/g) || []).length, 10,
-      '"Welcome to" should be 10 individually animated letters');
-    assert.strictEqual((brand.match(/<span aria-hidden="true">/g) || []).length, 10,
-      '"CHAKRASHRI" should be 10 individually animated letters');
+    // Each line carries its letters TWICE: once in the animated base layer and
+    // once in the .aw-shine gradient layer stacked on it. Both copies need the
+    // same letters or the two layers cannot register and the word draws twice.
+    const base = s => s.slice(0, s.indexOf('aw-shine'));
+    const shine = s => s.slice(s.indexOf('aw-shine'));
+    const count = s => (s.match(/<span aria-hidden="true">/g) || []).length;
+    assert.strictEqual(count(base(greet)), 10, '"Welcome to" should be 10 individually animated letters');
+    assert.strictEqual(count(base(brand)), 10, '"CHAKRASHRI" should be 10 individually animated letters');
+    assert.strictEqual(count(shine(greet)), 10, 'the greeting shine layer must repeat all 10 letters');
+    assert.strictEqual(count(shine(brand)), 10, 'the brand shine layer must repeat all 10 letters');
+    // A plain text run does not line up with a row of inline-blocks: measured
+    // 28px too low and 47px too narrow, which drew the word twice and covered
+    // the tagline. The layers only register when both are letter spans.
+    assert.ok(!/<span class="aw-shine" aria-hidden="true">[A-Za-z]/.test(markup),
+      'the shine layer must be letter spans, not a bare text run, or it cannot align with the base letters');
+    // An inline-block holding only a normal space collapses to ZERO width,
+    // which ran "Welcome" and "to" together.
+    assert.ok(greet.includes('&nbsp;'),
+      'the gap in "Welcome to" must be a non-breaking space or the two words touch');
     assert.match(screen, /Sacred, Authentic, Pure &amp; Trustworthy/, 'the tagline is missing');
     assert.match(screen, /aria-label="Welcome to Chakrashri"/,
-      'the letters are aria-hidden, so the whole phrase must be announced once — otherwise a screen reader spells out 20 characters');
+      'the letters are aria-hidden, so the whole phrase must be announced once - otherwise a screen reader spells out 40 characters');
   });
 
   test('the duration is inside the thresholds that actually matter', () => {
@@ -1421,13 +1481,45 @@ section('[fe-23] The welcome screen');
       'localStorage would greet a returning customer only once, ever');
   });
 
-  test('the brand name can never render invisible', () => {
-    // background-clip:text with a transparent fill shows nothing at all where it
-    // is unsupported — on the one screen whose entire job is to show the name.
-    const brandRule = screen.slice(screen.indexOf('.awaken-brand{'), screen.indexOf('@supports'));
-    assert.match(brandRule, /color:#E8CE86;/, 'a solid fallback colour must be set BEFORE the gradient');
-    assert.match(screen, /@supports \(\(-webkit-background-clip:text\) or \(background-clip:text\)\)/,
-      'the transparent fill must be inside an @supports guard');
+  test('THE REGRESSION: a transformed letter may never depend on a parent gradient', () => {
+    // This replaces a test that PASSED while the wordmark was completely
+    // invisible in a real browser. It asserted a fallback colour and an
+    // @supports guard; both were present, and neither was what failed.
+    //
+    // background-clip:text paints a parent's gradient through its text. Give a
+    // CHILD its own containing block and the parent can no longer paint into
+    // it - the child comes out fully transparent. Verified in a browser, EVERY
+    // animation primitive does that: transform, opacity, filter,
+    // position:relative, even will-change. The old build put the gradient on
+    // .awaken-brand and a transform on each letter, so "Welcome to Chakrashri"
+    // rendered as nothing at all, on the one screen whose whole job is to show
+    // the name. The fallback colour could not save it either, because
+    // -webkit-text-fill-color overrides color.
+    //
+    // The fix splits the work: the letters carry a flat colour and may be
+    // animated; a separate, never-transformed .aw-shine layer carries the
+    // gradient. So the rule to hold is - whatever is transparent must own its
+    // gradient, and must never be animated.
+    const styleBlock = screen.slice(0, screen.indexOf('</style>'));
+    const rules = styleBlock.split('}').map(r => r + '}');
+    const transparent = rules.filter(r => /-webkit-text-fill-color:transparent/.test(r));
+    assert.ok(transparent.length > 0, 'the gradient layer went missing entirely');
+    for (const rule of transparent) {
+      assert.ok(/background:linear-gradient/.test(rule),
+        'an element is made transparent without owning a gradient, so it paints nothing: ' + rule.trim().slice(0, 90));
+      assert.ok(!/transform:|filter:|position:relative|will-change/.test(rule),
+        'the transparent gradient layer must never be transformed, or it stops painting: ' + rule.trim().slice(0, 90));
+    }
+    // The letters keep a real colour, so the name is still legible even if the
+    // gradient layer is unsupported, blocked, or removed by a later edit.
+    // Every rule that targets the letter layer, however the selector is
+    // written - .awaken-brand appears in a shared layout rule too, so anchoring
+    // on the first match reads the wrong block.
+    const letterRules = rules.filter(r => /\.awaken-(brand|greet)[,{]/.test(r) && !/\.aw-shine/.test(r));
+    assert.ok(letterRules.some(r => /color:#[0-9A-Fa-f]{6}/.test(r)),
+      'the letters need a solid colour of their own - they are what remains if the shine layer never paints');
+    assert.ok(!letterRules.some(r => /-webkit-text-fill-color:transparent/.test(r)),
+      'the letter layer itself must never be transparent');
   });
 
   test('reduced motion shows the FINISHED state, not the starting one', () => {
@@ -1438,18 +1530,23 @@ section('[fe-23] The welcome screen');
       'cancelling the animation without restoring opacity leaves every letter invisible');
     assert.match(rm, /\.awaken-tagline\{ animation:none; opacity:1; \}/,
       'the tagline fades in too, so it needs the same treatment');
-    assert.ok(/awaken-greet > span/.test(rm) && /awaken-brand > span/.test(rm),
+    assert.ok(/awaken-greet > span:not\(\.aw-shine\)/.test(rm) && /awaken-brand > span:not\(\.aw-shine\)/.test(rm),
       'both sets of letters must be covered');
+    assert.match(rm, /\.aw-shine\{ animation:none; opacity:1;/,
+      'the shine layer fades in and then sweeps, so it needs its finished state restored too - otherwise the gradient never appears at all');
   });
 
   test('it is sized to fit every device, measured not guessed', () => {
-    // Verified in a real browser at 320/375/768/1280/1600: fits with 22-890px
-    // of headroom and no horizontal body scroll at any width.
-    assert.match(screen, /font-size:clamp\(1\.75rem,8\.5vw,3\.5rem\)/,
+    // Measured in a real browser at 320/375/390/414/768/1440/1920 and at
+    // 740x360 landscape: fits with 14-533px of side margin and no horizontal
+    // scroll anywhere. Re-measured with Cinzel forced to Georgia, Times and
+    // generic serif, because a webfont that fails to load is wider - at the
+    // previous size that left 2px, and the name would have run off the screen.
+    assert.match(screen, /font-size:clamp\(1\.95rem,9\.9vw,6\.5rem\)/,
       'the brand must scale with the viewport, with a floor and a ceiling');
-    assert.match(screen, /@media \(max-height:520px\)/,
-      'a landscape phone is short, not narrow — without this the mark and the name are clipped');
-    assert.match(screen, /padding:0 6vw/, 'the wrapper needs side padding so the name never touches the edge');
+    assert.match(screen, /@media \(max-height:560px\)/,
+      'a landscape phone is short, not narrow - without this the mark and the name are clipped');
+    assert.match(screen, /padding:0 4vw/, 'the wrapper needs side padding so the name never touches the edge');
   });
 }
 
@@ -1764,6 +1861,1113 @@ section('[fe-27] THE BIG ONE: the checkout total equals what the server charges'
   test('the rate survives a cold start on the cart line', () => {
     assert.match(html, /gstRate: Number\(p\.gstRate\) \|\| 0,/, 'cartLineSnapshot must carry the rate');
     assert.match(html, /gstRate: Number\(l\.snap\.gstRate\) \|\| 0,/, 'productFromCartLine must restore it');
+  });
+}
+
+// ============================================================
+section('[fe-28] The wait is paced, and it ends honestly');
+// ============================================================
+{
+  const html = read('index.html');
+
+  // The real pacing functions, lifted out of index.html and run. Reading a
+  // curve tells you nothing; the only way to know a progress bar never lies is
+  // to drive it.
+  function grab(name) {
+    const i = html.indexOf('function ' + name + '(');
+    if (i < 0) throw new Error('missing ' + name);
+    let depth = 0; const start = html.indexOf('{', i);
+    for (let k = start; k < html.length; k++) {
+      if (html[k] === '{') depth++;
+      else if (html[k] === '}') { depth--; if (!depth) return html.slice(i, k + 1); }
+    }
+  }
+  const consts = ['WAIT_SUGGEST_MS', 'WAIT_COLD_BUDGET_MS', 'WAIT_MAX_MS', 'WAIT_HANDOFF_MS']
+    .map(n => (html.match(new RegExp('const ' + n + ' = \\d+;')) || [''])[0]).join('\n');
+  const state = { startedAt: 0 };
+  const pacing = new Function('waitState', consts + '\n' +
+    grab('waitElapsed') + grab('waitStepIndex') + grab('waitBarPercent') +
+    '; return { waitStepIndex, waitBarPercent, WAIT_SUGGEST_MS, WAIT_COLD_BUDGET_MS, WAIT_MAX_MS, WAIT_HANDOFF_MS };')(state);
+  const at = ms => { state.startedAt = Date.now() - ms; return pacing; };
+
+  const FLOW = new Function('return ' +
+    html.match(/const WAIT_FLOW = \{[\s\S]*?\n\};/)[0].replace('const WAIT_FLOW = ', '').replace(/;$/, ''))();
+
+  const stripComments = s => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const strategiesSrc = stripComments(html.slice(html.indexOf('const WAIT_STRATEGIES = ['),
+                                                 html.indexOf('function pickWaitStrategy')));
+
+  test('THE FINDING: no suggestion may be shown to every audience at once', () => {
+    // A 'From the Journal' card sat in this list with no `contexts`, which made
+    // it eligible everywhere -- so a customer one tap from paying, and someone
+    // booking a pandit, could both be handed a blog excerpt instead of
+    // anything to do with what they were doing.
+    //
+    // Every strategy must now name its audiences. A contextless one is not a
+    // style problem: pickWaitStrategy treats "no contexts" as "all contexts",
+    // so it silently leaks into the money paths.
+    const ids = strategiesSrc.match(/id: '[a-z-]+'/g) || [];
+    assert.ok(ids.length >= 5, 'expected the strategy list, found ' + ids.length + ' entries');
+    const blocks = strategiesSrc.split(/(?=\n  \{)/).filter(b => /id: '/.test(b));
+    assert.strictEqual(blocks.length, ids.length, 'could not split the strategies cleanly');
+    for (const b of blocks) {
+      const id = (b.match(/id: '([a-z-]+)'/) || [])[1];
+      assert.match(b, /contexts: \[/, 'strategy "' + id + '" declares no contexts, so it is offered to every audience including bookings');
+    }
+    // Scan the stripped source: the comment recording why the card was removed
+    // legitimately names it, and matching your own documentation is not a test.
+    assert.ok(!/From the Journal/.test(strategiesSrc),
+      'the Journal card is back on the waiting screen -- it belongs to no audience on a payment wait');
+  });
+
+  test('a booking can never be offered something that writes to the cart', () => {
+    // The Add button is the danger: tapping it during a booking wait drops a
+    // product into a cart the booking has nothing to do with, and strands it
+    // there afterwards.
+    const blocks = strategiesSrc.split(/(?=\n  \{)/).filter(b => /id: '/.test(b));
+    for (const b of blocks) {
+      const id = (b.match(/id: '([a-z-]+)'/) || [])[1];
+      const ctx = (b.match(/contexts: \[([^\]]*)\]/) || [])[1] || '';
+      const booking = /puja|astrology/.test(ctx);
+      if (booking) {
+        assert.ok(!/items: items/.test(b),
+          'strategy "' + id + '" is offered to a booking audience and returns products');
+      }
+    }
+  });
+
+  test('the free-shipping card reads the threshold, it does not hardcode it', () => {
+    // The server prices shipping from site_settings. This card had 999 written
+    // into it three times, so raising the threshold in the admin left it
+    // promising free shipping at the old number to somebody about to pay.
+    const block = strategiesSrc.slice(strategiesSrc.indexOf("id: 'free-shipping'"));
+    const body = block.slice(0, block.indexOf('\n  },'));   // already comment-stripped
+    assert.match(body, /freeShippingThreshold\(\)/, 'the threshold must come from the settings helper');
+    assert.ok(!/\b999\b/.test(body), 'a literal 999 is still in the free-shipping card');
+  });
+
+  test('the progress bar never claims to be finished while it is still waiting', () => {
+    // A bar sitting at 100% while nothing happens is the least trustworthy
+    // thing a checkout can show, and the reason indeterminate bars get ignored.
+    let last = -1;
+    for (let s = 0; s <= 120; s += 5) {
+      const pct = at(s * 1000).waitBarPercent();
+      assert.ok(pct >= last - 0.001, 'the bar went backwards at ' + s + 's');
+      assert.ok(pct < 100, 'the bar reached ' + pct.toFixed(1) + '% at ' + s + 's, before the backend had answered');
+      last = pct;
+    }
+    assert.strictEqual(at(0).waitBarPercent(), 0, 'it must start empty');
+    assert.ok(Math.abs(at(pacing.WAIT_COLD_BUDGET_MS).waitBarPercent() - 90) < 0.01,
+      'a normal cold boot should end with the bar at 90%, leaving headroom for the truth');
+  });
+
+  test('the phases are ordered, and the overrun warning lands after a real cold boot', () => {
+    assert.ok(pacing.WAIT_SUGGEST_MS < pacing.WAIT_COLD_BUDGET_MS,
+      'the selling has to stop before the wait is even unusual');
+    assert.ok(pacing.WAIT_COLD_BUDGET_MS >= 60000,
+      'Render cold boots run 30-60s; warning earlier would cry wolf on a normal wait');
+    assert.ok(pacing.WAIT_MAX_MS > pacing.WAIT_COLD_BUDGET_MS,
+      'the hard stop must be beyond the warning, or the warning is never seen');
+    // Every index the clock can produce needs a label, or the status line reads
+    // "undefined…" at the worst possible moment.
+    for (const aud of Object.keys(FLOW)) {
+      for (const ms of [0, 14999, 15000, 34999, 35000, 119000]) {
+        const i = at(ms).waitStepIndex();
+        assert.ok(FLOW[aud].steps[i], 'audience "' + aud + '" has no step ' + i + ' (at ' + ms + 'ms)');
+      }
+      assert.ok(FLOW[aud].done, 'audience "' + aud + '" has no completion line');
+    }
+  });
+
+  test('a booking wait never talks about carts, items or payment sessions', () => {
+    for (const aud of ['puja', 'astrology']) {
+      const words = (FLOW[aud].steps.join(' ') + ' ' + FLOW[aud].done).toLowerCase();
+      assert.ok(!/\bcart\b|\bitems\b|\bpayment\b/.test(words),
+        '"' + aud + '" says: ' + words);
+    }
+    assert.ok(/payment/i.test(FLOW.order.steps.join(' ')),
+      'an order wait SHOULD name the payment session -- that is what it is doing');
+  });
+
+  test('every timer is registered, so none can outlive the screen', () => {
+    // The wait now runs two phase hand-offs and a tick. Any one left behind
+    // keeps firing into a modal nobody is looking at, and the tick re-renders
+    // the panel -- an orphan would visibly fight the next wait for the screen.
+    const open = grab('openWaitingExperience');
+    const close = grab('closeWaitingExperience');
+    assert.ok(!/setInterval\(|setTimeout\(/.test(open.replace(/waitAfter\(|waitEvery\(/g, '')),
+      'openWaitingExperience starts a raw timer that clearWaitTimers cannot see');
+    assert.match(open, /clearWaitTimers\(\)/, 'reopening must clear whatever the last wait left running');
+    assert.match(close, /clearWaitTimers\(\)/, 'closing must clear every timer');
+    const clear = grab('clearWaitTimers');
+    assert.match(clear, /waitState\.timers = \[\]/, 'the timeout list must be emptied, not just cleared');
+    assert.match(clear, /waitState\.intervals = \[\]/, 'the interval list must be emptied, not just cleared');
+  });
+
+  test('a failed wait explains itself on screen instead of vanishing as a toast', () => {
+    const run = grab('runWithBackendReady');
+    assert.match(run, /renderWaitFailurePanel\(\)/,
+      'a payment that did not happen needs an explanation that stays on screen');
+    assert.ok(!/toast\(/.test(run),
+      'a toast slides away and leaves somebody who was about to spend money with nothing to read');
+    const panel = grab('renderWaitFailurePanel');
+    assert.match(panel, /No payment was taken/, 'the first thing it must settle is whether they were charged');
+    assert.match(panel, /navigator\.onLine === false/,
+      'a device with no connection is not our outage, and saying so would be both wrong and unfixable by them');
+    assert.match(panel, /support@chakrashri\.com/, 'there must be a way through that does not depend on the thing that just failed');
+    assert.match(panel, /waitSubject\(\)/, 'it must name what they actually have -- "your cart" to somebody booking a pandit is the wrong screen');
+  });
+
+  test('THE TRAP: Try again must re-enter the gate, not call the intent', () => {
+    // Calling intent() straight from a retry button bypasses intentInFlight,
+    // and a retry that bypasses the in-flight guard is exactly how a retry
+    // button becomes a double charge.
+    const retry = grab('retryWaitIntent');
+    assert.ok(!/intent\(\)/.test(retry), 'the retry must not invoke the intent directly');
+    assert.match(retry, /waitState\.retry/, 'it runs the stored re-entry, not the raw intent');
+    const run = grab('runWithBackendReady');
+    assert.match(run, /waitState\.retry = function\(\)\{ withBackendReady\(intent, context\); \}/,
+      'the stored retry must go back through withBackendReady so the in-flight guard applies again');
+  });
+
+  test('the wait says it is handing over only once that is true', () => {
+    const run = grab('runWithBackendReady');
+    const successAt = run.indexOf('renderWaitSuccessPanel');
+    const readyCheck = run.indexOf('if(!ready)');
+    assert.ok(successAt > readyCheck && readyCheck > -1,
+      'the hand-off message must come AFTER the backend has answered, or it is a promise that can still fail');
+    // Browser-back during the hand-off beat must still stop the order.
+    assert.ok(run.slice(successAt).includes('waitState.cancelled'),
+      'a cancel during the hand-off beat must still be honoured -- otherwise the order fires from a screen they left');
+  });
+
+  test('reduced motion must not make the bar claim to be full', () => {
+    // Normalise line endings, and strip comments BEFORE scanning. This file is
+    // CRLF on Windows, so an anchor written with \n matches nothing; and the
+    // comment recording this decision spells out the exact string being banned,
+    // so a naive scan matches its own documentation. That is the third time
+    // this file has caught itself doing that.
+    const css = stripComments(html.replace(/\r\n/g, '\n'));
+    const start = css.indexOf('.wait-progress-bar{ transition:none; }');
+    assert.ok(start > -1, 'the reduced-motion rule for the bar is missing entirely');
+    const block = css.slice(css.lastIndexOf('@media (prefers-reduced-motion:reduce)', start),
+                            css.indexOf('}', start) + 1);
+    assert.ok(!/width:100%/.test(block),
+      'forcing the determinate bar full under reduced motion claims the wait is over when it has barely started');
+    assert.match(block, /transition:none/, 'removing the easing is the right accommodation');
+  });
+}
+
+// ============================================================
+section('[fe-29] The screen a customer is reading cannot go stale under them');
+// ============================================================
+{
+  const html = read('index.html');
+  const strip = s => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  function grab(name) {
+    const i = html.search(new RegExp('(async )?function ' + name + '\\('));
+    if (i < 0) throw new Error('missing ' + name);
+    let d = 0; const s = html.indexOf('{', i);
+    for (let k = s; k < html.length; k++) {
+      if (html[k] === '{') d++;
+      else if (html[k] === '}') { d--; if (!d) return html.slice(i, k + 1); }
+    }
+  }
+
+  test('THE FINDING: a cart change refreshes the CHECKOUT, not only the cart page', () => {
+    // Measured on the real page before this fix, all three from one cause:
+    //   - add a suggestion from the waiting screen while on checkout: the
+    //     screen still read Rs903 while the cart was worth Rs1,340.03. The
+    //     customer agrees to one number and is charged another -- the same
+    //     class of defect as the missing GST, and caused by the waiting
+    //     screen's own Add button;
+    //   - remove a line from the drawer while on checkout: Rs1,340 on screen
+    //     for a Rs903 cart;
+    //   - empty the cart: a payable total and a live Place Order button.
+    //
+    // refreshCartAndCheckoutViews() already existed and did the right thing --
+    // it was simply never called from any cart mutation, only from the coupon
+    // paths. That asymmetry is the bug.
+    const fn = strip(grab('updateCartUI'));
+    assert.match(fn, /refreshCartAndCheckoutViews\(\)/,
+      'a cart mutation must refresh whichever of the two pages is on screen');
+    assert.ok(!/#page-cart'\)\.classList\.contains\('active'\)/.test(fn),
+      'refreshing only the cart page is what let the checkout go stale');
+    const refresher = strip(grab('refreshCartAndCheckoutViews'));
+    assert.match(refresher, /renderCheckoutPage\(\)/, 'the refresher must cover the checkout');
+    assert.match(refresher, /renderCartPage\(\)/, 'and must still cover the cart page');
+  });
+
+  test('refreshing the checkout must not destroy a half-typed address', () => {
+    // This is the risk the fix introduces: it now runs on EVERY cart change,
+    // including while somebody is typing their address. Verified in a browser
+    // that all seven fields and the focus survive; this test keeps it that way
+    // by making sure the re-render never rewrites the form itself.
+    const fn = strip(grab('renderCheckoutPage'));
+    for (const field of ['ckName', 'ckPhone', 'ckEmail', 'ckAddress', 'ckCity', 'ckState', 'ckPin']) {
+      assert.ok(!new RegExp(field + "'\\)\\.innerHTML|id=\"" + field + '"').test(fn),
+        'renderCheckoutPage rewrites ' + field + ', so a cart change would wipe what the customer typed');
+    }
+    assert.match(fn, /checkoutOrderItems'\)\.innerHTML/, 'it should rewrite the order list');
+    assert.match(fn, /updateCheckoutTotals\(\)/, 'and the totals');
+  });
+
+  test('a cart change cannot recurse back into itself', () => {
+    // updateCartUI now calls the page renderers. If either called back into
+    // updateCartUI the first add to a cart would hang the tab.
+    for (const name of ['renderCartPage', 'renderCheckoutPage', 'updateCheckoutTotals', 'buildSummaryLinesHTML']) {
+      assert.ok(!/updateCartUI\(\)/.test(strip(grab(name))),
+        name + ' calls updateCartUI, which now calls it back — that is an infinite loop on every add');
+    }
+  });
+
+  test('THE TRAP: a sleeping server must never cost the customer their coupon', () => {
+    // appliedCoupon.discountPaise is a number the SERVER computed for the cart
+    // as it was. Coupons here can be percentage-based and can carry a minimum
+    // order value, so the cached figure goes stale as soon as the cart changes.
+    // Re-asking is right; clearing a valid coupon because the API was cold
+    // would be a far worse bug than a briefly stale discount.
+    const fn = strip(grab('revalidateCouponNow'));
+    assert.match(fn, /if\(isTransportFailure\(err\)\) return;/,
+      'a transport failure must change nothing at all');
+    const catchBlock = fn.slice(fn.indexOf('catch'));
+    const transportAt = catchBlock.indexOf('isTransportFailure');
+    const clearAt = catchBlock.indexOf('appliedCoupon = null');
+    assert.ok(transportAt > -1 && clearAt > transportAt,
+      'the transport check must come BEFORE the clear, or a cold start drops a valid coupon');
+    // The customer can remove or swap the coupon while the request is in flight.
+    assert.ok((fn.match(/appliedCoupon\.code !== code/g) || []).length >= 2,
+      'both the success and failure paths must re-check the code before acting on a stale reply');
+    assert.match(strip(grab('revalidateCouponSoon')), /clearTimeout\(couponRecheckTimer\)/,
+      'holding the + button must produce one request, not ten');
+  });
+
+  test('the server stays the only authority on what a coupon is worth', () => {
+    // The client re-asks so the SCREEN is right. It must never send an amount.
+    const order = strip(grab('placeOrderNow'));
+    assert.match(order, /couponCode: appliedCoupon \? appliedCoupon\.code : null/,
+      'only the code may be sent — the server recomputes the discount itself');
+    assert.ok(!/discountPaise:/.test(order),
+      'sending a discount amount would let the client price its own order');
+  });
+
+  test('the waiting screen never assumes the customer has a cart', () => {
+    // Both booking callers pass their own note today, so this is about what any
+    // money path added later inherits — and about the fallback card, which is
+    // reachable from a booking.
+    const openFn = strip(grab('openWaitingExperience'));
+    const suggest = strip(grab('renderWaitSuggestion'));
+    assert.ok(!/Your cart is saved\. Nothing has been charged\./.test(openFn),
+      'the default note hardcodes a cart, so a booking would be told its cart is safe');
+    assert.match(openFn, /waitSubject\(\)/, 'the default must be derived from the audience');
+    assert.ok(!/Your cart is saved exactly as it is/.test(suggest),
+      'the fallback card hardcodes a cart');
+    assert.match(suggest, /waitSubject\(\)/, 'the fallback must name what they actually have');
+  });
+}
+
+// ============================================================
+section('[fe-30] The price on screen is the price charged, warm or cold');
+// ============================================================
+{
+  const html = read('index.html');
+  const strip = s => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const code = strip(html);
+  function grab(name, src) {
+    const s = src || code;
+    const i = s.search(new RegExp('(async )?function ' + name + '\\('));
+    if (i < 0) throw new Error('missing ' + name);
+    let d = 0; const st = s.indexOf('{', i);
+    for (let k = st; k < s.length; k++) {
+      if (s[k] === '{') d++;
+      else if (s[k] === '}') { d--; if (!d) return s.slice(i, k + 1); }
+    }
+  }
+
+  test('THE FINDING: the server amount is never handed to the gateway unchecked', () => {
+    // The client prices from a catalog that can be a whole cold start old. The
+    // SERVER prices from the database and hands back the real figure, which was
+    // passed STRAIGHT to Razorpay as `amount`. So an admin editing a price meant
+    // the customer read one number on the checkout and watched a different one
+    // appear in the payment sheet, unexplained.
+    //
+    // Every place that reaches Razorpay must first compare the two.
+    const sites = [...code.matchAll(/amount: body\.amountPaise/g)].map(m => m.index);
+    assert.strictEqual(sites.length, 3, 'expected the order, puja and astrology paths; found ' + sites.length);
+    for (const at of sites) {
+      // The guard must appear between the API response and the gateway call.
+      const before = code.slice(Math.max(0, at - 2600), at);
+      assert.match(before, /confirmAmountChange\(quotedPaise, body\.amountPaise/,
+        'a payment path reaches Razorpay without comparing the server amount to what the customer was shown');
+    }
+  });
+
+  test('cash on delivery cannot silently place an order at a different price', () => {
+    // COD is created by the server in the same call, so it cannot be taken back
+    // from the client — blocking is not available, but telling the truth is.
+    // Without this the first time the customer met the real price was at the door.
+    const fn = grab('placeOrderNow');
+    const codBranch = fn.slice(fn.indexOf('requiresRazorpay === false'));
+    assert.match(codBranch.slice(0, 700), /amountsAgree\(quotedPaise, body\.totalPaise\)/,
+      'the COD branch must compare the placed total against what the customer was reading');
+    assert.match(codBranch.slice(0, 900), /your order was placed at/,
+      'and must state the figure it was actually placed at');
+  });
+
+  test('the quote is captured from the customer\'s own screen, not re-derived later', () => {
+    const fn = grab('placeOrderNow');
+    const quoteAt = fn.indexOf('const quotedPaise');
+    const postAt = fn.indexOf("apiFetch('/api/payments/create-order'");
+    assert.ok(quoteAt > -1 && postAt > quoteAt,
+      'the quoted figure must be taken BEFORE the commit, or it just echoes the server back at itself');
+    assert.match(fn.slice(quoteAt, quoteAt + 120), /calculateCartTotals\(\)/,
+      'it must be the same function the checkout renders from');
+  });
+
+  test('an unknown amount must never block a valid order', () => {
+    // A missing or malformed figure means we cannot tell, and refusing to sell
+    // on "cannot tell" would be a worse bug than the one being fixed.
+    const fn = grab('amountsAgree');
+    assert.match(fn, /if\(!Number\.isFinite\(x\) \|\| !Number\.isFinite\(y\)\) return true;/,
+      'unknown must resolve to "agree", never to a block');
+    assert.match(fn, /Math\.abs\(x - y\) < 1/,
+      'both sides compute in integer paise, so anything past a paisa is a real difference');
+  });
+
+  test('prices and stock are refreshed the moment the backend wakes', () => {
+    // Without this the customer spends a 60-second cold start looking at
+    // snapshot prices and then pays against figures the server may have changed.
+    const fn = grab('runWithBackendReady');
+    const readyAt = fn.indexOf('if(!ready)');
+    const refreshAt = fn.indexOf('loadCatalog()');
+    const intentAt = fn.lastIndexOf('return intent();');
+    assert.ok(refreshAt > readyAt && intentAt > refreshAt,
+      'the refresh must happen after the backend answers and BEFORE the intent commits money');
+    assert.match(fn, /refreshCartAndCheckoutViews\(\)/,
+      'the corrected figures must reach the page the customer is looking at');
+    assert.match(fn.slice(refreshAt - 200, refreshAt + 300), /try\{/,
+      'a failed refresh must not stop the order — the server amount is still checked before any charge');
+  });
+
+  test('THE FINDING: a quantity has a floor, a ceiling, and no fractions', () => {
+    // Measured before this existed: 9999 accepted against 8 in stock (cart
+    // showed Rs79,99,200 and the server would refuse it at the payment step);
+    // a non-numeric input produced Math.max(1, NaN) === NaN and one NaN line
+    // turned the whole checkout total into NaN; 2.7 was priced as 2.7 units.
+    // normalizeCartQty is pure arithmetic now: a quantity, a CEILING, and what
+    // other lines hold. Working out the ceiling is stockCeilingFor's job,
+    // because it differs for a variant and for a plain product.
+    const run = new Function('return ' + grab('normalizeCartQty') + '; ')();
+    assert.strictEqual(run(9999, 8), 8, 'must cap at the ceiling');
+    assert.strictEqual(run(NaN, 8), 1, 'NaN must not reach the cart');
+    assert.strictEqual(run('abc', 8), 1, 'a non-numeric input must not reach the cart');
+    assert.strictEqual(run(2.7, 8), 2, 'fractions must be floored');
+    assert.strictEqual(run(-50, 8), 1, 'the floor is one');
+    assert.strictEqual(run(0, 8), 1, 'zero is not a quantity');
+    // Infinity is not finite, so it falls to the FLOOR rather than the ceiling.
+    // That is the safer of the two: a garbage input becomes one item, not a
+    // reservation of the seller's entire remaining stock.
+    assert.strictEqual(run(Infinity, 8), 1, 'a nonsense quantity must collapse to 1, never to all of stock');
+    assert.strictEqual(run(-Infinity, 8), 1, 'and the same downwards');
+    // NaN as a ceiling means "we do not know", which must mean NO cap — never
+    // zero. Refusing to sell on "cannot tell" would cost the seller real sales.
+    assert.strictEqual(run(50, NaN), 50, 'an unknown ceiling must not cap');
+    assert.strictEqual(run(50, 0), 50, 'a zero ceiling means unknown here, not "sell nothing"');
+    // Every mutation path must go through it.
+    for (const path of ['changeCartQty', 'setCartQty']) {
+      assert.match(grab(path), /applyCartQty\(/, path + ' sets a quantity without normalising it');
+    }
+    // The third argument is what the OTHER lines of this product already hold —
+    // see the aggregate-stock test in [fe-31]. A new line must be normalised
+    // against that too, not just against the raw stock figure.
+    // A new line is normalised against the ceiling for THIS variant and what the
+    // other lines of that same variant already hold — see the variant tests.
+    assert.match(grab('addToCart'), /normalizeCartQty\(\s*qty,\s*stockCeilingFor\(pending, p\)/,
+      'a new line must be normalised against the ceiling for its own variant');
+    assert.match(grab('addToCart'), /qtyHeldByOtherLines\(id, cartStockKey\(pending\), null\)/,
+      'and against what the other lines of that same variant already claim');
+  });
+
+  test('THE TRAP: stock is only capped when the stock figure is real', () => {
+    // productFromCartLine reports stockQty as the line's OWN quantity for a cart
+    // restored while the API was cold. Capping on that would freeze the line at
+    // whatever it happened to be and would silently disable the customer's cart
+    // during exactly the outage this whole design exists to survive.
+    const ceiling = new Function('return ' + grab('stockCeilingFor') + '; ')();
+    assert.ok(Number.isNaN(ceiling(null, { stockQty: 2, fromSnapshot: true })),
+      'a snapshot-restored product reports its own line quantity as stock — judging by that would freeze the cart during the very outage this survives');
+    assert.ok(Number.isNaN(ceiling(null, null)), 'an unresolved product has no ceiling');
+    assert.ok(Number.isNaN(ceiling(null, { stockQty: 0 })),
+      'a zero figure means "unknown here" — the server is the authority on refusing it');
+    assert.strictEqual(ceiling(null, { stockQty: 5 }), 5, 'a live figure IS the ceiling');
+    assert.match(grab('productFromCartLine'), /stockQty: l\.qty/,
+      'this test is meaningless if that field stops being the line quantity');
+  });
+}
+
+// ============================================================
+section('[fe-31] Combinations: what the new pieces do to each other');
+// ============================================================
+// Every defect in this section was created by a fix in an earlier section.
+// None of them is visible from the change that caused it — they only appear
+// where two correct-looking pieces meet.
+{
+  const html = read('index.html');
+  const strip = s => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const code = strip(html);
+  function grab(name) {
+    const i = code.search(new RegExp('(async )?function ' + name + '\\('));
+    if (i < 0) throw new Error('missing ' + name);
+    let d = 0; const s = code.indexOf('{', i);
+    for (let k = s; k < code.length; k++) {
+      if (code[k] === '{') d++;
+      else if (code[k] === '}') { d--; if (!d) return code.slice(i, k + 1); }
+    }
+  }
+
+  test('THE DEADLOCK: every route that closes the modal answers a pending question', () => {
+    // askInWaitModal borrows the SHARED waiting modal. Several things close that
+    // modal knowing nothing about a pending question — browser-back goes through
+    // cancelWaitingExperience, a new wait calls openWaitingExperience, the retry
+    // button calls closeWaitingExperience. The promise was then never settled,
+    // so placeOrderNow awaited it forever and intentInFlight was never released:
+    // the customer could not place another order for the rest of the session
+    // without reloading. Verified in a browser across all four routes.
+    assert.match(grab('askInWaitModal'), /waitState\.askResolve = resolve;/,
+      'the resolver must be reachable by whatever closes the modal');
+    for (const fn of ['closeWaitingExperience', 'openWaitingExperience']) {
+      const src = grab(fn);
+      assert.match(src, /waitState\.askResolve/, fn + ' can take the modal without answering a pending question');
+      assert.match(src, /waitState\.askResolve = null;/,
+        fn + ' must clear the resolver before calling it, or a resolver that closes the modal re-enters this');
+      assert.match(src, /\(false\)/, fn + ' must answer "no" — nothing has been charged, so that is the safe direction');
+    }
+    // cancelWaitingExperience and retryWaitIntent both go through
+    // closeWaitingExperience, so they inherit it.
+    assert.match(grab('cancelWaitingExperience'), /closeWaitingExperience\(\)/);
+    assert.match(grab('retryWaitIntent'), /closeWaitingExperience\(\)/);
+  });
+
+  test('THE WORST ONE: a background refresh cannot destroy the order confirmation', () => {
+    // renderCheckoutPage() begins by forcing the page back to the form — it
+    // hides #checkoutProcessing and #checkoutSuccess unconditionally. That was
+    // safe while it was only called on page entry and from the coupon buttons.
+    // Routing every cart mutation through it broke the assumption, and the
+    // success path itself does `cart = []; saveCart(); updateCartUI();` — so the
+    // customer paid, saw the confirmation, and watched it be replaced by an
+    // empty checkout. They would reasonably conclude the payment had failed.
+    const refresher = grab('refreshCartAndCheckoutViews');
+    assert.match(refresher, /checkoutIsShowingResult\(\)/,
+      'a background refresh must not drag the customer back to a screen they have left');
+    const guard = grab('checkoutIsShowingResult');
+    assert.match(guard, /checkoutProcessing/, 'mid-payment counts');
+    assert.match(guard, /checkoutSuccess/, 'and so does the confirmation screen');
+    // The renderer KEEPS its reset: that is correct on a real page entry.
+    assert.match(grab('renderCheckoutPage'), /checkoutProcessing'\)\.style\.display = 'none'/,
+      'entering the checkout afresh must still clear a stale result pane');
+  });
+
+  test('the cart is re-checked against stock the wake refresh just re-learned', () => {
+    // The wait reloads the catalog the moment the backend answers, so after a
+    // 60-second cold start we know the real stock again — but nothing revisited
+    // the cart. Measured: a line holding 8 stayed at 8 after stock fell to 2,
+    // and the server refused the order at the payment step.
+    const wake = grab('runWithBackendReady');
+    const loadAt = wake.indexOf('loadCatalog()');
+    const reconcileAt = wake.indexOf('reconcileCartWithCatalog()');
+    const intentAt = wake.lastIndexOf('return intent();');
+    assert.ok(loadAt > -1 && reconcileAt > loadAt && intentAt > reconcileAt,
+      'the cart must be reconciled AFTER the catalog reloads and BEFORE the intent buys anything');
+    const fn = grab('reconcileCartWithCatalog');
+    assert.match(fn, /if\(!p \|\| p\.fromSnapshot\) continue;/,
+      'a snapshot-restored line reports its own quantity as stock — judging it by that would freeze the cart during the very outage this survives');
+    assert.match(fn, /toast\(/, 'silently shrinking somebody\'s cart is its own kind of dishonest');
+    assert.match(fn, /sold out/, 'a line that can no longer be bought must be named, not quietly dropped');
+    // Iterating backwards is what makes splice safe.
+    assert.match(fn, /for\(let i = cart\.length - 1; i >= 0; i--\)/,
+      'removing while iterating forwards would skip the line after each removal');
+  });
+
+  test('THE LATENCY TRAP: the wake refresh can never make the customer wait twice', () => {
+    // loadCatalog() goes through apiFetch as a BACKGROUND request: a 75-second
+    // timeout with retries. Awaiting it unbounded after the backend wakes would
+    // add that to somebody who has ALREADY sat out a cold start. Measured at
+    // +9s against a stubbed 9s boot before this bound existed; bounded at 3.5s
+    // after. The refresh is an optimisation — confirmAmountChange is the
+    // guarantee, and it runs either way.
+    const fn = grab('runWithBackendReady');
+    assert.match(fn, /Promise\.race\(\[/,
+      'the wake refresh must be raced against a timeout, never awaited unbounded');
+    assert.match(fn, /WAKE_REFRESH_MAX_MS/, 'the bound must be a named constant');
+    const cap = Number((html.match(/const WAKE_REFRESH_MAX_MS = (\d+);/) || [])[1]);
+    assert.ok(cap > 0 && cap <= 5000,
+      'the bound is ' + cap + 'ms — anything longer defeats the point of bounding it');
+    // And the money guard must not be inside the race.
+    const raceAt = fn.indexOf('Promise.race');
+    const intentAt = fn.lastIndexOf('return intent();');
+    assert.ok(intentAt > raceAt, 'the intent still runs after the refresh window closes');
+  });
+
+  test('THE AGGREGATE: stock belongs to the product, not to one cart line', () => {
+    // A product with variants has one cart line per variant. Capping each line
+    // on its own let two lines of five pass against eight in stock: each was
+    // individually legal, the total was not, and the server would refuse the
+    // order at the payment step. Measured before this existed.
+    // Lines compete only when they are the same product AND the same variant —
+    // see the variant section below for why sharing one pool across variants
+    // was the wrong model.
+    const CART = [
+      { id: 'p1', qty: 5, variantId: 'a' }, { id: 'p1', qty: 2, variantId: 'a' },
+      { id: 'p1', qty: 4, variantId: 'b' }, { id: 'p2', qty: 9 }
+    ];
+    const run = new Function('cart',
+      grab('cartStockKey') + '\n' + grab('qtyHeldByOtherLines') + '\n' +
+      'return qtyHeldByOtherLines;')(CART);
+    assert.strictEqual(run('p1', 'a', null), 7, 'it must sum the lines of the SAME variant');
+    assert.strictEqual(run('p1', 'b', null), 4, 'a different variant is a different pool');
+    assert.strictEqual(run('p2', '', null), 9, 'and a plain product keys on the empty variant');
+
+    const norm = new Function('return ' + grab('normalizeCartQty') + '; ')();
+    assert.strictEqual(norm(5, 8, 5), 3, 'the ceiling is what the other lines have left');
+    assert.strictEqual(norm(5, 8, 8), 0, 'nothing left must be able to say zero');
+    assert.strictEqual(norm(5, 8, 0), 5, 'and no other lines means no reduction');
+
+    // addToCart must refuse rather than build a cart the server has to reject.
+    assert.match(grab('addToCart'), /if\(allowed < 1\)\{/,
+      'adding when every unit of this variant is already claimed must be refused, not silently capped to 1');
+    // An EXISTING line keeps a floor of 1: deleting somebody's line while they
+    // adjust a quantity is worse than letting the server refuse it.
+    assert.match(grab('applyCartQty'), /Math\.max\(1, normalizeCartQty/,
+      'an existing line must not be silently deleted mid-edit');
+  });
+
+  test('reconciling stock re-checks the coupon priced against the old cart', () => {
+    // Reconciling moves the subtotal, so a percentage coupon is now worth less
+    // and a minimum-order coupon may not apply at all. Every other path to a
+    // changed cart goes through updateCartUI, which schedules the re-check;
+    // this was the one that did not.
+    assert.match(grab('reconcileCartWithCatalog'), /revalidateCouponSoon\(\)/,
+      'a cart shrunk by reconciliation leaves a discount priced for a cart that no longer exists');
+  });
+
+  test('a coupon re-check cannot outlive the coupon it was checking', () => {
+    assert.match(grab('removeCoupon'), /clearTimeout\(couponRecheckTimer\)/,
+      'a reply landing after removal could resurrect a discount the customer just dropped');
+  });
+}
+
+// ============================================================
+section('[fe-32] Differential fuzz: the client total IS the server total');
+// ============================================================
+// Hand-picked cases prove a function works on the cases somebody thought of.
+// This runs the REAL client function against the REAL server function over
+// thousands of generated carts, so the claim is about the whole input space
+// rather than a shortlist. Nothing here is reimplemented — both functions are
+// lifted out of the files that ship.
+{
+  const html = read('index.html');
+  const { calculateOrderTotals } = require('../src/utils/orders.js');
+
+  function cut(name) {
+    const s = html.indexOf('function ' + name + '(');
+    if (s < 0) throw new Error('missing ' + name);
+    let d = 0, i = html.indexOf('{', s);
+    for (; i < html.length; i++) {
+      if (html[i] === '{') d++;
+      else if (html[i] === '}') { d--; if (!d) return html.slice(s, i + 1); }
+    }
+  }
+  const makeClient = new Function('deps', `
+    const { getCartLinesWithProducts, cartUnitPrice, getShippingCost } = deps;
+    let appliedCoupon = deps.appliedCoupon;
+    ${cut('calculateCartTotals')}
+    return calculateCartTotals;
+  `);
+
+  // Deterministic generator: a failure here is reproducible, not a flake.
+  let seed = 20260901;
+  const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+  const pick = a => a[Math.floor(rnd() * a.length)];
+  const int = (lo, hi) => lo + Math.floor(rnd() * (hi - lo + 1));
+
+  test('THE PROOF: 6,000 generated carts agree with the server to the paisa', () => {
+    const RATES = [0, 0.25, 3, 5, 12, 18, 28];
+    const PRICES_PAISE = [1, 50, 99, 100, 2599, 49999, 80000, 250000, 499999];
+    const failures = [];
+
+    for (let n = 0; n < 6000 && failures.length < 3; n++) {
+      const thresholdPaise = pick([0, 50000, 99900, 99900, 150000, 199900]);
+      const flatPaise = pick([0, 4900, 7900, 9900, 12000]);
+      const lines = [];
+      for (let i = 0, c = int(1, 6); i < c; i++) {
+        lines.push({ price: pick(PRICES_PAISE) / 100, gstRate: pick(RATES), qty: int(1, 10) });
+      }
+      const subtotalPaise = lines.reduce((s, l) => s + Math.round(l.price * l.qty * 100), 0);
+      const discountPaise = pick([0, 0, 1, 100,
+        Math.floor(subtotalPaise * 0.1), Math.floor(subtotalPaise * 0.5),
+        subtotalPaise, subtotalPaise + 1, subtotalPaise * 3]);
+
+      // Identity by INDEX. Matching lines on (qty, gstRate) collides whenever two
+      // share both, and that collision makes the HARNESS report a wrong subtotal
+      // — which is exactly what happened the first time this was run.
+      const client = makeClient({
+        getCartLinesWithProducts: () => lines.map((l, i) => ({
+          line: { qty: l.qty, __i: i }, product: { gstRate: l.gstRate, __i: i }
+        })),
+        cartUnitPrice: (line) => lines[line.__i].price,
+        getShippingCost: sub => (sub * 100 >= thresholdPaise ? 0 : flatPaise / 100),
+        appliedCoupon: discountPaise ? { discountPaise } : null
+      })();
+
+      const server = calculateOrderTotals(
+        lines.map(l => ({ lineTotalPaise: Math.round(l.price * l.qty * 100), gstRate: l.gstRate })),
+        discountPaise, { free_shipping_threshold_paise: thresholdPaise, shipping_flat_paise: flatPaise });
+
+      for (const [what, a, b] of [
+        ['total', Math.round(client.total * 100), server.totalPaise],
+        ['subtotal', Math.round(client.subtotal * 100), server.subtotalPaise],
+        ['shipping', Math.round(client.shipping * 100), server.shippingPaise],
+        ['gst', Math.round(client.gst * 100), server.gstPaise],
+        ['discount', Math.round(client.discount * 100), server.discountPaise]
+      ]) {
+        if (a !== b) failures.push(what + ' differs by ' + (a - b) + ' paise on ' + JSON.stringify({ lines, discountPaise, thresholdPaise, flatPaise }));
+      }
+      // Invariants that hold regardless of what the server says.
+      assert.ok(Number.isFinite(client.total), 'a non-finite total reached the customer');
+      assert.ok(client.total >= 0, 'a negative total: ' + client.total);
+      assert.ok(client.discount <= client.subtotal + 1e-9, 'the discount exceeded the cart');
+      assert.ok(Math.abs((client.subtotal - client.discount + client.shipping + client.gst) - client.total) < 0.005,
+        'the components stopped summing to the total');
+    }
+    assert.deepStrictEqual(failures, [], failures[0] || '');
+  });
+
+  test('a cold cart totals identically to a warm one', () => {
+    // The cold path resolves every line through productFromCartLine instead of
+    // the live catalog. If gstRate or the unit price did not survive that hop,
+    // a customer checking out during a boot would be quoted a different number
+    // than the same cart quotes once the API is up. Verified in a browser too:
+    // identical to the paisa, with and without a coupon.
+    const snap = cut('cartLineSnapshot');
+    const from = cut('productFromCartLine');
+    assert.match(snap, /gstRate: Number\(p\.gstRate\) \|\| 0,/,
+      'the snapshot must carry the tax rate, or a cold cart under-quotes exactly as the pre-GST build did');
+    assert.match(from, /gstRate: Number\(l\.snap\.gstRate\) \|\| 0,/,
+      'and it must come back out again');
+    assert.match(from, /Number\.isFinite\(Number\(l\.unitPrice\)\) \? Number\(l\.unitPrice\)/,
+      "a variant line's own unit price must win over the base snapshot price");
+  });
+}
+
+// ============================================================
+section('[fe-33] Variants: a variant is its own product, priced and stocked separately');
+// ============================================================
+// migrations/008_product_variants.sql gives every variant its OWN price_paise
+// (NULL = inherit the base) and its OWN stock_qty, and utils/orders.js checks
+// each variant against its own figure. Everything the client does with money or
+// stock has to follow that model, or the two sides disagree.
+{
+  const html = read('index.html');
+  const strip = s => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const code = strip(html);
+  function grab(name) {
+    const i = code.search(new RegExp('(async )?function ' + name + '\\('));
+    if (i < 0) throw new Error('missing ' + name);
+    let d = 0; const s = code.indexOf('{', i);
+    for (let k = s; k < code.length; k++) {
+      if (code[k] === '{') d++;
+      else if (code[k] === '}') { d--; if (!d) return code.slice(i, k + 1); }
+    }
+  }
+  // The three real functions that decide a variant's ceiling, run for real.
+  const build = cart => new Function('cart',
+    grab('cartStockKey') + '\n' + grab('qtyHeldByOtherLines') + '\n' +
+    grab('stockCeilingFor') + '\n' + grab('normalizeCartQty') + '\n' +
+    'return { cartStockKey, qtyHeldByOtherLines, stockCeilingFor, normalizeCartQty };')(cart);
+
+  test('THE CORRECTION: two variants of one product never share a stock pool', () => {
+    // An earlier version keyed the stock ceiling on the product alone, so a
+    // "Small" line and a "Large" line were made to compete for one pool. They
+    // do not. That over-restricted the cart and refused sales the seller could
+    // actually fulfil — the opposite failure to the one it was fixing, and the
+    // worse one for the business.
+    const cart = [
+      { id: 'p1', qty: 6, variantId: 'small' },
+      { id: 'p1', qty: 6, variantId: 'large' }
+    ];
+    const api = build(cart);
+    // Ask what each line competes with, EXCLUDING itself. The small line's
+    // pool must contain nothing from the large line, and vice versa.
+    assert.strictEqual(api.qtyHeldByOtherLines('p1', 'small', cart[0]), 0,
+      'the large line must not count against the small pool');
+    assert.strictEqual(api.qtyHeldByOtherLines('p1', 'large', cart[1]), 0,
+      'and vice versa');
+    // So both lines may hold their full six even though the BASE product shows
+    // eight — which is exactly the case the old product-keyed version refused.
+    assert.strictEqual(api.normalizeCartQty(6, 6, api.qtyHeldByOtherLines('p1', 'small', cart[0])), 6);
+    assert.strictEqual(api.normalizeCartQty(6, 6, api.qtyHeldByOtherLines('p1', 'large', cart[1])), 6);
+    // Same variant across lines DOES compete.
+    const same = [{ id: 'p1', qty: 3, variantId: 'small' }, { id: 'p1', qty: 4, variantId: 'small' }];
+    assert.strictEqual(build(same).qtyHeldByOtherLines('p1', 'small', same[0]), 4,
+      'lines of the SAME variant share one pool');
+  });
+
+  test('a variant is capped by its OWN stock, never by the base product figure', () => {
+    const api = build([]);
+    const baseProduct = { stockQty: 8, name: 'X' };
+    // With the variant's own figure, that figure wins.
+    assert.strictEqual(api.stockCeilingFor({ variantId: 'v1', variantStock: 3 }, baseProduct), 3,
+      "the variant's own stock is the ceiling");
+    // Without it, there is NO ceiling — the base figure describes a different
+    // pool, and guessing low would refuse a sale the seller can fulfil. The
+    // server holds the real figure and refuses precisely if it must.
+    assert.ok(Number.isNaN(api.stockCeilingFor({ variantId: 'v9' }, baseProduct)),
+      'an unknown variant stock must mean NO cap, never the base product figure');
+    assert.ok(Number.isNaN(api.stockCeilingFor({ variant: 'Size: XL' }, baseProduct)),
+      'a variant identified only by its label behaves the same way');
+    // A plain line still uses the product.
+    assert.strictEqual(api.stockCeilingFor({}, baseProduct), 8,
+      'a non-variant line is still capped by the product');
+    assert.strictEqual(api.normalizeCartQty(50, api.stockCeilingFor({ variantId: 'v9' }, baseProduct)), 50,
+      'and an unknown ceiling must let the quantity through');
+  });
+
+  test("the product page is the only place that can carry a variant's stock", () => {
+    // variantOptions and per-variant stock are loaded on the detail page only,
+    // so both add paths there must put stock_qty on the line — nothing else can.
+    const calls = html.match(/addToCart\(id, pdQty, label,[\s\S]{0,600}?\);/g) || [];
+    assert.strictEqual(calls.length, 2, 'expected Add to Cart and Buy Now');
+    calls.forEach((c, i) => {
+      assert.ok(/pdSelectedVariant \? pdSelectedVariant\.stock_qty/.test(c),
+        'call site ' + (i + 1) + " does not carry the variant's own stock onto the line");
+    });
+    assert.match(grab('addToCart'), /function addToCart\(id, qty, variant, variantId, variantImage, unitPrice, variantStock\)/,
+      'addToCart must accept it');
+    assert.match(grab('addToCart'), /variantStock: pending\.variantStock/,
+      'and store it on the line, or a reload loses the ceiling');
+  });
+
+  test("a variant's own price drives every money figure", () => {
+    // variant.price_paise overrides the base when set, and the base snapshot
+    // holds the WRONG number for a variant line.
+    assert.match(grab('cartUnitPrice'), /line && Number\(line\.unitPrice\)/,
+      "the line's recorded unit price must win over the product's base price");
+    assert.match(grab('productFromCartLine'), /Number\.isFinite\(Number\(l\.unitPrice\)\) \? Number\(l\.unitPrice\)/,
+      'and it must still win when the line is restored from a snapshot during a cold start');
+    assert.match(html, /cartUnitPrice\(x\.line, x\.product\) \* x\.line\.qty/,
+      'the subtotal must be built from the effective price');
+    // calculateCartTotals prices GST off the same effective figure.
+    assert.match(grab('calculateCartTotals'), /cartUnitPrice\(x\.line, x\.product\) \* x\.line\.qty \* 100/,
+      'GST must be computed from the variant price too, not the base price');
+  });
+
+  test('a variant line is not deleted because the BASE product shows sold out', () => {
+    // The base stock figure says nothing about a variant's pool. Dropping the
+    // line on it would delete something the customer can actually buy.
+    assert.match(grab('reconcileCartWithCatalog'), /if\(!p\.stock && !line\.variantId && !line\.variant\)\{/,
+      'only a non-variant line may be judged sold out from the product flag');
+  });
+
+  test('a variant product can never be offered by the waiting screen', () => {
+    // A suggestion card has no variant selector, so Add would put it in the cart
+    // with no variantId — and the server refuses to sell a variant product
+    // without one. The customer would have added it during the wait and had the
+    // order rejected at the moment of payment.
+    assert.match(grab('buyable'), /if\(p\.hasVariants\) return false;/,
+      'a variant product must never reach a suggestion card');
+    assert.match(grab('buyable'), /Array\.isArray\(p\.variantOptions\) && p\.variantOptions\.length/,
+      'including one only known to have variants from the detail endpoint');
+  });
+}
+
+// ============================================================
+section('[fe-34] Future shapes: subcategories, new stock, new products');
+// ============================================================
+// Nothing here is a bug today. These lock in the behaviour that has to survive
+// the next things added to the catalog, because the failures they prevent are
+// silent — a page that tells Google a different category name than it shows the
+// customer, or a label that renders the literal text "undefined".
+{
+  const html = read('index.html');
+  const { displayTerm } = require('../src/utils/text.js');
+  function grab(name) {
+    const i = html.indexOf('function ' + name + '(');
+    if (i < 0) throw new Error('missing ' + name);
+    let d = 0; const s = html.indexOf('{', i);
+    for (let k = s; k < html.length; k++) {
+      if (html[k] === '{') d++;
+      else if (html[k] === '}') { d--; if (!d) return html.slice(i, k + 1); }
+    }
+  }
+  const MINOR = html.match(/const MINOR_WORDS = \[[^\]]*\];/)[0];
+  const storeCase = new Function(MINOR + '\n' + grab('titleCaseTerm') + '; return titleCaseTerm;')();
+  const CAT_LABELS = new Function('return ' + html.match(/const CAT_LABELS = \{[^}]*\};/)[0]
+    .replace('const CAT_LABELS = ', '').replace(/;$/, ''))();
+  const label = new Function('CAT_LABELS', 'titleCaseTerm',
+    grab('catLabel') + '; return catLabel;')(CAT_LABELS, storeCase);
+
+  test('a hierarchical category reads correctly on every level', () => {
+    // The moment subcategories exist a slug becomes "books/scripture". Splitting
+    // on whitespace alone made that ONE word, so it rendered "Books/scripture"
+    // with the second half uncased. Segments are cased independently and
+    // rejoined with the separator untouched, so the stored value is never
+    // rewritten and URLs, JSON-LD and the sitemap need learn no new format.
+    assert.strictEqual(label('books/scripture'), 'Books/Scripture');
+    assert.strictEqual(label('books/scripture/rare'), 'Books/Scripture/Rare');
+    assert.strictEqual(label('malas / rudraksha'), 'Malas/Rudraksha');
+    assert.strictEqual(label('puja samagri/kits and sets'), 'Puja Samagri/Kits and Sets',
+      'minor words stay lowercase INSIDE a segment, and lead each segment capitalised');
+  });
+
+  test('all three title-casers agree, hierarchies included', () => {
+    // There are three: the storefront, the page generator, and the server.
+    // They disagreed once already and the symptom was silent.
+    const gen = require('../scripts/generate-product-pages.js');
+    const cases = ['books/scripture', 'books', 'puja samagri kits', 'idols and murtis',
+      'GIFT SETS', '  a  b  ', 'books/scripture/rare', 'malas / rudraksha', '',
+      '5 mukhi', 'murtis & idols', 'a/b/c/d/e'];
+    for (const c of cases) {
+      const a = storeCase(c);
+      const b = displayTerm(c);
+      assert.strictEqual(a, b, 'storefront and server disagree on ' + JSON.stringify(c));
+      if (typeof gen.titleCaseTerm === 'function') {
+        assert.strictEqual(gen.titleCaseTerm(c), a, 'the page generator disagrees on ' + JSON.stringify(c));
+      }
+    }
+  });
+
+  test('no category an admin can type ever renders as "undefined" or blank', () => {
+    // Categories are admin-defined, not a fixed list. Every one of these was run
+    // through the real function in a browser; none may produce empty text.
+    const shapes = ['books/scripture', 'books & gifts', 'GIFT SETS', '   spaced   ',
+      'माला', 'a'.repeat(120), 'books?x=1', 'books#frag', 'books%2Fsub',
+      '', null, undefined, 'rudraksha-malas', 'puja_samagri', '///', '-', '_'];
+    for (const s of shapes) {
+      const out = label(s === null || s === undefined ? s : String(s).replace(/[-_]+/g, ' '));
+      assert.ok(typeof out === 'string' && out.length > 0,
+        'category ' + JSON.stringify(s) + ' produced an empty label');
+      assert.ok(!/undefined|null|NaN/i.test(out),
+        'category ' + JSON.stringify(s) + ' rendered as "' + out + '"');
+    }
+    assert.strictEqual(label(''), 'Uncategorized', 'an empty category needs a real word, not blank space');
+    assert.strictEqual(label(null), 'Uncategorized');
+  });
+
+  test('THE DIVERGENCE: both catLabels agree, not just both title-casers', () => {
+    // This pair has now diverged TWICE. The first time on title-casing. The
+    // second time was caught by this very test being written: the storefront
+    // gained a guard for separator-only slugs ("///", "-", "_") and the page
+    // generator did not, so the storefront said "Uncategorized" while the
+    // Product JSON-LD carried an EMPTY category straight to Google.
+    //
+    // Comparing the title-casers was not enough, because the guard lives one
+    // level up in catLabel. Compare what actually reaches the page.
+    const gen = require('../scripts/generate-product-pages.js');
+    const shapes = ['books/scripture', 'books', 'GIFT SETS', 'idols and murtis',
+      'rudraksha malas', '///', '-', '_', '   ', '', null, undefined,
+      'books/scripture/rare', 'malas / rudraksha', '5 mukhi', 'murtis & idols'];
+    for (const s of shapes) {
+      assert.strictEqual(gen.catLabel(s), label(s),
+        'catLabel disagrees on ' + JSON.stringify(s) + ' — the page would tell Google a different name than the customer sees');
+      assert.ok(gen.catLabel(s) && gen.catLabel(s).length > 0,
+        JSON.stringify(s) + ' produces an empty category in structured data');
+    }
+  });
+
+  test('a category reaches the URL encoded, and comes back identical', () => {
+    // Categories travel as a query parameter, so a slug containing / ? & or #
+    // must be encoded or it changes meaning. Verified in a browser: every shape
+    // below round-trips exactly.
+    assert.match(html, /encodeURIComponent/,
+      'category values must be encoded into the shop URL');
+    const fn = grab('openShopWithCategory');
+    assert.ok(/encodeURIComponent/.test(fn) || /URLSearchParams/.test(fn),
+      'openShopWithCategory must encode the slug it puts in the URL');
+  });
+
+  test('nothing in the catalog logic is keyed to a product that exists today', () => {
+    // The catalog is admin-driven. A hardcoded id, slug or category would work
+    // until the day that row changes, then fail silently.
+    const code = html.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    // Real UUIDs would mean a product was pinned in code.
+    const uuids = code.match(/['"][0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}['"]/gi) || [];
+    assert.deepStrictEqual(uuids, [], 'a product id is hardcoded: ' + uuids.join(', '));
+    // RITUAL_PAIRS may name categories, but must degrade when it does not know one.
+    const strat = code.slice(code.indexOf('const WAIT_STRATEGIES = ['), code.indexOf('function pickWaitStrategy'));
+    assert.match(strat, /if\(!knownPairing\)\{/,
+      'the pairing map must fall back for a category it has never heard of, or the suggestion silently stops firing');
+  });
+
+  test('stock and price come from the catalog every time, never from a constant', () => {
+    const code = html.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    assert.ok(!/stockQty\s*[=:]\s*\d+/.test(code.replace(/stockQty: Number\(p\.stock_qty \|\| 0\)/g, '')),
+      'a stock figure is hardcoded somewhere');
+    // The one remaining shipping literal must be the documented DEFAULT only.
+    const shipFn = grab('freeShippingThreshold');
+    assert.match(shipFn, /siteConfig/, 'the threshold must be read from settings, not a literal');
+  });
+}
+
+// ============================================================
+section('[fe-35] Subcategories, end to end');
+// ============================================================
+// One nullable normalised column on products, the SAME law categories already
+// follow: free-form text, normalised server-side, and every menu DERIVED from
+// the products that use it. Nothing here may change how a product WITHOUT a
+// subcategory behaves — that is every product until an admin sets one.
+{
+  const html = read('index.html');
+  const admin = read('admin.html');
+  const routes = read('src/routes/products.routes.js');
+  const migration = read('migrations/016_product_subcategory.sql');
+  const strip = s => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const code = strip(html);
+  function grab(name, src) {
+    const s = src || code;
+    const i = s.search(new RegExp('(async )?function ' + name + '\\('));
+    if (i < 0) throw new Error('missing ' + name);
+    let d = 0; const st = s.indexOf('{', i);
+    for (let k = st; k < s.length; k++) {
+      if (s[k] === '{') d++;
+      else if (s[k] === '}') { d--; if (!d) return s.slice(i, k + 1); }
+    }
+  }
+
+  test('the column is nullable and normalised the way the app normalises it', () => {
+    // NULLABLE is the backward-compatibility guarantee: every product that
+    // exists today has no subcategory and must keep behaving exactly as it does.
+    assert.match(migration, /ADD COLUMN IF NOT EXISTS subcategory VARCHAR\(80\)/);
+    assert.ok(!/subcategory VARCHAR\(80\) NOT NULL/.test(migration),
+      'a required subcategory would break every product that exists today');
+    assert.match(migration, /subcategory = lower\(subcategory\)/,
+      'the DB must reject a shape the application would never write');
+    assert.match(migration, /idx_products_category_subcategory/,
+      'every read filters by category first, so the index must lead with it');
+  });
+
+  test('the server treats it exactly like category — including the update whitelist', () => {
+    assert.match(routes, /p\.category, p\.subcategory,/, 'it must be published to the storefront');
+    assert.match(routes, /normaliseTerm\(subcategory\)/, 'normalised on create');
+    assert.match(routes, /req\.body\.subcategory = normaliseTerm\(req\.body\.subcategory\)/, 'and on update');
+    // A field missing from allowedFields is SILENTLY DROPPED — the admin saves,
+    // sees no error, and the value never lands.
+    const allowed = routes.slice(routes.indexOf('const allowedFields = ['));
+    assert.match(allowed.slice(0, 400), /'category', 'subcategory'/,
+      'subcategory must be writable, and must sit next to category so the pair stays visible');
+    assert.match(routes, /conditions\.push\(`p\.subcategory = \$\$\{params\.length\}`\)/,
+      'the list endpoint must be able to filter by it');
+    assert.match(routes, /router\.get\('\/meta\/subcategories'/,
+      'the derived listing must exist, like /meta/top-categories');
+    const meta = routes.slice(routes.indexOf("router.get('/meta/subcategories'"));
+    assert.match(meta.slice(0, 900), /p\.subcategory IS NOT NULL AND p\.subcategory <> ''/,
+      'it must only list subcategories that actually have products, or the menu opens an empty grid');
+  });
+
+  test('THE TREE: categories and subcategories are derived from the catalog', () => {
+    // Derived from PRODUCTS, not fetched — which is why the dropdown is fully
+    // populated during a cold start with no extra request, and can never go
+    // stale separately from the products it describes.
+    const tree = new Function('PRODUCTS', grab('categoryTree') + '; return categoryTree;');
+    const build = list => tree(list)();
+
+    const out = build([
+      { cat: 'books', subcat: 'scripture' }, { cat: 'books', subcat: 'scripture' },
+      { cat: 'books', subcat: 'rare' }, { cat: 'books' },
+      { cat: 'malas', subcat: 'rudraksha' }, { cat: 'idols' }
+    ]);
+    assert.strictEqual(out.length, 3, 'three categories');
+    assert.strictEqual(out[0].cat, 'books', 'the busiest category leads');
+    assert.strictEqual(out[0].count, 4, 'the count includes products with no subcategory');
+    assert.deepStrictEqual(out[0].subs.map(s => s.sub), ['scripture', 'rare'], 'busiest subcategory first');
+    assert.strictEqual(out[0].subs[0].count, 2);
+    // A product with NO subcategory contributes to its category and creates no leaf.
+    assert.deepStrictEqual(build([{ cat: 'idols' }])[0].subs, [],
+      'a product without a subcategory must not invent one');
+    // Junk must not crash the navigation.
+    assert.deepStrictEqual(build([]), [], 'an empty catalog yields an empty tree, not a throw');
+    assert.deepStrictEqual(build([null, {}, { subcat: 'orphan' }]), [],
+      'a product with no category cannot appear in the menu');
+  });
+
+  test('THE TRAP: a slug reaching an onclick is escaped as JS *and* as an attribute', () => {
+    // Category slugs are admin-typed free text and end up inside
+    // onclick="openShopWithCategory('…')". escapeHtml alone does not escape the
+    // apostrophe or backslash that would close the JS string and let the rest of
+    // the slug run as code.
+    const esc = new Function('escapeHtml', grab('jsAttr') + '; return jsAttr;')(
+      s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;'));
+    const nasty = esc("'); alert(1); //");
+    assert.ok(!/^'/.test(nasty), 'the value must not start a bare quoted string');
+    assert.ok(!nasty.includes("');"), 'the injected sequence must not survive intact');
+    assert.ok(esc('a"b').includes('&quot;'), 'a double quote must be attribute-safe');
+    assert.ok(esc('a\\b').includes('\\\\'), 'a backslash must be JS-escaped');
+    assert.match(grab('renderMegaMenu'), /jsAttr\(/, 'the menu must use it');
+    assert.match(grab('renderMegaMenu'), /encodeURIComponent\(n\.cat\)/, 'and encode the href');
+  });
+
+  test('choosing a category clears the subcategory, or the grid goes silently empty', () => {
+    // A subcategory belongs to ONE category. Keeping it while switching category
+    // leaves an impossible filter ("books" + "rudraksha") and an empty grid with
+    // nothing on screen to explain why.
+    const fn = grab('setCategoryFilter');
+    assert.match(fn, /if\(cat !== shopFilters\.cat\) shopFilters\.subcat = '';/,
+      'switching category must drop a subcategory that cannot apply to it');
+    // Clearing the REFINEMENT keeps the category — widening by one step.
+    assert.match(code, /setSubcategoryFilter\(shopFilters\.cat, ''\)/,
+      'removing the subcategory chip must not throw the customer back to everything');
+    // The filter lives in getFilteredSortedProducts, which renderShopGrid calls.
+    assert.match(grab('getFilteredSortedProducts'), /shopFilters\.subcat && p\.subcat !== shopFilters\.subcat/,
+      'the grid must actually apply it');
+    // Applied AFTER the category, because it only ever narrows within one.
+    const f = grab('getFilteredSortedProducts');
+    assert.ok(f.indexOf('p.cat !== shopFilters.cat') < f.indexOf('p.subcat !== shopFilters.subcat'),
+      'the category filter must come first — a subcategory is a refinement of it');
+  });
+
+  test('a deep link carries both parts, encoded, and comes back the same', () => {
+    const fn = grab('openShopWithCategory');
+    assert.match(fn, /encodeURIComponent\(cat\)/);
+    assert.match(fn, /'&subcategory=' \+ encodeURIComponent\(subcat\)/,
+      'a slug may contain / ? & or non-Latin characters, so both parts must be encoded');
+    assert.match(code, /q\.get\('subcategory'\)/, 'and the router must read it back');
+  });
+
+  test('the admin form follows the same law as the category field', () => {
+    assert.match(admin, /id="pfSubcategory" list="pfSubcategoryList"/,
+      'free text plus a datalist, exactly like category');
+    assert.match(admin, /oninput="refreshSubcategoryDatalist\(\)"/,
+      'retyping the category must re-offer the subcategories that belong to it');
+    assert.match(admin, /subcategory: qs\('#pfSubcategory'\)\.value\.trim\(\)/,
+      'the payload must send it');
+    assert.ok(!/subcategory: qs\('#pfSubcategory'\)\.value\.trim\(\) \|\| undefined/.test(admin),
+      "an empty string is how a subcategory is REMOVED — undefined would leave the old value and make clearing impossible");
+    assert.match(admin, /'pfCategory','pfSubcategory'/, 'and the form reset must clear it');
+    assert.match(admin, /qs\('#pfSubcategory'\)\.value = p\.subcategory \|\| ''/,
+      'and editing a product must load it');
+  });
+
+  test('structured data carries the full path, cased on both halves', () => {
+    const gen = require('../scripts/generate-product-pages.js');
+    const base = { id: '1', name: 'X', slug: 'x', price_paise: 10000, category: 'books', stock_qty: 3 };
+    assert.strictEqual(gen.productJsonLd(base, 'https://x').category, 'Spiritual Books',
+      'a product with no subcategory must be unchanged');
+    assert.strictEqual(gen.productJsonLd(Object.assign({}, base, { subcategory: 'scripture' }), 'https://x').category,
+      'Spiritual Books/Scripture');
+    assert.strictEqual(gen.productJsonLd(Object.assign({}, base, { category: 'GIFT SETS', subcategory: 'brass and copper' }), 'https://x').category,
+      'Gift Sets/Brass and Copper', 'both halves cased, minor words respected');
+  });
+
+  test('BACKWARD COMPATIBILITY: a product with no subcategory is untouched', () => {
+    const map = grab('mapApiProduct');
+    assert.match(map, /subcat: p\.subcategory \|\| ''/,
+      "absent must normalise to '', so there is exactly one representation of 'none'");
+    const path = new Function('catLabel', grab('catPath') + '; return catPath;')(
+      k => k ? String(k).toUpperCase() : 'Uncategorized');
+    assert.strictEqual(path({ cat: 'books' }), 'BOOKS', 'no subcategory means no path segment');
+    assert.strictEqual(path({ cat: 'books', subcat: '' }), 'BOOKS', "and '' is the same as absent");
+    assert.strictEqual(path({ cat: 'books', subcat: 'scripture' }), 'BOOKS/SCRIPTURE');
+    assert.strictEqual(path(null), 'Uncategorized', 'and nothing at all still reads as a word');
   });
 }
 

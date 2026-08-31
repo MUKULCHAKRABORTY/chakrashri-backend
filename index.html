@@ -514,6 +514,15 @@ p{ color: var(--text-soft); }
 .mega-col-title svg{ width:19px; height:19px; color:var(--gold-dk); }
 .mega a.mega-link{ display:block; padding:7px 0; font-size:.85rem; color:var(--text-soft); transition:color var(--dur), transform var(--dur); }
 .mega a.mega-link:hover{ color:var(--oxblood); transform:translateX(3px); }
+/* A category and the subcategories beneath it. The indent and the lighter
+   weight are the whole hierarchy cue — no disclosure arrows, because the list
+   is short and a menu that needs opening twice is a menu people stop using. */
+.mega .mega-cat{ margin-bottom:9px; }
+.mega a.mega-link.is-parent{ font-weight:600; color:var(--ink); padding-bottom:3px; }
+.mega .mega-subs{ display:flex; flex-direction:column; padding-left:12px; border-left:1px solid var(--line); margin:2px 0 4px; }
+.mega a.mega-sublink{ display:block; padding:4px 0; font-size:.79rem; color:var(--text-mute); transition:color var(--dur), transform var(--dur); }
+.mega a.mega-sublink:hover{ color:var(--oxblood); transform:translateX(3px); }
+.mega .mega-count{ font-size:.7rem; color:var(--text-mute); font-weight:400; margin-left:5px; }
 .mega-promo{ grid-column:span 1; background:var(--parchment); border-radius:var(--radius-md); padding:var(--sp-5); display:flex; flex-direction:column; justify-content:center; gap:8px; }
 .mega-promo strong{ font-family:var(--f-display); color:var(--ink); font-size:1.05rem; }
 .mega-promo p{ font-size:.8rem; margin:0; }
@@ -1547,10 +1556,38 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
 /* An indeterminate bar, deliberately. A percentage would be a lie: nothing can
    predict when a cold instance finishes booting, and a bar that stalls at 80%
    erodes more trust than no bar at all. */
-.wait-progress{ height:3px; border-radius:3px; background:var(--parchment); overflow:hidden; margin:16px 0 4px; }
-.wait-progress-bar{ height:100%; width:38%; border-radius:3px; background:linear-gradient(90deg, var(--gold-lt, #E3C878), var(--oxblood)); animation:waitSlide 1.6s ease-in-out infinite; }
-@keyframes waitSlide{ 0%{ transform:translateX(-100%); } 100%{ transform:translateX(320%); } }
-@media (prefers-reduced-motion:reduce){ .wait-progress-bar{ animation:none; width:100%; opacity:.5; } }
+.wait-progress{ height:4px; border-radius:4px; background:var(--parchment); overflow:hidden; margin:16px 0 4px; }
+/* Determinate, driven by setWaitBar(). It eases to 90% across a normal cold
+   boot and only reaches 100% once the backend has actually answered — a bar
+   sitting full while nothing happens is the least trustworthy thing a checkout
+   can show. */
+.wait-progress-bar{ height:100%; width:0; border-radius:4px; background:linear-gradient(90deg, var(--gold-lt, #E3C878), var(--oxblood)); transition:width .45s cubic-bezier(.22,1,.36,1), background .3s ease; }
+.wait-progress-bar.is-failed{ background:linear-gradient(90deg, #C0563F, var(--danger, #9E3B2A)); }
+
+/* The step ladder shown once the suggestion phase ends. */
+.wait-steps{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:11px; }
+.wait-step{ display:flex; align-items:center; gap:10px; font-size:.87rem; line-height:1.45; color:var(--text-mute); transition:color .3s ease; }
+.wait-step > svg, .wait-step-spin, .wait-step-dot{ flex:0 0 16px; width:16px; height:16px; box-sizing:border-box; display:block; }
+.wait-step.is-done{ color:var(--success); }
+.wait-step.is-active{ color:var(--ink); font-weight:600; }
+.wait-step-dot{ border-radius:50%; border:1.5px solid var(--line); }
+.wait-step-spin{ border-radius:50%; border:2px solid var(--parchment); border-top-color:var(--oxblood); animation:waitSpin .7s linear infinite; }
+@keyframes waitSpin{ to{ transform:rotate(360deg); } }
+
+/* The service-interruption panel. */
+.wait-fail-lead{ font-size:.92rem; color:var(--ink); line-height:1.6; margin:0 0 13px; }
+.wait-fail-facts{ list-style:none; margin:0 0 14px; padding:0; display:flex; flex-direction:column; gap:8px; }
+.wait-fail-facts li{ position:relative; padding-left:19px; font-size:.85rem; color:var(--text); line-height:1.55; }
+.wait-fail-facts li::before{ content:""; position:absolute; left:3px; top:.62em; width:6px; height:6px; border-radius:50%; background:var(--gold-lt, #E3C878); }
+.wait-fail-help{ font-size:.82rem; color:var(--text-mute); line-height:1.6; margin:0; }
+.wait-fail-help a{ color:var(--oxblood); font-weight:600; }
+@media (prefers-reduced-motion:reduce){
+  /* Do NOT force width:100% here any more. That was right for the old
+     indeterminate bar; on a determinate one it would claim the wait is
+     finished when it has barely started. Removing the easing is enough. */
+  .wait-progress-bar{ transition:none; }
+  .wait-step-spin{ animation:none; border-top-color:var(--oxblood); }
+}
 .wait-body{ margin-top:14px; min-height:150px; }
 .wait-suggest-title{ font-size:.79rem; text-transform:uppercase; letter-spacing:.09em; color:var(--oxblood); font-weight:700; margin:0 0 4px; }
 .wait-suggest-sub{ font-size:.85rem; color:var(--text); margin:0 0 14px; line-height:1.5; }
@@ -1568,7 +1605,15 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
 .wait-foot{ display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:16px; padding-top:14px; border-top:1px solid var(--line); flex-wrap:wrap; }
 .wait-note{ font-size:.76rem; color:var(--text-mute); }
 .wait-actions{ display:flex; gap:10px; margin-top:14px; flex-wrap:wrap; }
-@media (max-width:560px){ .wait-head h3{ font-size:1.08rem; } .wait-items{ grid-template-columns:repeat(2,1fr); } }
+@media (max-width:560px){
+  .wait-head h3{ font-size:1.08rem; }
+  .wait-items{ grid-template-columns:repeat(2,1fr); }
+  .wait-step{ font-size:.83rem; }
+  .wait-fail-lead{ font-size:.88rem; }
+  /* Stacked, so neither action is a thumb-width sliver on a small phone. */
+  .wait-fail .wait-actions{ flex-direction:column; align-items:stretch; }
+  .wait-fail .wait-actions .btn{ width:100%; }
+}
 @keyframes wakepulse{ 0%,100%{ opacity:.35; } 50%{ opacity:1; } }
 @media (prefers-reduced-motion: reduce){ .waking .dot{ animation:none; opacity:1; } }
 
@@ -1875,117 +1920,144 @@ a.p-media:focus-visible, a.p-name:focus-visible{ outline:2px solid var(--oxblood
        display:none rather than opacity so nothing is painted, measured, or
        animated on a repeat load. */
     html.welcomed #awakenScreen{ display:none !important; }
-    #awakenScreen{ position:fixed; inset:0; z-index:99999; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:26px;
-      background:radial-gradient(circle at 50% 45%, #3A1019 0%, #2B0A12 70%); color:#F1E2C8;
+    #awakenScreen{ position:fixed; inset:0; z-index:99999; display:flex; flex-direction:column; align-items:center; justify-content:center;
+      gap:clamp(14px,3vh,30px);
+      background:radial-gradient(circle at 50% 42%, #43141F 0%, #2B0A12 68%); color:#F1E2C8;
       transition:opacity .55s ease, visibility .55s ease; }
     #awakenScreen.awaken-done{ opacity:0; visibility:hidden; pointer-events:none; }
-    #awakenScreen svg{ width:min(46vw, 190px); height:auto; overflow:visible; }
+    #awakenScreen svg{ width:min(30vw,132px); height:auto; overflow:visible; }
     #awakenScreen .awaken-spin{ transform-origin:250px 250px; animation:awakenSpin 24s linear infinite; }
     #awakenScreen .awaken-bindu{ transform-origin:250px 250px; animation:awakenPulse 1.6s ease-in-out infinite; }
-    #awakenScreen .awaken-welcome{ display:flex; flex-direction:column; align-items:center; gap:.55em; text-align:center; padding:0 6vw; max-width:100%; }
-    /* clamp() rather than a breakpoint: this is one line of text whose only job
-       is to fit, and it has to look deliberate on a 320px phone and a 1600px
-       desktop alike. */
-    /* "Welcome to" is now a display line in its own right rather than a small
-       kicker, so the whole phrase reads as one greeting. Its letters rise
-       first, then the brand name, then the tagline settles underneath. */
-    #awakenScreen .awaken-greet{ display:block; font-family:Cinzel, Georgia, serif; font-weight:400;
-      font-size:clamp(1.02rem,4.6vw,1.85rem); letter-spacing:.16em; text-indent:.16em;
-      color:#E9D9B6; line-height:1.1; white-space:nowrap; }
-    #awakenScreen .awaken-greet > span{ display:inline-block; opacity:0; transform:translateY(.45em);
-      animation:awakenLetterIn .55s cubic-bezier(.22,1,.36,1) forwards; }
-    #awakenScreen .awaken-greet > span:nth-child(1){ animation-delay:.10s; }
-    #awakenScreen .awaken-greet > span:nth-child(2){ animation-delay:.15s; }
-    #awakenScreen .awaken-greet > span:nth-child(3){ animation-delay:.20s; }
-    #awakenScreen .awaken-greet > span:nth-child(4){ animation-delay:.25s; }
-    #awakenScreen .awaken-greet > span:nth-child(5){ animation-delay:.30s; }
-    #awakenScreen .awaken-greet > span:nth-child(6){ animation-delay:.35s; }
-    #awakenScreen .awaken-greet > span:nth-child(7){ animation-delay:.40s; }
-    #awakenScreen .awaken-greet > span:nth-child(8){ animation-delay:.45s; }
-    #awakenScreen .awaken-greet > span:nth-child(9){ animation-delay:.50s; }
-    #awakenScreen .awaken-greet > span:nth-child(10){ animation-delay:.55s; }
-    /* The four qualities the shop is built on. Arrives last and stays quiet —
-       it is a supporting line, not a second headline. */
+    #awakenScreen .awaken-welcome{ display:flex; flex-direction:column; align-items:center; gap:.3em;
+      text-align:center; padding:0 4vw; max-width:100%; }
+
+    /* ------------------------------------------------------------------
+       WHY THE WORDMARK IS BUILT IN TWO LAYERS.
+       ------------------------------------------------------------------
+       The letters animate in one at a time, which needs a transform on each
+       letter. A transform gives that letter its own containing block, and a
+       parent's background-clip:text CANNOT paint into it — the letter comes
+       out fully transparent. That is not a theory: the previous build put the
+       gradient on the parent and transformed the letters, and the whole
+       phrase "Welcome to Chakrashri" rendered INVISIBLE. Only the tagline
+       showed. Tested here, every animation primitive on a child breaks it —
+       transform, opacity, filter, position:relative, even will-change.
+
+       So the two jobs are split across two layers that sit on top of
+       each other:
+         layer 1  the letters, a flat gold COLOR (never transparent, so it is
+                  impossible for them to vanish), free to be transformed;
+         layer 2  .aw-shine, one untransformed element carrying the gradient,
+                  faded in once the letters have landed and then swept
+                  forever.
+       Layer 2 owns its own gradient, so background-clip works normally. If it
+       is ever unsupported or removed, layer 1 alone still shows the wordmark.
+       ------------------------------------------------------------------ */
+    #awakenScreen .awaken-greet,
+    #awakenScreen .awaken-brand{ position:relative; display:block; white-space:nowrap; max-width:100%; }
+
+    #awakenScreen .awaken-greet{ font-family:Cinzel, Georgia, serif; font-weight:400;
+      font-size:clamp(1.05rem,4.9vw,2.35rem); letter-spacing:.13em; text-indent:.13em;
+      line-height:1.15; color:#EBD8AC; }
+    #awakenScreen .awaken-brand{ font-family:Cinzel, Georgia, serif; font-weight:700;
+      font-size:clamp(1.95rem,9.9vw,6.5rem); letter-spacing:.05em; text-indent:.05em;
+      line-height:1.04; color:#E8CE86;
+      filter:drop-shadow(0 0 26px rgba(232,163,61,.28)); }
+
+    /* The letters. transform is safe here because these carry a real colour. */
+    #awakenScreen .awaken-greet > span:not(.aw-shine),
+    #awakenScreen .awaken-brand > span:not(.aw-shine){ display:inline-block; opacity:0;
+      animation:awakenLetterIn .6s cubic-bezier(.22,1,.36,1) forwards; }
+    /* The shine's own letters are laid out identically but never animated:
+       any transform, opacity or filter on them would stop the parent gradient
+       painting through, which is the exact bug this layer exists to avoid. */
+    #awakenScreen .aw-shine > span{ display:inline-block; }
+    #awakenScreen .awaken-greet > span:not(.aw-shine){ transform:translateY(.5em); }
+    #awakenScreen .awaken-brand > span:not(.aw-shine){ transform:translateY(.55em) scale(.88); }
+
+    /* Staggered with nth-child rather than inline styles, so the markup stays
+       clean and no CSP exception is needed for inline style attributes.
+       "Welcome to" lands at 1.13s, the name at 1.73s, the tagline at 2.65s —
+       inside AWAKEN_MIN_MS, so the screen is never dismissed mid-animation. */
+    #awakenScreen .awaken-greet > span:not(.aw-shine):nth-child(1){ animation-delay:0.08s; }
+    #awakenScreen .awaken-greet > span:not(.aw-shine):nth-child(2){ animation-delay:0.13s; }
+    #awakenScreen .awaken-greet > span:not(.aw-shine):nth-child(3){ animation-delay:0.18s; }
+    #awakenScreen .awaken-greet > span:not(.aw-shine):nth-child(4){ animation-delay:0.23s; }
+    #awakenScreen .awaken-greet > span:not(.aw-shine):nth-child(5){ animation-delay:0.28s; }
+    #awakenScreen .awaken-greet > span:not(.aw-shine):nth-child(6){ animation-delay:0.33s; }
+    #awakenScreen .awaken-greet > span:not(.aw-shine):nth-child(7){ animation-delay:0.38s; }
+    #awakenScreen .awaken-greet > span:not(.aw-shine):nth-child(8){ animation-delay:0.43s; }
+    #awakenScreen .awaken-greet > span:not(.aw-shine):nth-child(9){ animation-delay:0.48s; }
+    #awakenScreen .awaken-greet > span:not(.aw-shine):nth-child(10){ animation-delay:0.53s; }
+    #awakenScreen .awaken-brand > span:not(.aw-shine):nth-child(1){ animation-delay:0.62s; }
+    #awakenScreen .awaken-brand > span:not(.aw-shine):nth-child(2){ animation-delay:0.68s; }
+    #awakenScreen .awaken-brand > span:not(.aw-shine):nth-child(3){ animation-delay:0.73s; }
+    #awakenScreen .awaken-brand > span:not(.aw-shine):nth-child(4){ animation-delay:0.79s; }
+    #awakenScreen .awaken-brand > span:not(.aw-shine):nth-child(5){ animation-delay:0.85s; }
+    #awakenScreen .awaken-brand > span:not(.aw-shine):nth-child(6){ animation-delay:0.91s; }
+    #awakenScreen .awaken-brand > span:not(.aw-shine):nth-child(7){ animation-delay:0.96s; }
+    #awakenScreen .awaken-brand > span:not(.aw-shine):nth-child(8){ animation-delay:1.02s; }
+    #awakenScreen .awaken-brand > span:not(.aw-shine):nth-child(9){ animation-delay:1.08s; }
+    #awakenScreen .awaken-brand > span:not(.aw-shine):nth-child(10){ animation-delay:1.13s; }
+
+    /* The gradient layer. Sits exactly over the letters: same box, same font,
+       same centring, so the two register as one word rather than two. */
+    #awakenScreen .aw-shine{ position:absolute; left:0; top:0; width:100%;
+      pointer-events:none; opacity:0;
+      background:linear-gradient(100deg,
+        #A87A16 0%, #D9A63A 14%, #F3DFA6 28%, #FFFDF2 40%,
+        #F7E8BC 50%, #FFFDF2 60%, #F3DFA6 72%, #D9A63A 86%, #A87A16 100%);
+      background-size:280% 100%;
+      -webkit-background-clip:text; background-clip:text;
+      -webkit-text-fill-color:transparent; color:transparent; }
+    #awakenScreen .awaken-greet .aw-shine{ animation:awakenShineIn .8s ease .95s forwards, awakenSheen 4.2s ease-in-out .95s infinite; }
+    #awakenScreen .awaken-brand .aw-shine{ animation:awakenShineIn .8s ease 1.5s forwards, awakenSheen 4.2s ease-in-out 1.5s infinite; }
+
+    /* A soft aura behind the name, so the wordmark sits in its own light
+       instead of floating on a flat panel. Behind both layers. */
+    #awakenScreen .awaken-brand::before{ content:""; position:absolute; z-index:-1;
+      left:50%; top:50%; width:150%; height:290%; transform:translate(-50%,-50%);
+      background:radial-gradient(ellipse at center, rgba(233,168,58,.22) 0%, rgba(233,168,58,.07) 42%, transparent 72%);
+      opacity:0; animation:awakenAura 1.2s ease 1.3s forwards; pointer-events:none; }
+
     #awakenScreen .awaken-tagline{ display:block; font-family:Poppins, system-ui, sans-serif;
-      font-size:clamp(.6rem,2.5vw,.8rem); letter-spacing:.22em; text-indent:.22em;
-      text-transform:uppercase; color:rgba(233,217,182,.72); line-height:1.5;
-      max-width:100%; text-wrap:balance;
-      opacity:0; animation:awakenGreetIn .9s ease 1.55s forwards; }
-    #awakenScreen .awaken-brand{ display:block; font-family:Cinzel, Georgia, serif; font-weight:700;
-      font-size:clamp(1.75rem,8.5vw,3.5rem); letter-spacing:.1em; text-indent:.1em; line-height:1.05;
-      white-space:nowrap;
-      /* Fallback FIRST. If background-clip:text is unsupported the gradient
-         below never paints, and a transparent colour would render the brand
-         name invisible — the one thing this screen exists to show. */
-      color:#E8CE86; }
-    @supports ((-webkit-background-clip:text) or (background-clip:text)){
-      /* The greeting takes the same gold, a shade quieter, so "Welcome to
-         Chakrashri" reads as one phrase lit by one light rather than two
-         differently-coloured lines. */
-      #awakenScreen .awaken-greet{
-        background:linear-gradient(100deg,#C7A96A 0%,#F0E2BE 40%,#FFF6DC 52%,#F0E2BE 64%,#C7A96A 100%);
-        background-size:260% 100%;
-        -webkit-background-clip:text; background-clip:text;
-        -webkit-text-fill-color:transparent; color:transparent;
-        animation:awakenSheen 3.6s ease-in-out 1.2s infinite; }
-      #awakenScreen .awaken-brand{
-        background:linear-gradient(100deg,#B8901F 0%,#F3DFA6 22%,#FFF6DC 38%,#E8CE86 52%,#F3DFA6 68%,#B8901F 100%);
-        background-size:260% 100%;
-        -webkit-background-clip:text; background-clip:text;
-        -webkit-text-fill-color:transparent; color:transparent;
-        animation:awakenSheen 3.6s ease-in-out .9s infinite; }
-    }
-    /* Each letter rises in turn. Staggered with nth-child rather than inline
-       styles so the markup stays clean and the CSP needs no exception. */
-    #awakenScreen .awaken-brand > span{ display:inline-block; opacity:0; transform:translateY(.5em);
-      animation:awakenLetterIn .62s cubic-bezier(.22,1,.36,1) forwards; }
-    /* Begins as 'Welcome to' finishes (.55s + .55s duration), so the two read
-       as one sentence arriving rather than two things racing. Last letter
-       settles at 1.50s; the tagline follows at 1.55s. */
-    #awakenScreen .awaken-brand > span:nth-child(1){ animation-delay:.68s; }
-    #awakenScreen .awaken-brand > span:nth-child(2){ animation-delay:.75s; }
-    #awakenScreen .awaken-brand > span:nth-child(3){ animation-delay:.82s; }
-    #awakenScreen .awaken-brand > span:nth-child(4){ animation-delay:.89s; }
-    #awakenScreen .awaken-brand > span:nth-child(5){ animation-delay:.96s; }
-    #awakenScreen .awaken-brand > span:nth-child(6){ animation-delay:1.03s; }
-    #awakenScreen .awaken-brand > span:nth-child(7){ animation-delay:1.10s; }
-    #awakenScreen .awaken-brand > span:nth-child(8){ animation-delay:1.17s; }
-    #awakenScreen .awaken-brand > span:nth-child(9){ animation-delay:1.24s; }
-    #awakenScreen .awaken-brand > span:nth-child(10){ animation-delay:1.31s; }
+      font-size:clamp(.6rem,2.6vw,.9rem); letter-spacing:.2em; text-indent:.2em;
+      text-transform:uppercase; color:rgba(233,217,182,.74); line-height:1.5;
+      max-width:100%; text-wrap:balance; margin-top:.5em;
+      opacity:0; animation:awakenGreetIn .9s ease 1.75s forwards; }
     #awakenScreen .awaken-sub{ font-family:Poppins, system-ui, sans-serif; font-size:clamp(.68rem,2.4vw,.76rem);
       color:rgba(241,226,200,.6); min-height:1.2em; text-align:center; padding:0 8vw; }
+
     @keyframes awakenGreetIn{ from{ opacity:0; transform:translateY(6px); } to{ opacity:1; transform:none; } }
     @keyframes awakenLetterIn{ to{ opacity:1; transform:none; } }
-    @keyframes awakenSheen{ 0%{ background-position:140% 50%; } 100%{ background-position:-40% 50%; } }
+    @keyframes awakenShineIn{ to{ opacity:1; } }
+    @keyframes awakenAura{ to{ opacity:1; } }
+    @keyframes awakenSheen{ 0%{ background-position:150% 50%; } 100%{ background-position:-50% 50%; } }
     @keyframes awakenSpin{ to{ transform:rotate(360deg); } }
     @keyframes awakenPulse{ 0%,100%{ opacity:.35; r:4; } 50%{ opacity:1; r:7; } }
-    /* An animation that cannot be turned off is an accessibility failure, and
-       this one covers the whole viewport. The mark still reads as a mark. */
-    /* Reduced motion must still show the FINISHED state, never the starting
-       one: cancelling the animation without this would leave every letter at
-       opacity 0 and the brand name would simply never appear. */
+
+    /* Reduced motion must show the FINISHED state, never the starting one:
+       stopping the animations without restoring opacity would leave every
+       letter at 0 and the name would never appear at all. */
     @media (prefers-reduced-motion:reduce){
       #awakenScreen .awaken-spin, #awakenScreen .awaken-bindu{ animation:none; }
-      #awakenScreen .awaken-brand, #awakenScreen .awaken-greet{ animation:none; }
       #awakenScreen .awaken-tagline{ animation:none; opacity:1; }
-      #awakenScreen .awaken-brand > span,
-      #awakenScreen .awaken-greet > span{ animation:none; opacity:1; transform:none; }
+      #awakenScreen .awaken-greet > span:not(.aw-shine),
+      #awakenScreen .awaken-brand > span:not(.aw-shine){ animation:none; opacity:1; transform:none; }
+      #awakenScreen .aw-shine{ animation:none; opacity:1; background-position:50% 50%; }
+      #awakenScreen .awaken-brand::before{ animation:none; opacity:1; }
     }
-    /* A short viewport (landscape phone) must not clip the mark or the name. */
-    /* At 320px the tagline measured 281px against 282px available — one pixel,
-       which is inside measurement noise and would be lost entirely if Poppins
-       failed to load and a wider fallback took over. Letter-spacing is the
-       cheapest thing to give back: dropping it to .12em here recovers ~37px and
-       the line still reads as spaced. */
     @media (max-width:400px){
-      #awakenScreen .awaken-tagline{ letter-spacing:.12em; text-indent:.12em; }
+      #awakenScreen .awaken-tagline{ letter-spacing:.1em; text-indent:.1em; }
     }
-    @media (max-height:520px){
-      #awakenScreen{ gap:14px; }
-      #awakenScreen svg{ width:min(24vh,110px); }
-      #awakenScreen .awaken-greet{ font-size:clamp(.85rem,3.4vh,1.2rem); }
-      #awakenScreen .awaken-brand{ font-size:clamp(1.4rem,6vh,2.2rem); }
-      #awakenScreen .awaken-tagline{ font-size:clamp(.55rem,1.9vh,.7rem); letter-spacing:.16em; }
+    /* A landscape phone is short, not narrow: size from the HEIGHT there or
+       the wordmark pushes the tagline off the bottom. */
+    @media (max-height:560px){
+      #awakenScreen{ gap:clamp(8px,1.8vh,16px); }
+      #awakenScreen svg{ width:min(20vh,92px); }
+      #awakenScreen .awaken-greet{ font-size:clamp(.9rem,3.6vh,1.5rem); }
+      #awakenScreen .awaken-brand{ font-size:clamp(1.6rem,7.4vh,3.4rem); }
+      #awakenScreen .awaken-tagline{ font-size:clamp(.55rem,1.9vh,.72rem); letter-spacing:.14em; text-indent:.14em; }
     }
   </style>
   <svg viewBox="0 0 500 500" aria-hidden="true">
@@ -2013,11 +2085,13 @@ a.p-media:focus-visible, a.p-name:focus-visible{ outline:2px solid var(--oxblood
     <circle class="awaken-bindu" cx="250" cy="250" r="5.5" fill="#F1E2C8"/>
   </svg>
   <!-- One span per letter so each can rise in turn. The letters are hidden from
-       assistive tech and the wrapper carries the full phrase, so a screen reader
-       hears "Welcome to Chakrashri" rather than nineteen separate characters. -->
+       assistive tech and the wrapper carries the whole phrase, so a screen reader
+       hears "Welcome to Chakrashri" rather than twenty separate characters.
+       The space is &nbsp; deliberately: an inline-block containing only a normal
+       space collapses to ZERO width, which ran the two words together. -->
   <div class="awaken-welcome" role="text" aria-label="Welcome to Chakrashri">
-    <span class="awaken-greet" aria-hidden="true"><span aria-hidden="true">W</span><span aria-hidden="true">e</span><span aria-hidden="true">l</span><span aria-hidden="true">c</span><span aria-hidden="true">o</span><span aria-hidden="true">m</span><span aria-hidden="true">e</span><span aria-hidden="true"> </span><span aria-hidden="true">t</span><span aria-hidden="true">o</span></span>
-    <span class="awaken-brand" aria-hidden="true"><span aria-hidden="true">C</span><span aria-hidden="true">H</span><span aria-hidden="true">A</span><span aria-hidden="true">K</span><span aria-hidden="true">R</span><span aria-hidden="true">A</span><span aria-hidden="true">S</span><span aria-hidden="true">H</span><span aria-hidden="true">R</span><span aria-hidden="true">I</span></span>
+    <span class="awaken-greet" aria-hidden="true"><span aria-hidden="true">W</span><span aria-hidden="true">e</span><span aria-hidden="true">l</span><span aria-hidden="true">c</span><span aria-hidden="true">o</span><span aria-hidden="true">m</span><span aria-hidden="true">e</span><span aria-hidden="true">&nbsp;</span><span aria-hidden="true">t</span><span aria-hidden="true">o</span><span class="aw-shine" aria-hidden="true"><span aria-hidden="true">W</span><span aria-hidden="true">e</span><span aria-hidden="true">l</span><span aria-hidden="true">c</span><span aria-hidden="true">o</span><span aria-hidden="true">m</span><span aria-hidden="true">e</span><span aria-hidden="true">&nbsp;</span><span aria-hidden="true">t</span><span aria-hidden="true">o</span></span></span>
+    <span class="awaken-brand" aria-hidden="true"><span aria-hidden="true">C</span><span aria-hidden="true">H</span><span aria-hidden="true">A</span><span aria-hidden="true">K</span><span aria-hidden="true">R</span><span aria-hidden="true">A</span><span aria-hidden="true">S</span><span aria-hidden="true">H</span><span aria-hidden="true">R</span><span aria-hidden="true">I</span><span class="aw-shine" aria-hidden="true"><span aria-hidden="true">C</span><span aria-hidden="true">H</span><span aria-hidden="true">A</span><span aria-hidden="true">K</span><span aria-hidden="true">R</span><span aria-hidden="true">A</span><span aria-hidden="true">S</span><span aria-hidden="true">H</span><span aria-hidden="true">R</span><span aria-hidden="true">I</span></span></span>
     <span class="awaken-tagline" aria-hidden="true">Sacred, Authentic, Pure &amp; Trustworthy</span>
   </div>
   <div class="awaken-sub" id="awakenSub"></div>
@@ -2102,16 +2176,15 @@ a.p-media:focus-visible, a.p-name:focus-visible{ outline:2px solid var(--oxblood
           <div class="mega">
             <div>
               <div class="mega-col-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3l7 6-7 12L5 9z"/></svg>Shop by Category</div>
-              <a class="mega-link" href="/shop?category=lingam" onclick="openShopWithCategory('lingam'); return false;">Sphatik Lingams</a>
-              <a class="mega-link" href="/shop?category=yantra" onclick="openShopWithCategory('yantra'); return false;">Sri Yantras</a>
-              <a class="mega-link" href="/shop?category=idols" onclick="openShopWithCategory('idols'); return false;">Idols &amp; Murtis</a>
-              <a class="mega-link" href="/shop?category=malas" onclick="openShopWithCategory('malas'); return false;">Malas</a>
+              <!-- Filled by renderMegaMenu() from the real catalog. These were
+                   seven hardcoded links, so a category an admin created was
+                   invisible in the navigation forever, and there was nowhere for
+                   a subcategory to appear at all. -->
+              <div id="megaCatsA"></div>
             </div>
             <div>
               <div class="mega-col-title" style="opacity:0;pointer-events:none;">.</div>
-              <a class="mega-link" href="/shop?category=bracelets" onclick="openShopWithCategory('bracelets'); return false;">Bracelets</a>
-              <a class="mega-link" href="/shop?category=books" onclick="openShopWithCategory('books'); return false;">Spiritual Books</a>
-              <a class="mega-link" href="/shop?category=samagri" onclick="openShopWithCategory('samagri'); return false;">Puja Samagri Kits</a>
+              <div id="megaCatsB"></div>
               <a class="mega-link" href="/shop?category=all" onclick="openShopWithCategory('all'); return false;" style="font-weight:700;color:var(--oxblood);">View All Products →</a>
             </div>
             <div>
@@ -3573,12 +3646,123 @@ const CAT_LABELS = { lingam:'Sphatik Lingams', yantra:'Sri Yantras', idols:'Idol
 // style — previously any value other than exactly 'bestseller'/'new' was
 // silently replaced with the hardcoded text "Sale", discarding whatever the
 // admin actually typed.
+/* ---------------------------------------------------------------------------
+   THE CATEGORY TREE
+   ---------------------------------------------------------------------------
+   Derived from PRODUCTS rather than fetched. That is the whole trick, and it is
+   why subcategories work during a cold start with no extra request: PRODUCTS is
+   already the snapshot -> localStorage -> API ladder, so the menu is exactly as
+   fresh as the catalog it describes and can never go stale separately from it.
+
+   It also means a category or subcategory appears the moment a product uses it
+   and disappears when none do — the same law the server's /meta endpoints
+   follow, and the reason there is no orphan list to maintain.
+
+   The mega-menu used to be seven hardcoded <a> tags, so a category an admin
+   created was invisible in the navigation forever. */
+function categoryTree(){
+  const tree = [];
+  const byCat = Object.create(null);
+  (Array.isArray(PRODUCTS) ? PRODUCTS : []).forEach(function(p){
+    if(!p || !p.cat) return;
+    let node = byCat[p.cat];
+    if(!node){
+      node = byCat[p.cat] = { cat: p.cat, count: 0, subs: [], _subIndex: Object.create(null) };
+      tree.push(node);
+    }
+    node.count++;
+    const sub = p.subcat || '';
+    if(!sub) return;
+    let leaf = node._subIndex[sub];
+    if(!leaf){ leaf = node._subIndex[sub] = { sub: sub, count: 0 }; node.subs.push(leaf); }
+    leaf.count++;
+  });
+  // Busiest category first, then alphabetical — stable, and it puts the shop's
+  // real weight at the top of the menu without anyone maintaining an order.
+  tree.sort(function(a, b){ return (b.count - a.count) || a.cat.localeCompare(b.cat); });
+  tree.forEach(function(n){
+    n.subs.sort(function(a, b){ return (b.count - a.count) || a.sub.localeCompare(b.sub); });
+    delete n._subIndex;
+  });
+  return tree;
+}
+
+/* "Books/Scripture" for a product that has a subcategory, "Books" otherwise.
+   Goes through catLabel on each part, so both halves obey the one title-casing
+   rule and a separator-only value still reads as Uncategorized. */
+/* Builds the Shop dropdown from categoryTree().
+
+   Two columns because the mega-menu grid has four children and collapsing two
+   of them would reflow the whole panel. Categories are dealt out to balance the
+   number of LINES (a category plus its subcategories), not the number of
+   categories, so one heavily subdivided category does not leave the second
+   column almost empty.
+
+   Renders nothing when the catalog is empty rather than inventing categories:
+   the panel only opens on hover, and the snapshot lands in about 300ms, so an
+   empty first paint is never actually seen. Advertising a category that turns
+   out to have no products would be worse than a brief gap. */
+function renderMegaMenu(){
+  const colA = qs('#megaCatsA'), colB = qs('#megaCatsB');
+  if(!colA || !colB) return;
+  const tree = categoryTree();
+  if(!tree.length){ colA.innerHTML = ''; colB.innerHTML = ''; return; }
+
+  const lines = tree.map(function(n){ return 1 + n.subs.length; });
+  const total = lines.reduce(function(a, b){ return a + b; }, 0);
+  let running = 0, split = tree.length;
+  for(let i = 0; i < tree.length; i++){
+    running += lines[i];
+    if(running >= total / 2){ split = i + 1; break; }
+  }
+  // Never leave the second column empty when there is more than one category.
+  if(split >= tree.length && tree.length > 1) split = tree.length - 1;
+
+  function nodeHTML(n){
+    const cat = escapeHtml(n.cat);
+    let html = '<div class="mega-cat">' +
+      '<a class="mega-link is-parent" href="/shop?category=' + encodeURIComponent(n.cat) + '"' +
+      ' onclick="openShopWithCategory(' + jsAttr(n.cat) + '); return false;">' +
+      escapeHtml(catLabel(n.cat)) + '<span class="mega-count">' + n.count + '</span></a>';
+    if(n.subs.length){
+      html += '<div class="mega-subs">' + n.subs.map(function(s){
+        return '<a class="mega-sublink" href="/shop?category=' + encodeURIComponent(n.cat) +
+          '&subcategory=' + encodeURIComponent(s.sub) + '"' +
+          ' onclick="openShopWithCategory(' + jsAttr(n.cat) + ', ' + jsAttr(s.sub) + '); return false;">' +
+          escapeHtml(catLabel(s.sub)) + '<span class="mega-count">' + s.count + '</span></a>';
+      }).join('') + '</div>';
+    }
+    return html + '</div>';
+  }
+  colA.innerHTML = tree.slice(0, split).map(nodeHTML).join('');
+  colB.innerHTML = tree.slice(split).map(nodeHTML).join('');
+}
+
+/* A category slug is admin-typed free text that ends up inside an onclick
+   attribute. escapeHtml alone is not enough there: it does not escape the
+   apostrophe or the backslash that would close the JS string and let the rest
+   of the slug run as code. JSON.stringify quotes and escapes it properly, and
+   escapeHtml then makes it safe as an ATTRIBUTE. Both, in that order. */
+function jsAttr(value){
+  return escapeHtml(JSON.stringify(String(value == null ? '' : value)));
+}
+
+function catPath(product){
+  if(!product || !product.cat) return catLabel(null);
+  const head = catLabel(product.cat);
+  return product.subcat ? (head + '/' + catLabel(product.subcat)) : head;
+}
+
 function catLabel(key){
   if(!key) return 'Uncategorized';
   if(CAT_LABELS[key]) return CAT_LABELS[key];
   // Same title-casing rule as the backend's displayTerm(), so an
   // admin-created category reads identically everywhere it appears.
-  return titleCaseTerm(String(key).replace(/[-_]+/g,' '));
+  const label = titleCaseTerm(String(key).replace(/[-_]+/g,' '));
+  // A value made only of separators ("///", "-", "_") title-cases to nothing,
+  // and blank space in place of a category reads as a broken page. Anything
+  // that survives to here without producing a word is Uncategorized.
+  return label || 'Uncategorized';
 }
 
 // Returns { cssClass, text } for a badge value. 'bestseller' and 'new' get
@@ -3601,13 +3785,25 @@ function badgeInfo(badge){
    the canonical lowercase values the same way the backend does, or the two
    would disagree about how the same category reads. */
 const MINOR_WORDS = ['and','or','of','the','a','an','for','in','on','with','to'];
+/* Title-cases a term for display.
+
+   SUBCATEGORY-READY: A category may one day be hierarchical — "books/scripture" the moment
+   subcategories exist. Splitting on whitespace alone made that one "word", so it
+   rendered "Books/scripture" with the second half uncased. Segments are split on
+   the separator, cased independently, and rejoined with the SAME separator, so
+   the stored value is never rewritten and nothing downstream (URLs, JSON-LD,
+   the sitemap) has to learn a new format. */
 function titleCaseTerm(value){
   const cleaned = String(value || '').replace(/\s+/g,' ').trim().toLowerCase();
   if(!cleaned) return '';
-  return cleaned.split(' ').map(function(w,i){
-    if(i > 0 && MINOR_WORDS.indexOf(w) > -1) return w;
-    return w.charAt(0).toUpperCase() + w.slice(1);
-  }).join(' ');
+  // Cased per hierarchy segment, then rejoined with the separator untouched.
+  return cleaned.split('/').map(function(segment){
+    const words = segment.trim().split(' ').filter(Boolean);
+    return words.map(function(w,i){
+      if(i > 0 && MINOR_WORDS.indexOf(w) > -1) return w;
+      return w.charAt(0).toUpperCase() + w.slice(1);
+    }).join(' ');
+  }).filter(Boolean).join('/');
 }
 
 // Returns the inner HTML for a product's thumbnail: a real photo if one
@@ -4274,7 +4470,7 @@ let currentBlogId = null;
 let adminUnlocked = false;
 let adminEditingProductId = null;
 let adminEditingPostId = null;
-let shopFilters = { cat:'all', maxPrice:15000, minRating:0, inStockOnly:false, search:'', sortBy:'popularity', view:'grid', page:1 };
+let shopFilters = { cat:'all', subcat:'', maxPrice:15000, minRating:0, inStockOnly:false, search:'', sortBy:'popularity', view:'grid', page:1 };
 const PAGE_SIZE = 9;
 let selectedPuja = null, pujaMode = 'home', pujaSlot = '6-8 AM';
 let selectedAstro = null, astroMode = 'call', astroSlot = '9-11 AM';
@@ -4454,6 +4650,9 @@ function mapApiProduct(p){
     // needs it to stop a customer clicking past what is available.
     stockQty: Number(p.stock_qty || 0),
     hasVariants: !!p.has_variants,
+    // Optional refinement under cat. '' means "no subcategory", which is what
+    // every product has until an admin sets one — see migration 016.
+    subcat: p.subcategory || '',
     // Kept because the order total depends on it. The API has always sent it
     // and the client had always dropped it, which is why the checkout could not
     // compute the same total the server does.
@@ -4653,6 +4852,11 @@ function refreshCatalogViews(){
     }
     renderFeaturedGrid();
     renderDealGrid();
+    // The Shop dropdown is derived from PRODUCTS, so it has to be rebuilt on the
+    // same signal every other catalog-driven view is: snapshot first, then the
+    // live catalog when it lands. Without this the menu would show whatever the
+    // snapshot held for the rest of the session.
+    renderMegaMenu();
     renderMegaMenuPicks();
     updateCartUI();
     updateWishUI();
@@ -4976,10 +5180,12 @@ function applyQueryFilters(){
   try {
     const q = new URLSearchParams(location.search || '');
     const cat = q.get('category');
+    const subcat = q.get('subcategory');
     const search = q.get('search');
     if(cat) shopFilters.cat = cat;
+    if(subcat) shopFilters.subcat = subcat;
     if(search) shopFilters.search = search;
-    if(cat || search) shopFilters.page = 1;
+    if(cat || subcat || search) shopFilters.page = 1;
   } catch(e){ /* URLSearchParams is unavailable only in very old browsers */ }
 }
 
@@ -5091,8 +5297,9 @@ function openBlogPost(id){
   renderBlogPostDetail(id);
 }
 
-function openShopWithCategory(cat){
+function openShopWithCategory(cat, subcat){
   shopFilters.cat = cat;
+  shopFilters.subcat = subcat || '';
   shopFilters.search = '';
   shopFilters.page = 1;
   navigateTo('shop');
@@ -5101,11 +5308,16 @@ function openShopWithCategory(cat){
   // added the history entry for /shop and a second one would make Back feel
   // broken.
   try {
-    const url = '/shop' + (cat && cat !== 'all' ? ('?category=' + encodeURIComponent(cat)) : '');
+    // Both parts encoded: a slug may legitimately contain / ? & or non-Latin
+    // characters, and an unencoded one changes the meaning of the query string.
+    const url = '/shop' + (cat && cat !== 'all'
+      ? ('?category=' + encodeURIComponent(cat) + (subcat ? ('&subcategory=' + encodeURIComponent(subcat)) : ''))
+      : '');
     history.replaceState(null, '', url);
+    const label = catLabel(cat) + (subcat ? (' ' + catLabel(subcat)) : '');
     updatePageMeta('shop', null, cat && cat !== 'all' ? {
-      title: catLabel(cat) + ' — Buy Online | Chakrashri',
-      description: 'Shop authentic ' + catLabel(cat).toLowerCase() + ' at Chakrashri. Carefully sourced, delivered across India, free shipping over ₹999.'
+      title: label + ' — Buy Online | Chakrashri',
+      description: 'Shop authentic ' + label.toLowerCase() + ' at Chakrashri. Carefully sourced, delivered across India, free shipping over ' + formatINR(freeShippingThreshold()) + '.'
     } : undefined);
   } catch(e){ /* file:// and sandboxed iframes */ }
 }
@@ -5458,14 +5670,17 @@ function findCartLine(id, variant){
    chosen variant's price when there is one, otherwise the base product price.
    Callers that add a plain product may omit it. Display only: the server
    recomputes every amount from the database at checkout. */
-function addToCart(id, qty, variant, variantId, variantImage, unitPrice){
+function addToCart(id, qty, variant, variantId, variantImage, unitPrice, variantStock){
   qty = qty || 1;
   const p = getProduct(id);
   if(!p || !p.stock) return;
   const effectivePrice = Number.isFinite(Number(unitPrice)) ? Number(unitPrice) : (p ? p.price : 0);
   const line = findCartLine(id, variant);
   if(line){
-    line.qty += qty;
+    // Refresh the variant's stock figure too: the line may predate this field,
+    // or the figure may have moved since it was added.
+    if(Number.isFinite(Number(variantStock))) line.variantStock = Number(variantStock);
+    applyCartQty(line, line.qty + qty, p);
     // Backfill the real variant id on a pre-existing line (e.g. a cart saved
     // before variants existed, or a line added from a view that didn't know it).
     if(variantId && !line.variantId) line.variantId = variantId;
@@ -5476,7 +5691,21 @@ function addToCart(id, qty, variant, variantId, variantImage, unitPrice){
   } else {
     // snap: what this line needs to render itself when the catalog is not
     // available — see the comment on getCartLinesWithProducts.
-    cart.push({ id:id, qty:qty, variant: variant || '', variantId: variantId || null, variantImage: variantImage || null, unitPrice: effectivePrice, snap: cartLineSnapshot(p) });
+    const pending = { id: id, variant: variant || '', variantId: variantId || null,
+                      variantStock: Number.isFinite(Number(variantStock)) ? Number(variantStock) : null };
+    const allowed = normalizeCartQty(
+      qty,
+      stockCeilingFor(pending, p),
+      qtyHeldByOtherLines(id, cartStockKey(pending), null)
+    );
+    if(allowed < 1){
+      // Every unit of THIS variant is already in the cart. Adding anyway would
+      // build a cart the server has to refuse at the payment step.
+      const what = variant ? (p.name + ' (' + variant + ')') : p.name;
+      toast('Your cart already holds every ' + what + ' we have.', 'err');
+      return;
+    }
+    cart.push({ id:id, qty: allowed, variantStock: pending.variantStock, variant: variant || '', variantId: variantId || null, variantImage: variantImage || null, unitPrice: effectivePrice, snap: cartLineSnapshot(p) });
   }
   saveCart();
   updateCartUI();
@@ -5496,14 +5725,158 @@ function removeFromCart(id, variant){
 function setCartQty(id, variant, qty){
   const line = findCartLine(id, variant);
   if(!line) return;
-  line.qty = Math.max(1, qty);
+  applyCartQty(line, qty, getProduct(id));
   saveCart();
   updateCartUI();
 }
+/* ---------------------------------------------------------------------------
+   WHAT A QUANTITY IS ALLOWED TO BE — one rule, used by every path.
+   ---------------------------------------------------------------------------
+   Measured on the real page before this existed:
+     - setCartQty(id, '', 9999) was accepted against a product with 8 in stock,
+       so the cart showed ₹79,99,200 and the order would be refused by the
+       server at the payment step — the worst possible moment to discover it;
+     - a non-numeric input produced Math.max(1, NaN) === NaN, and one NaN line
+       turned the entire checkout total into NaN;
+     - 2.7 was accepted and priced as 2.7 × ₹800.
+
+   The ceiling is applied ONLY when we hold live stock for the product.
+   productFromCartLine deliberately reports stockQty as the line's own quantity
+   for a cart restored while the API was cold (see the comment there); capping
+   on that would freeze the line at whatever it happened to be. The server
+   re-checks stock on every order regardless, so the client's job here is to
+   stop the customer building a cart that cannot be bought — not to be the
+   authority on stock. */
+/* Re-checks every cart line against stock we have just re-learned.
+
+   THE GAP THIS CLOSES: the wait refreshes the catalog the moment the backend
+   wakes, so after a 60-second cold start we know the real stock again — but
+   nothing revisited the cart. Measured: a line holding 8 stayed at 8 after
+   stock fell to 2, and the order was then refused by the server at the payment
+   step, which is the worst possible moment to learn it.
+
+   Reducing a quantity or dropping a sold-out line without saying so would be
+   its own kind of dishonest, so it always tells the customer what changed. */
+function reconcileCartWithCatalog(){
+  const reduced = [];
+  const removed = [];
+  for(let i = cart.length - 1; i >= 0; i--){
+    const line = cart[i];
+    const p = getProduct(line.id);
+    // No live figure to judge by: an unresolved product, or one restored from
+    // the snapshot, whose stockQty is the line's own quantity by design.
+    if(!p || p.fromSnapshot) continue;
+    // Only a NON-variant line can be judged sold out from the product's own
+    // stock flag. A variant has its own pool, and the base figure says nothing
+    // about it — dropping the line on that would delete a purchasable item.
+    if(!p.stock && !line.variantId && !line.variant){
+      removed.push(p.name);
+      cart.splice(i, 1);
+      continue;
+    }
+    const capped = normalizeCartQty(
+      line.qty,
+      stockCeilingFor(line, p),
+      qtyHeldByOtherLines(line.id, cartStockKey(line), line)
+    );
+    if(capped >= 1 && capped < line.qty){
+      reduced.push(p.name + ' (now ' + capped + ')');
+      line.qty = capped;
+    }
+  }
+  if(!reduced.length && !removed.length) return false;
+  saveCart();
+  const parts = [];
+  if(removed.length) parts.push(removed.join(', ') + (removed.length > 1 ? ' are' : ' is') + ' now sold out and ' + (removed.length > 1 ? 'have' : 'has') + ' been removed');
+  if(reduced.length) parts.push('we could only hold ' + reduced.join(', '));
+  toast('Stock changed while you were waiting — ' + parts.join('; ') + '.', 'err');
+  /* The subtotal just moved, so the cached discount is priced for a cart that
+     no longer exists. A percentage coupon is now worth less; a minimum-order
+     coupon may not apply at all. This is the same staleness revalidateCouponSoon
+     exists for — reconciling is simply another way of reaching it, and it was
+     the one path that did not. */
+  revalidateCouponSoon();
+  return true;
+}
+
+/* The key a cart line competes for stock under.
+
+   THE CORRECTION THIS MAKES: an earlier version keyed this on the product
+   alone, so two DIFFERENT variants of one product were made to share one pool.
+   They do not. `product_variants` carries its own `stock_qty` and its own
+   `price_paise` (migrations/008_product_variants.sql), and utils/orders.js
+   checks each variant against its own figure. Summing across variants
+   over-restricted the cart and refused sales the seller could actually fulfil —
+   the opposite failure to the one it was fixing, and worse for the business.
+
+   Lines only compete when they are the SAME product AND the same variant. */
+function cartStockKey(line){
+  return String(line && (line.variantId || line.variant) || '');
+}
+
+function qtyHeldByOtherLines(productId, variantKey, exceptLine){
+  const key = String(variantKey || '');
+  return cart.reduce(function(sum, l){
+    if(l === exceptLine) return sum;
+    if(String(l.id) !== String(productId)) return sum;
+    if(cartStockKey(l) !== key) return sum;
+    return sum + (Math.floor(Number(l.qty)) || 0);
+  }, 0);
+}
+
+/* How many units this particular line may hold, or NaN for "we do not know".
+
+   A variant's stock is its own. The product's stockQty describes a different
+   pool and must never be used as a variant's ceiling. When a variant line has
+   no stock figure of its own — which is normal away from the product page,
+   where variants are the only place that data is loaded — the honest answer is
+   NaN: the server holds the real figure and refuses precisely if it must.
+   Guessing low there would cost the seller a sale on stock they actually have. */
+function stockCeilingFor(line, product){
+  const variantStock = Number(line && line.variantStock);
+  if(Number.isFinite(variantStock) && variantStock > 0) return variantStock;
+  if(line && (line.variantId || line.variant)) return NaN;   // a variant we cannot price a ceiling for
+  const productStock = product && !product.fromSnapshot ? Number(product.stockQty) : NaN;
+  return (Number.isFinite(productStock) && productStock > 0) ? productStock : NaN;
+}
+
+/* Pure arithmetic: a quantity, a ceiling, and what other lines already hold.
+
+   `ceiling` is NaN whenever we genuinely do not know the limit, and NaN means
+   no cap — never zero. Returns 0 when a real ceiling leaves nothing; callers
+   decide whether that means "refuse the add" or "hold at the remainder",
+   because those are different situations. */
+function normalizeCartQty(qty, ceiling, heldElsewhere){
+  let n = Math.floor(Number(qty));
+  if(!Number.isFinite(n) || n < 1) n = 1;
+  const limit = Number(ceiling);
+  if(Number.isFinite(limit) && limit > 0){
+    const remaining = limit - (Math.floor(Number(heldElsewhere)) || 0);
+    n = Math.min(n, Math.max(0, remaining));
+  }
+  return n;
+}
+
+/* Says so when the ceiling actually bit, rather than silently ignoring the tap.
+   A quantity control that does nothing reads as broken. */
+function applyCartQty(line, wanted, product){
+  const held = qtyHeldByOtherLines(line.id, cartStockKey(line), line);
+  // Floor of 1 for an EXISTING line: silently deleting somebody's line while
+  // they are adjusting a quantity is worse than letting the server refuse it,
+  // and addToCart already stops the case where nothing is left at all.
+  const next = Math.max(1, normalizeCartQty(wanted, stockCeilingFor(line, product), held));
+  if(next < Math.floor(Number(wanted) || 0) && product && product.name){
+    const what = line.variant ? (product.name + ' (' + line.variant + ')') : product.name;
+    toast('Only ' + next + ' more of ' + what + ' ' + (next === 1 ? 'is' : 'are') + ' available.', 'err');
+  }
+  line.qty = next;
+  return next;
+}
+
 function changeCartQty(id, variant, delta){
   const line = findCartLine(id, variant);
   if(!line) return;
-  line.qty = Math.max(1, line.qty + delta);
+  applyCartQty(line, line.qty + delta, getProduct(id));
   saveCart();
   updateCartUI();
 }
@@ -5850,7 +6223,31 @@ function applyCodAvailability(){
 function updateCartUI(){
   qsa('#cartCount').forEach(function(el){ el.textContent = getCartCount(); });
   renderMiniCart();
-  if(qs('#page-cart').classList.contains('active')) renderCartPage();
+  /* THE BUG THIS FIXES: this refreshed the CART page and never the CHECKOUT
+     page, so the summary a customer was reading went stale the moment the cart
+     changed underneath it. Measured, on the real page:
+
+       - add a suggestion from the waiting screen while standing on checkout:
+         the screen still said ₹903 while the cart was worth ₹1,340.03. The
+         customer agrees to one number and is charged another — the same class
+         of defect as the missing GST, and caused here by the waiting screen's
+         own Add button;
+       - remove a line from the mini-cart drawer while on checkout: ₹1,340 still
+         on screen for a ₹903 cart;
+       - empty the cart from the drawer: a payable total and a live Place Order
+         button for nothing.
+
+     refreshCartAndCheckoutViews() already did exactly the right thing and was
+     called only by the coupon paths. Routing every cart mutation through it
+     fixes all three at once, and any path added later inherits it. It also
+     renders the empty state, so the third case disappears with the others.
+
+     Safe to call on every mutation: renderCheckoutPage() rewrites only the
+     order-items list and the totals. It does NOT touch the address form, so a
+     half-typed address survives. */
+  refreshCartAndCheckoutViews();
+  // The discount the server would now give may differ from the cached one.
+  revalidateCouponSoon();
   syncAllQuickAddControls();
 }
 
@@ -6107,7 +6504,21 @@ function renderShopFilterSidebar(){
 }
 
 /* ---------- Shop: filter setters ---------- */
-function setCategoryFilter(cat){ shopFilters.cat = cat; shopFilters.page = 1; renderShopGrid(); }
+function setCategoryFilter(cat){
+  // Clearing the subcategory here is load-bearing. A subcategory belongs to ONE
+  // category, so keeping it while switching category leaves an impossible
+  // filter ("books" + "rudraksha") and an empty grid with nothing on screen to
+  // explain it.
+  if(cat !== shopFilters.cat) shopFilters.subcat = '';
+  shopFilters.cat = cat; shopFilters.page = 1; renderShopGrid();
+}
+
+function setSubcategoryFilter(cat, subcat){
+  shopFilters.cat = cat || 'all';
+  shopFilters.subcat = subcat || '';
+  shopFilters.page = 1;
+  renderShopGrid();
+}
 function setRatingFilter(r){ shopFilters.minRating = r; shopFilters.page = 1; renderShopGrid(); }
 function setPriceFilter(v){ shopFilters.maxPrice = Number(v); shopFilters.page = 1; renderShopGrid(); }
 function toggleInStock(val){ shopFilters.inStockOnly = (typeof val === 'boolean') ? val : qs('#inStockOnly').checked; shopFilters.page = 1; renderShopGrid(); }
@@ -6129,6 +6540,9 @@ function toggleMobileFilters(show){
 function getFilteredSortedProducts(){
   let list = PRODUCTS.filter(function(p){
     if(shopFilters.cat !== 'all' && p.cat !== shopFilters.cat) return false;
+    // A subcategory only ever narrows WITHIN a category, so it is applied after
+    // it and cleared with it — see setCategoryFilter.
+    if(shopFilters.subcat && p.subcat !== shopFilters.subcat) return false;
     if(p.price > shopFilters.maxPrice) return false;
     if(p.rating < shopFilters.minRating) return false;
     if(shopFilters.inStockOnly && !p.stock) return false;
@@ -6150,6 +6564,9 @@ function getFilteredSortedProducts(){
 function renderActiveFilterChips(){
   const chips = [];
   if(shopFilters.cat !== 'all') chips.push({ label: catLabel(shopFilters.cat), clear:"setCategoryFilter('all')" });
+  // Clearing the subcategory keeps the category — removing a refinement should
+  // widen the results by one step, not throw the customer back to everything.
+  if(shopFilters.subcat) chips.push({ label: catLabel(shopFilters.subcat), clear:"setSubcategoryFilter(shopFilters.cat, '')" });
   if(shopFilters.maxPrice < 15000) chips.push({ label:'Up to ' + formatINR(shopFilters.maxPrice), clear:'setPriceFilter(15000)' });
   if(shopFilters.minRating > 0) chips.push({ label: shopFilters.minRating + '★ & up', clear:'setRatingFilter(0)' });
   if(shopFilters.inStockOnly) chips.push({ label:'In Stock Only', clear:'toggleInStock(false)' });
@@ -6180,7 +6597,9 @@ function goToShopPage(n){
 
 function renderShopGrid(){
   renderShopFilterSidebar();
-  const pageTitle = shopFilters.cat === 'all' ? 'All Products' : catLabel(shopFilters.cat);
+  const pageTitle = shopFilters.cat === 'all'
+    ? 'All Products'
+    : (catLabel(shopFilters.cat) + (shopFilters.subcat ? (' / ' + catLabel(shopFilters.subcat)) : ''));
   qs('#shopTitle').textContent = shopFilters.search ? ('Search: "' + shopFilters.search + '"') : pageTitle;
   qs('#shopCrumb').textContent = shopFilters.search ? 'Search Results' : pageTitle;
   qs('#shopSubtitle').textContent = shopFilters.cat==='all' ? 'Browse our full collection of sacred objects.' : ('Explore our ' + pageTitle.toLowerCase() + ' collection.');
@@ -6233,6 +6652,7 @@ function handleSearchSubmit(e){
   qs('#searchSuggest').classList.remove('show');
   shopFilters.search = val;
   shopFilters.cat = 'all';
+  shopFilters.subcat = '';
   shopFilters.page = 1;
   navigateTo('shop');
   return false;
@@ -6789,7 +7209,10 @@ function pdBuyNow(id){
   addToCart(id, pdQty, label,
             pdSelectedVariant ? pdSelectedVariant.id : null,
             pdSelectedVariant ? pdSelectedVariant.image_url : null,
-            variantUnitPrice(p, pdSelectedVariant));
+            variantUnitPrice(p, pdSelectedVariant),
+            // The product page is the ONE place a variant's own stock is
+            // loaded, so it is the only place that can put it on the line.
+            pdSelectedVariant ? pdSelectedVariant.stock_qty : (p ? p.stockQty : null));
   pdQty = 1;
   const disp = qs('#pdQtyDisplay');
   if(disp) disp.textContent = 1;
@@ -6827,7 +7250,10 @@ function pdAddToCart(id){
   addToCart(id, pdQty, label,
     pdSelectedVariant ? pdSelectedVariant.id : null,
     pdSelectedVariant ? pdSelectedVariant.image_url : null,
-    variantUnitPrice(p, pdSelectedVariant));
+    variantUnitPrice(p, pdSelectedVariant),
+    // The product page is the ONE place a variant's own stock is loaded, so it
+    // is the only place that can put it on the line.
+    pdSelectedVariant ? pdSelectedVariant.stock_qty : (p ? p.stockQty : null));
   pdQty = 1;
   const disp = qs('#pdQtyDisplay');
   if(disp) disp.textContent = 1;
@@ -7019,7 +7445,78 @@ async function applyCoupon(){
   }
 }
 
+/* ---------------------------------------------------------------------------
+   THE CACHED DISCOUNT GOES STALE THE MOMENT THE CART CHANGES.
+   ---------------------------------------------------------------------------
+   appliedCoupon.discountPaise is a number the SERVER computed for the cart as
+   it stood when Apply was tapped. Coupons here can be percentage-based and can
+   carry a minimum order value (see validateAndComputeCoupon in
+   src/utils/coupons.js), so once the cart changes that number is no longer the
+   one the server would produce:
+
+     - a percentage coupon on a BIGGER cart discounts more than the screen says;
+     - a minimum-order coupon on a SMALLER cart stops applying altogether, and
+       the order is refused at the payment step with "this coupon needs a
+       minimum order of ₹X" — after the customer has already agreed to a total
+       that included the discount.
+
+   The client cannot recompute either case, because both rules live in the
+   database. So it asks the server again, and it is deliberately timid about
+   what it does with the answer:
+
+     - DEBOUNCED, so holding the + button is one request rather than ten;
+     - a TRANSPORT failure changes NOTHING. This will fail during a cold start,
+       and dropping a valid coupon because the server was asleep would be a far
+       worse bug than briefly showing a stale discount;
+     - only a real answer from the server may change or clear the coupon;
+     - the code is re-checked before applying the result, because the customer
+       can remove or replace the coupon while the request is in flight.
+
+   The server stays authoritative either way: placeOrderNow sends only the
+   coupon CODE and the server recomputes the discount itself. This exists so the
+   number on screen matches what will be charged, never to decide it. */
+let couponRecheckTimer = null;
+function revalidateCouponSoon(){
+  if(!appliedCoupon) return;
+  if(couponRecheckTimer) clearTimeout(couponRecheckTimer);
+  couponRecheckTimer = setTimeout(function(){
+    couponRecheckTimer = null;
+    revalidateCouponNow();
+  }, 700);
+}
+
+async function revalidateCouponNow(){
+  const pending = appliedCoupon;
+  if(!pending || !cart.length || !getAuthToken()) return;
+  const code = pending.code;
+  try{
+    const res = await apiFetch('/api/coupons/validate', {
+      method: 'POST',
+      body: JSON.stringify({
+        code: code,
+        items: cart.map(function(l){ return { productId: l.id, variantId: l.variantId || null, quantity: l.qty }; }),
+        subtotalPaise: Math.round(getCartSubtotal() * 100)
+      })
+    });
+    if(!appliedCoupon || appliedCoupon.code !== code) return;   // removed mid-flight
+    if(Number(res.discountPaise) === Number(appliedCoupon.discountPaise)) return;
+    appliedCoupon = { code: res.code, discountPaise: res.discountPaise, description: res.description };
+    refreshCartAndCheckoutViews();
+  }catch(err){
+    // Asleep, offline, or any other transport problem: keep exactly what we
+    // have. Never punish the customer for our server being cold.
+    if(isTransportFailure(err)) return;
+    if(!appliedCoupon || appliedCoupon.code !== code) return;
+    appliedCoupon = null;
+    refreshCartAndCheckoutViews();
+    toast((err && err.error) ? err.error : 'That coupon no longer applies to this cart.', 'err');
+  }
+}
+
 function removeCoupon(){
+  // Cancel any re-check still pending for the coupon being removed, so a reply
+  // that lands afterwards cannot resurrect a discount the customer just dropped.
+  if(couponRecheckTimer){ clearTimeout(couponRecheckTimer); couponRecheckTimer = null; }
   appliedCoupon = null;
   toast('Coupon removed.');
   refreshCartAndCheckoutViews();
@@ -7033,7 +7530,33 @@ function refreshCartAndCheckoutViews(){
   // totals on screen.
   const view = currentRouteId();
   if(view === 'cart') renderCartPage();
-  if(view === 'checkout') renderCheckoutPage();
+  if(view === 'checkout' && !checkoutIsShowingResult()) renderCheckoutPage();
+}
+
+/* Whether the checkout is showing something OTHER than the form.
+
+   THE BUG THIS FIXES: renderCheckoutPage() begins by forcing the page back to
+   the form — it hides #checkoutProcessing and #checkoutSuccess unconditionally.
+   That was safe while it was only called on page entry and from the coupon
+   buttons, because the form was always what was on screen. Routing every cart
+   mutation through it broke that assumption in two places, and both were
+   measured on the real page:
+
+     - the SUCCESS screen was destroyed the instant an order went through. The
+       success path itself does `cart = []; saveCart(); updateCartUI();`, so the
+       customer paid, saw the confirmation, and watched it be replaced by an
+       empty checkout. They would reasonably conclude the payment had failed;
+     - the PROCESSING pane could be replaced by the form mid-payment, because
+       the coupon re-check fires on a 700ms debounce and can land at any moment.
+
+   The renderer keeps its reset — that is correct when the customer genuinely
+   re-enters the checkout. What changes is that a background refresh no longer
+   drags them back to a screen they have already left. */
+function checkoutIsShowingResult(){
+  const processing = qs('#checkoutProcessing');
+  const success = qs('#checkoutSuccess');
+  return (!!processing && processing.style.display !== 'none') ||
+         (!!success && success.style.display !== 'none');
 }
 
 // Shared summary-lines builder used by BOTH the cart page and the checkout
@@ -7266,9 +7789,24 @@ async function placeOrderNow(){
       if(addrRes && addrRes.id) shippingAddressId = addrRes.id;
     }catch(e){ console.warn('Could not create shipping address on server, proceeding without it', e); }
 
+    /* What the customer was actually reading, captured immediately before the
+       commit so it reflects any refresh the wait has just done. The server
+       recomputes everything from the database; this exists only to notice when
+       its answer is not the number the customer agreed to. */
+    const quotedPaise = Math.round(calculateCartTotals().total * 100);
+
     const body = await apiFetch('/api/payments/create-order', { method: 'POST', body: JSON.stringify({ items: items, shippingAddressId: shippingAddressId, paymentMethod: paymentMethod, couponCode: appliedCoupon ? appliedCoupon.code : null }) });
 
     if (body.requiresRazorpay === false) {
+      /* Cash on delivery is already placed by the time we get here — the server
+         creates it in this same call, so it cannot be taken back from the
+         client. Blocking is therefore not available; telling the truth is. The
+         catalog refresh on wake makes this window very small, and when it does
+         happen the customer learns the real figure here rather than at the door. */
+      if(!amountsAgree(quotedPaise, body.totalPaise)){
+        toast('Prices changed while you were checking out — your order was placed at ' +
+          formatINR(Number(body.totalPaise) / 100) + '. Please contact us within 24 hours if that is not what you expected.', 'err');
+      }
       qs('#checkoutProcessing').style.display = 'none';
       qs('#checkoutSuccess').style.display = '';
       showCheckoutSuccess(body.orderNumber, null);
@@ -7278,6 +7816,20 @@ async function placeOrderNow(){
       saveCart();
       updateCartUI();
       window.scrollTo({ top:0 });
+      return;
+    }
+
+    /* THE GUARD. body.amountPaise is authoritative and was previously handed
+       straight to Razorpay, so a price edit meant the customer read one number
+       and watched another appear in the payment sheet. Nothing has been charged
+       at this point, so this is still a safe place to stop and ask. */
+    if(!await confirmAmountChange(quotedPaise, body.amountPaise, 'your order')){
+      const proc = qs('#checkoutProcessing'); if(proc) proc.style.display = 'none';
+      const layout = qs('#checkoutLayout'); if(layout) layout.style.display = '';
+      // The order row exists and is holding stock. The server's expiry sweep
+      // releases it, and nothing was charged — say so plainly.
+      toast('Nothing has been charged. Your cart is exactly as you left it.');
+      refreshCartAndCheckoutViews();
       return;
     }
 
@@ -7601,6 +8153,7 @@ async function confirmPujaBookingNow(){
   toast('Opening secure payment…');
 
   try{
+    const quotedPaise = Math.round(Number(svc.price) * 100);
     const body = await apiFetch('/api/bookings/puja', { method:'POST', body: JSON.stringify({
       serviceId: svc.id,
       preferredDate: dateVal,
@@ -7610,6 +8163,13 @@ async function confirmPujaBookingNow(){
       contactPhone: qs('#pjPhone').value,
       notes: (qs('#pjGotra') && qs('#pjGotra').value ? ('Gotra: ' + qs('#pjGotra').value + '. ') : '') + (qs('#pjNotes') ? qs('#pjNotes').value : '')
     })});
+
+    // Same guard as the checkout: the fee on screen may be older than the one
+    // the server has just priced this booking at. Nothing is charged yet.
+    if(!await confirmAmountChange(quotedPaise, body.amountPaise, 'this puja')){
+      toast('Nothing has been charged. Your booking details are saved.');
+      return;
+    }
 
     if(typeof window.Razorpay === 'undefined'){
       await new Promise(function(resolve,reject){
@@ -7758,6 +8318,7 @@ async function confirmAstroBookingNow(){
   toast('Opening secure payment…');
 
   try{
+    const quotedPaise = Math.round(Number(svc.price) * 100);
     const body = await apiFetch('/api/bookings/astrology', { method:'POST', body: JSON.stringify({
       serviceId: svc.id,
       consultationMode: astroMode,
@@ -7772,6 +8333,12 @@ async function confirmAstroBookingNow(){
         notes: qs('#asNotes') ? qs('#asNotes').value : ''
       }
     })});
+
+    // Same guard as the checkout and the puja booking.
+    if(!await confirmAmountChange(quotedPaise, body.amountPaise, 'this consultation')){
+      toast('Nothing has been charged. Your booking details are saved.');
+      return;
+    }
 
     if(typeof window.Razorpay === 'undefined'){
       await new Promise(function(resolve,reject){
@@ -8045,6 +8612,7 @@ function handleMobileSearchSubmit(e){
   const val = qs('#mobileSearchInput').value.trim();
   shopFilters.search = val;
   shopFilters.cat = 'all';
+  shopFilters.subcat = '';
   shopFilters.page = 1;
   closeAllDrawers();
   navigateTo('shop');
@@ -8543,7 +9111,134 @@ window.addEventListener('online', function(){ if(outboxCount()) scheduleOutboxFl
 const WAIT_STRATEGY_KEY = 'chakrashri_wait_seen_v1';
 const WAIT_MAX_MS = 120000;
 
-let waitState = { open: false, cancelled: false, rotateTimer: null, shown: [] };
+let waitState = {
+  open: false, cancelled: false, shown: [],
+  phase: 'idle',        // 'suggest' | 'progress' | 'overrun' | 'done' | 'failed'
+  audience: 'order',
+  startedAt: 0,
+  step: -1,
+  retry: null,
+  askResolve: null,     // settles a pending askInWaitModal if the modal closes
+  timers: [], intervals: []
+};
+
+/* ---------------------------------------------------------------------------
+   HOW A WAIT IS PACED
+   ---------------------------------------------------------------------------
+   A cold Render instance is 30-60s of nothing followed by a sudden yes, and the
+   customer is standing at the payment step while it happens. One screen cannot
+   hold that time in one way, so it holds it in three, in this order:
+
+     0-20s    SUGGEST   ONE suggestion that fits what they are actually doing:
+                        products if they are buying, what-happens-next if they
+                        are booking. Shown once. A second and third card is
+                        advertising at somebody who is trying to pay, and it
+                        reads as stalling.
+     20-60s   PROGRESS  the selling stops. A step ladder shows what is genuinely
+                        being done and a bar eases across the cold-start budget,
+                        so the wait visibly moves instead of merely lasting.
+     60s+     OVERRUN   past a normal cold boot. Say so plainly and keep the way
+                        out visible - but do NOT declare failure, because the
+                        instance usually does still answer.
+
+   These phases are DISPLAY ONLY. Whether the intent runs is still decided
+   entirely by ensureBackendAwake, so a phase change can never charge, cancel,
+   skip or duplicate anything.
+
+   Every line shown is TRUE. It would be easy to write "redirecting you to
+   payment" at 30 seconds because it sounds reassuring, but if the boot then
+   fails the customer has been told something that did not happen while their
+   money was on the table. The ladder describes what we are doing; only after
+   the backend has actually answered does the screen say it is handing over.
+   --------------------------------------------------------------------------- */
+const WAIT_SUGGEST_MS = 20000;
+const WAIT_COLD_BUDGET_MS = 60000;
+const WAIT_HANDOFF_MS = 700;      // the beat between "ready" and the next screen
+const WAKE_REFRESH_MAX_MS = 3500; // how long the wake refresh may delay the intent
+
+/* One ladder per audience. The wording differs because the work differs: a
+   booking never touches a payment session, and telling somebody booking a
+   pandit that we are "confirming your items" is the same wrong note as
+   offering them an Add to cart button. */
+const WAIT_FLOW = {
+  order: {
+    steps: ['Opening a secure connection',
+            'Confirming your items and their prices',
+            'Preparing your payment session'],
+    done: 'Secure session ready — taking you to payment'
+  },
+  puja: {
+    steps: ['Opening a secure connection',
+            'Checking the pandit’s availability',
+            'Holding your slot'],
+    done: 'Availability confirmed — completing your booking'
+  },
+  astrology: {
+    steps: ['Opening a secure connection',
+            'Checking your astrologer’s calendar',
+            'Holding your time'],
+    done: 'Time confirmed — completing your booking'
+  }
+};
+
+const WAIT_STEP_ICON = {
+  done: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>',
+  active: '<span class="wait-step-spin" aria-hidden="true"></span>',
+  todo: '<span class="wait-step-dot" aria-hidden="true"></span>'
+};
+
+function waitFlow(){ return WAIT_FLOW[waitState.audience] || WAIT_FLOW.order; }
+
+/* What is at stake for this customer, in their words. Used by both the overrun
+   note and the failure panel so neither ever tells someone booking a pandit
+   that their "cart" is safe. */
+function waitSubject(){ return waitState.audience === 'order' ? 'your cart' : 'your booking'; }
+
+function waitElapsed(){ return waitState.startedAt ? (Date.now() - waitState.startedAt) : 0; }
+
+/* Which step is being worked on. DERIVED from elapsed time rather than
+   incremented by a timer: a backgrounded mobile tab throttles timers hard, and
+   a counter would then be wrong for the rest of the wait. */
+function waitStepIndex(){
+  const e = waitElapsed();
+  if(e < 15000) return 0;
+  if(e < 35000) return 1;
+  return 2;
+}
+
+/* Eases to 90% across a normal cold boot and then creeps. It NEVER reaches 100
+   until the backend has actually answered - a progress bar sitting full while
+   nothing happens is the single most distrusted thing a checkout can show. */
+function waitBarPercent(){
+  const e = waitElapsed();
+  if(e <= WAIT_COLD_BUDGET_MS){
+    const f = e / WAIT_COLD_BUDGET_MS;
+    return 90 * (1 - (1 - f) * (1 - f));
+  }
+  const span = Math.max(1, WAIT_MAX_MS - WAIT_COLD_BUDGET_MS);
+  return 90 + 6 * Math.min(1, (e - WAIT_COLD_BUDGET_MS) / span);
+}
+
+function setWaitBar(pct){
+  const bar = qs('#waitBar');
+  if(bar) bar.style.width = Math.max(0, Math.min(100, pct)) + '%';
+}
+
+/* Every timer this screen starts, in one place.
+
+   A wait now runs two phase hand-offs and a tick, on top of whatever a future
+   change adds. Any one of them left behind keeps firing into a modal nobody is
+   looking at for the rest of the session - and one of them re-renders the
+   panel, so an orphan would visibly fight with the next wait. Registering them
+   is what makes it impossible for closeWaitingExperience to miss one. */
+function waitAfter(ms, fn){ const id = setTimeout(fn, ms); waitState.timers.push(id); return id; }
+function waitEvery(ms, fn){ const id = setInterval(fn, ms); waitState.intervals.push(id); return id; }
+function clearWaitTimers(){
+  waitState.timers.forEach(clearTimeout);
+  waitState.intervals.forEach(clearInterval);
+  waitState.timers = [];
+  waitState.intervals = [];
+}
 
 /* Categories that genuinely belong together on an altar, so the pairing reads
    as a suggestion from someone who knows the subject rather than as a random
@@ -8649,8 +9344,14 @@ const WAIT_STRATEGIES = [
     contexts: ['order'],
     build: function(){
       const subtotal = getCartSubtotal();
-      if(subtotal <= 0 || subtotal >= 999) return null;
-      const gap = 999 - subtotal;
+      // freeShippingThreshold(), never a literal: the server prices shipping
+      // from site_settings, and this card hardcoded 999. Raising the threshold
+      // in the admin left this promising free shipping at the old number while
+      // the customer was one tap from paying — the same drift already fixed in
+      // the cart, the checkout and the shipping copy.
+      const threshold = freeShippingThreshold();
+      if(subtotal <= 0 || subtotal >= threshold) return null;
+      const gap = threshold - subtotal;
       // Only items that actually cross the threshold, and cheapest first, so
       // this is a real saving rather than a nudge to spend more than the
       // shipping costs.
@@ -8659,7 +9360,7 @@ const WAIT_STRATEGIES = [
       if(!items.length) return null;
       return {
         title: 'Free shipping is ' + formatINR(gap) + ' away',
-        sub: 'Orders over ' + formatINR(999) + ' ship free across India. Any of these would cover it.',
+        sub: 'Orders over ' + formatINR(threshold) + ' ship free across India. Any of these would cover it.',
         items: items
       };
     }
@@ -8758,21 +9459,16 @@ const WAIT_STRATEGIES = [
       return { title: notes[i].title, note: notes[i].note };
     }
   },
-  {
-    id: 'journal',
-    build: function(){
-      if(typeof BLOG_POSTS === 'undefined' || !BLOG_POSTS.length) return null;
-      const post = BLOG_POSTS[Math.floor(Math.random() * BLOG_POSTS.length)];
-      if(!post) return null;
-      return {
-        title: 'From the Journal',
-        sub: null,
-        note: '<strong>' + escapeHtml(post.title) + '</strong><br>' + escapeHtml((post.excerpt || '').slice(0, 220)),
-        noteIsHtml: true,
-        items: []
-      };
-    }
-  }
+  /* A 'From the Journal' card used to sit here with NO `contexts`, which made
+     it eligible for every audience. So a customer at the payment step could be
+     shown a blog excerpt, and so could someone booking a pandit. Reading is
+     not what either of them came to do, and putting an article in front of
+     somebody mid-payment reads as a distraction from their money.
+
+     It is deleted rather than re-scoped: there is no audience on this screen
+     it belongs to. Someone buying gets products, someone booking gets their
+     booking. If a strategy cannot be assigned to one of those two, it does not
+     belong in a payment wait at all. */
 ];
 
 /* Picks a strategy that has something to say AND has not been used yet this
@@ -8785,7 +9481,7 @@ function pickWaitStrategy(){
   // the cart declares itself order-only, so a booking can never be offered an
   // Add button that would strand a product in a cart it has nothing to do with.
   const audience = waitState.audience || 'order';
-  const built = WAIT_STRATEGIES.filter(function(s){
+  let built = WAIT_STRATEGIES.filter(function(s){
     return !s.contexts || s.contexts.indexOf(audience) > -1;
   }).map(function(s){
     let payload = null;
@@ -8794,6 +9490,16 @@ function pickWaitStrategy(){
   }).filter(Boolean);
 
   if(!built.length) return null;
+
+  // Someone at the checkout asked to buy something, so a suggestion is only
+  // worth their attention if it is something they can actually buy. The care
+  // note and any other prose card stay in the list as a FALLBACK — they are
+  // what remains when every product is already in the cart or out of stock —
+  // but they never displace a real product suggestion.
+  if(audience === 'order'){
+    const withItems = built.filter(function(b){ return b.payload.items && b.payload.items.length; });
+    if(withItems.length) built = withItems;
+  }
 
   const seen = waitSeenStrategies();
   const last = waitState.shown[waitState.shown.length - 1];
@@ -8866,7 +9572,10 @@ function renderWaitSuggestion(){
   if(!body) return;
   const chosen = pickWaitStrategy();
   if(!chosen){
-    body.innerHTML = '<div class="wait-note-card">Hold tight — we are opening a secure connection to complete your order. Your cart is saved exactly as it is.</div>';
+    // Derived, not hardcoded: this card is reachable from a booking too, and
+    // "your cart is saved" to somebody booking a pandit is the wrong screen.
+    body.innerHTML = '<div class="wait-note-card">Hold tight — we are opening a secure connection. Nothing has been charged and ' +
+      escapeHtml(waitSubject()) + ' is saved exactly as it is.</div>';
     return;
   }
   const s = chosen.payload;
@@ -8897,6 +9606,226 @@ function waitAddSuggestion(id){
   if(note) note.textContent = 'Added — it will be included when your order goes through.';
 }
 
+/* The step ladder. Replaces the suggestion once the selling phase is over. */
+function renderWaitProgressPanel(){
+  const body = qs('#waitBody');
+  if(!body) return;
+  const flow = waitFlow();
+  const active = waitStepIndex();
+  let html = '<ul class="wait-steps">';
+  flow.steps.forEach(function(label, i){
+    const state = i < active ? 'done' : (i === active ? 'active' : 'todo');
+    html += '<li class="wait-step is-' + state + '">' + WAIT_STEP_ICON[state] +
+            '<span>' + escapeHtml(label) + '</span></li>';
+  });
+  html += '</ul>';
+  if(waitState.phase === 'overrun'){
+    // Honest, and deliberately NOT an apology yet: most boots that reach here
+    // still succeed, and apologising for a success reads as panic.
+    // Kept short on purpose. Measured at 320x640: the longer wording pushed the
+    // Cancel button below the fold, so the way out was hidden at exactly the
+    // moment the customer is most likely to want it.
+    html += '<div class="wait-note-card">' +
+      '<strong>This is taking longer than usual.</strong><br>' +
+      'Nothing has been charged and ' + escapeHtml(waitSubject()) +
+      ' is saved. You can keep waiting, or come back later.' +
+      '</div>';
+  }
+  body.innerHTML = html;
+}
+
+/* Shown the moment the backend actually answers, before the next screen. This
+   is the only point at which the wait is allowed to say it is handing over,
+   because it is the only point at which that is true. */
+function renderWaitSuccessPanel(){
+  waitState.phase = 'done';
+  clearWaitTimers();
+  setWaitBar(100);
+  const flow = waitFlow();
+  setWaitStatus(flow.done);
+  const body = qs('#waitBody');
+  if(body){
+    body.innerHTML = '<ul class="wait-steps">' + flow.steps.map(function(label){
+      return '<li class="wait-step is-done">' + WAIT_STEP_ICON.done + '<span>' + escapeHtml(label) + '</span></li>';
+    }).join('') + '</ul>';
+  }
+  // Cancel is withdrawn here on purpose: the intent is about to run, and a
+  // button that cannot reliably stop it is worse than no button.
+  const cancel = qs('#waitCancelBtn');
+  if(cancel) cancel.style.display = 'none';
+}
+
+/* The service-interruption panel.
+
+   This replaced a toast. A toast is the right weight for "coupon not found"
+   and the wrong weight for "your payment did not go through" - it slides away
+   on its own, leaving somebody who was about to spend money with no
+   explanation on screen and no obvious next move.
+
+   Three things it must do, and they are what the industry standard actually
+   is: say what happened without blaming the customer, state plainly what was
+   and was not done to their money, and give a way forward that does not depend
+   on the thing that just failed. */
+function renderWaitFailurePanel(){
+  waitState.phase = 'failed';
+  clearWaitTimers();
+  // A device with no connection is not our outage, and saying "our servers are
+  // down" to somebody whose wifi dropped is both wrong and unfixable by them.
+  const offline = (typeof navigator !== 'undefined' && navigator.onLine === false);
+  const subject = waitSubject();
+  const Subject = subject.charAt(0).toUpperCase() + subject.slice(1);
+
+  const bar = qs('#waitBar');
+  if(bar){ bar.classList.add('is-failed'); bar.style.width = '100%'; }
+  const title = qs('#waitTitle');
+  if(title) title.textContent = offline ? 'You appear to be offline' : 'We could not complete this just now';
+  setWaitStatus('');
+  const cancel = qs('#waitCancelBtn');
+  if(cancel) cancel.style.display = 'none';
+  const note = qs('#waitNote');
+  if(note) note.textContent = '';
+
+  const body = qs('#waitBody');
+  if(!body) return;
+  body.innerHTML =
+    '<div class="wait-fail">' +
+      '<p class="wait-fail-lead">' + (offline
+        ? 'This device lost its internet connection, so we could not reach our servers.'
+        : 'Our service did not respond in time. We are sorry — this one is on us, not on you.') + '</p>' +
+      '<ul class="wait-fail-facts">' +
+        '<li><strong>No payment was taken.</strong> No card or UPI details were sent anywhere.</li>' +
+        '<li>' + escapeHtml(Subject) + ' is saved exactly as you left it, including anything added while you waited.</li>' +
+        '<li>' + (offline
+          ? 'Reconnect and try again — nothing has been lost.'
+          : 'Please try again in a few minutes. These interruptions are usually brief.') + '</li>' +
+      '</ul>' +
+      '<p class="wait-fail-help">If it happens again, write to ' +
+        '<a href="mailto:support@chakrashri.com">support@chakrashri.com</a> or call ' +
+        '<a href="tel:+917076511660">+91 70765 11660</a> and we will complete it for you by hand.</p>' +
+      '<div class="wait-actions">' +
+        '<button class="btn btn-primary btn-sm" onclick="retryWaitIntent()">Try again</button>' +
+        '<button class="btn btn-ghost btn-sm" onclick="closeWaitingExperience()">Back to ' + escapeHtml(subject.replace('your ', '')) + '</button>' +
+      '</div>' +
+    '</div>';
+}
+
+/* Re-enters the SAME gate rather than calling the intent directly.
+
+   Calling intent() straight from a retry button would bypass intentInFlight,
+   the warm-path probe and the whole phase sequence - and a retry that bypasses
+   the in-flight guard is precisely how a retry button becomes a double charge.
+   The pending call is read BEFORE the close, because closing clears it. */
+function retryWaitIntent(){
+  const pending = waitState.retry;
+  closeWaitingExperience();
+  if(typeof pending === 'function') pending();
+}
+
+/* ---------------------------------------------------------------------------
+   THE PRICE ON SCREEN MUST BE THE PRICE CHARGED.
+   ---------------------------------------------------------------------------
+   The client prices from a catalog that can be minutes old — and after a cold
+   start, a whole boot old. The SERVER prices from the database and hands back
+   the real figure, which was then passed STRAIGHT to Razorpay as `amount`
+   without anyone comparing it to what the customer had been reading. So an
+   admin editing a price meant the customer saw one number on the checkout and
+   watched a different one appear in the payment sheet, unexplained. On cash on
+   delivery it was worse still: the server's totalPaise was ignored entirely,
+   the order was confirmed, and the first time the customer met the real price
+   was at their door.
+
+   Two things have to hold at once, and they pull in opposite directions:
+     - the SELLER must never be forced to honour a stale price, so simply
+       charging the old figure is not an option (and a stale snapshot would
+       become a permanent discount);
+     - the CUSTOMER must never be charged a number they did not agree to.
+
+   Both are satisfied by stopping and asking. Show the old figure and the new
+   one, and let them decide. Silent and instant whenever the two agree, which is
+   the overwhelmingly common case.
+
+   Tolerance is one paisa: the two sides compute in integer paise from the same
+   rules, so anything larger is a real difference and not rounding. */
+function amountsAgree(a, b){
+  const x = Number(a), y = Number(b);
+  if(!Number.isFinite(x) || !Number.isFinite(y)) return true;   // unknown: never block
+  return Math.abs(x - y) < 1;
+}
+
+/* A blocking yes/no rendered into the waiting modal.
+
+   Reuses that modal rather than adding another: it is the one blocking surface
+   this flow already owns, already styled, already locking body scroll, and
+   already cleaned up by closeWaitingExperience. A second modal would be a
+   second thing to leak. */
+function askInWaitModal(opts){
+  return new Promise(function(resolve){
+    clearWaitTimers();
+    waitState.open = true;
+    waitState.phase = 'confirm';
+    const title = qs('#waitTitle'); if(title) title.textContent = opts.title;
+    setWaitStatus(opts.status || '');
+    const bar = qs('#waitBar'); if(bar){ bar.classList.remove('is-failed'); bar.style.width = '100%'; }
+    const cancelBtn = qs('#waitCancelBtn'); if(cancelBtn) cancelBtn.style.display = 'none';
+    const note = qs('#waitNote'); if(note) note.textContent = '';
+    const body = qs('#waitBody');
+    if(!body){ resolve(false); return; }
+    body.innerHTML = opts.html +
+      '<div class="wait-actions">' +
+        '<button class="btn btn-primary btn-sm" id="waitAskYes">' + escapeHtml(opts.confirmLabel) + '</button>' +
+        '<button class="btn btn-ghost btn-sm" id="waitAskNo">' + escapeHtml(opts.cancelLabel) + '</button>' +
+      '</div>';
+    const m = qs('#waitModal'); if(m) m.classList.add('show');
+    updateBodyScrollLock();
+    let settled = false;
+    function finish(v){
+      if(settled) return;
+      settled = true;
+      waitState.askResolve = null;
+      closeWaitingExperience();
+      resolve(v);
+    }
+    /* THE DEADLOCK THIS FIXES: this modal is the shared waiting modal, and
+       several things close it that know nothing about a pending question —
+       browser-back routes through cancelWaitingExperience(), and a new wait
+       calls closeWaitingExperience() directly. The promise was then never
+       settled, so placeOrderNow awaited it forever and intentInFlight was never
+       released: the customer could not place another order for the rest of the
+       session without reloading the page.
+
+       Registering the resolver means every close path answers, and the answer
+       is "no" — the safe direction, because nothing has been charged. */
+    waitState.askResolve = resolve;
+    const yes = qs('#waitAskYes'), no = qs('#waitAskNo');
+    if(yes) yes.onclick = function(){ finish(true); };
+    if(no) no.onclick = function(){ finish(false); };
+  });
+}
+
+/* Returns true to go ahead at the server's price, false to abandon. */
+async function confirmAmountChange(quotedPaise, serverPaise, subject){
+  if(amountsAgree(quotedPaise, serverPaise)) return true;
+  const wasUp = Number(serverPaise) > Number(quotedPaise);
+  return askInWaitModal({
+    title: wasUp ? 'The price has changed' : 'Good news — the price has come down',
+    status: '',
+    html:
+      '<p class="wait-fail-lead">' + (wasUp
+        ? 'Our prices were updated while you were shopping, so ' + escapeHtml(subject || 'this') +
+          ' now costs more than the figure on your last screen. <strong>Nothing has been charged.</strong>'
+        : 'Our prices were updated while you were shopping, so ' + escapeHtml(subject || 'this') +
+          ' now costs less than the figure on your last screen.') + '</p>' +
+      '<ul class="wait-fail-facts">' +
+        '<li>The figure you saw: <strong>' + formatINR(Number(quotedPaise) / 100) + '</strong></li>' +
+        '<li>The current price: <strong>' + formatINR(Number(serverPaise) / 100) + '</strong></li>' +
+      '</ul>' +
+      '<p class="wait-fail-help">Please continue only if you are happy with the current price. If you cancel, nothing is charged and ' +
+        escapeHtml(waitSubject()) + ' stays exactly as it is.</p>',
+    confirmLabel: 'Continue at ' + formatINR(Number(serverPaise) / 100),
+    cancelLabel: 'Cancel'
+  });
+}
+
 function setWaitStatus(text){
   const el = qs('#waitStatus');
   if(el) el.textContent = text;
@@ -8904,13 +9833,32 @@ function setWaitStatus(text){
 
 function cancelWaitingExperience(){
   waitState.cancelled = true;
+  // Read before closing: the message has to name what they actually have.
+  // "your cart is saved" to somebody cancelling a puja booking is the same
+  // wrong note as offering them an Add to cart button.
+  const subject = waitSubject();
   closeWaitingExperience();
-  toast('No problem — your cart is saved. Try again whenever you are ready.');
+  toast('No problem — ' + subject + ' is saved. Try again whenever you are ready.');
 }
 
 function closeWaitingExperience(){
   waitState.open = false;
-  if(waitState.rotateTimer){ clearInterval(waitState.rotateTimer); waitState.rotateTimer = null; }
+  waitState.phase = 'idle';
+  waitState.retry = null;
+  clearWaitTimers();
+  // A pending question must never outlive its modal — see askInWaitModal.
+  // Taken and cleared before it is called, so a resolver that closes the modal
+  // again cannot re-enter this.
+  const pendingAsk = waitState.askResolve;
+  waitState.askResolve = null;
+  if(pendingAsk) pendingAsk(false);
+  // Everything the failure and success panels changed is put back, so the next
+  // wait opens in a clean state rather than inheriting a hidden Cancel button
+  // or a red bar from the last one.
+  const cancel = qs('#waitCancelBtn');
+  if(cancel) cancel.style.display = '';
+  const bar = qs('#waitBar');
+  if(bar){ bar.classList.remove('is-failed'); bar.style.width = '0%'; }
   const m = qs('#waitModal');
   if(m) m.classList.remove('show');
   updateBodyScrollLock();
@@ -8919,12 +9867,26 @@ function closeWaitingExperience(){
 function openWaitingExperience(context){
   context = context || {};
   // Defence in depth alongside the intentInFlight guard: reopening without
-   // clearing would abandon the previous interval, which then keeps re-rendering
-  // suggestions into a modal nobody is looking at for the rest of the session.
-  if(waitState.rotateTimer){ clearInterval(waitState.rotateTimer); waitState.rotateTimer = null; }
+  // clearing would abandon the previous phase hand-offs and tick, which then
+  // keep re-rendering into a modal nobody is looking at for the rest of the
+  // session - and the tick rewrites the panel, so an orphan would visibly
+  // fight the next wait for control of the screen.
+  clearWaitTimers();
+  /* A pending question loses its modal here too, not only through
+     closeWaitingExperience(). Settling it is what stops the same deadlock
+     arriving by a second route: askInWaitModal's caller is awaiting a promise
+     whose UI is about to be replaced, and an unsettled one holds intentInFlight
+     for the rest of the session. */
+  const displacedAsk = waitState.askResolve;
+  waitState.askResolve = null;
+  if(displacedAsk) displacedAsk(false);
+
   waitState.open = true;
   waitState.cancelled = false;
   waitState.shown = [];
+  waitState.startedAt = Date.now();
+  waitState.step = -1;
+  waitState.phase = 'suggest';
   // 'order' | 'puja' | 'astrology' — decides which suggestions are even eligible.
   waitState.audience = context.audience || 'order';
 
@@ -8932,20 +9894,55 @@ function openWaitingExperience(context){
   if(title) title.textContent = context.title || 'Preparing your secure checkout';
   setWaitStatus(context.status || 'Setting up your secure payment…');
   const note = qs('#waitNote');
-  if(note) note.textContent = context.note || 'Your cart is saved. Nothing has been charged.';
+  // Both booking callers pass their own note; this default is what any money
+  // path added later inherits, so it must not assume a cart either.
+  if(note) note.textContent = context.note ||
+    (waitSubject().charAt(0).toUpperCase() + waitSubject().slice(1) + ' is saved. Nothing has been charged.');
+  const cancel = qs('#waitCancelBtn');
+  if(cancel) cancel.style.display = '';
+  const bar = qs('#waitBar');
+  if(bar) bar.classList.remove('is-failed');
+  setWaitBar(0);
 
   renderWaitSuggestion();
   const m = qs('#waitModal');
   if(m) m.classList.add('show');
   updateBodyScrollLock();
 
-  // Rotate only if they are still here. Twelve seconds is long enough to read
-   // a card and short enough that a 45-second boot shows three different things
-  // rather than one thing three times.
-  waitState.rotateTimer = setInterval(function(){
+  /* ONE suggestion, then the selling stops.
+
+     This used to rotate a fresh card every 12 seconds, which turned a payment
+     wait into a carousel of advertisements aimed at somebody who had already
+     decided to buy. A customer who wants another can still ask for one with
+     "Show me something else"; what they no longer get is a new pitch arriving
+     on its own every twelve seconds while they wait to pay. */
+  waitAfter(WAIT_SUGGEST_MS, function(){
+    if(!waitState.open || waitState.phase !== 'suggest') return;
+    waitState.phase = 'progress';
+    renderWaitProgressPanel();
+  });
+  waitAfter(WAIT_COLD_BUDGET_MS, function(){
     if(!waitState.open) return;
-    renderWaitSuggestion();
-  }, 12000);
+    if(waitState.phase !== 'suggest' && waitState.phase !== 'progress') return;
+    waitState.phase = 'overrun';
+    renderWaitProgressPanel();
+  });
+
+  /* One tick drives the bar, the ladder and the status line together, so they
+     cannot disagree with each other. Two writers for one status line is how a
+     "preparing payment" message ends up alternating with a
+     "checking availability" one. */
+  waitEvery(500, function(){
+    if(!waitState.open) return;
+    setWaitBar(waitBarPercent());
+    if(waitState.phase !== 'progress' && waitState.phase !== 'overrun') return;
+    const step = waitStepIndex();
+    if(step !== waitState.step){
+      waitState.step = step;
+      renderWaitProgressPanel();
+    }
+    setWaitStatus(waitFlow().steps[step] + '…');
+  });
 }
 
 /* THE GATE. Runs `intent` immediately when the backend is already up — which
@@ -9003,38 +10000,77 @@ async function runWithBackendReady(intent, context){
   if(await probeBackend()) return intent();
 
   openWaitingExperience(context);
-  const started = Date.now();
+  /* What the failure panel's "Try again" runs. It re-enters withBackendReady
+     rather than calling intent() directly, so the in-flight guard, the warm
+     probe and the whole phase sequence all apply again. A retry that bypasses
+     intentInFlight is precisely how a retry button becomes a double charge. */
+  waitState.retry = function(){ withBackendReady(intent, context); };
 
   const ready = await ensureBackendAwake({
     maxMs: WAIT_MAX_MS,
-    cancelled: function(){ return waitState.cancelled; },
-    onTick: function(attempt){
-      const secs = Math.round((Date.now() - started) / 1000);
-      // Every line here is TRUE and none of it is about us. "Our server is
-      // waking up" told the customer, at the exact moment they were about to
-      // pay, that our infrastructure is unreliable — an odd thing to volunteer
-      // while asking for money. These describe what is genuinely happening to
-      // THEIR order instead: the secure session is being established, the
-      // items confirmed, the checkout finalised.
-      if(secs < 12) setWaitStatus('Setting up your secure payment…');
-      else if(secs < 30) setWaitStatus('Confirming availability and preparing your order…');
-      else setWaitStatus('Thank you for your patience — finalising your secure checkout.');
-    }
+    cancelled: function(){ return waitState.cancelled; }
+    // No onTick. The status line is driven by the phase tick in
+    // openWaitingExperience, which is the single writer for it.
   });
 
   if(waitState.cancelled){ closeWaitingExperience(); return undefined; }
-  closeWaitingExperience();
 
   if(!ready){
-    // Honest, and non-destructive: nothing was charged, nothing was lost, and
-    // the cart still holds everything including whatever they added while
-    // waiting.
-    toast('We could not reach our server just now. Nothing has been charged and your cart is saved — please try again in a minute.', 'err');
+    /* The modal deliberately STAYS OPEN.
+
+       This was a toast, and a toast is the wrong weight for a payment that did
+       not happen: it slides away by itself and leaves somebody who was about
+       to spend money looking at a checkout with no explanation and no obvious
+       next move. Nothing was charged and nothing was lost, and the panel says
+       exactly that, then offers a retry and a way to reach a human. */
+    renderWaitFailurePanel();
     return undefined;
   }
 
+  /* The catalog on screen may be a whole cold start old, so the money this
+     intent is about to commit would be computed from prices and stock the
+     server may have changed while the customer waited. Refresh first, then
+     re-render whichever page they are on, so the corrected figure is what the
+     quote guard compares against and what they actually see.
+
+     Failure here is not fatal: the guard downstream compares against the
+     SERVER's own amount before anything is charged, so a refresh that does not
+     land costs accuracy on screen, never money. */
+  try{
+    /* TIME-BOXED ON PURPOSE. loadCatalog() goes through apiFetch as a
+       BACKGROUND request: a 75-second timeout with retries. Awaiting it
+       unbounded here would add that to a customer who has ALREADY sat through a
+       cold start — measured at +9s against a stubbed 9s boot before this bound
+       existed, and far worse against a real slow network.
+
+       This refresh is an OPTIMISATION: it makes a corrected price visible before
+       the payment sheet opens. The GUARANTEE is confirmAmountChange, which
+       compares against the server's own amount and runs either way. So when the
+       refresh is slow the right move is to stop waiting for it, not to make the
+       customer wait a second time. The fetch it started still lands later and
+       still updates the catalog. */
+    const refreshed = await Promise.race([
+      loadCatalog(),
+      new Promise(function(r){ setTimeout(function(){ r(null); }, WAKE_REFRESH_MAX_MS); })
+    ]);
+    if(refreshed) refreshCatalogViews();
+    // Stock may have moved while they waited. Re-check the cart against what we
+    // have just re-learned, BEFORE the intent tries to buy it.
+    reconcileCartWithCatalog();
+    refreshCartAndCheckoutViews();
+  }catch(e){ /* the server's amount is still checked before any charge */ }
+
+  // Only now is it true that we are handing over, so only now does it say so.
+  renderWaitSuccessPanel();
+  await new Promise(function(r){ setTimeout(r, WAIT_HANDOFF_MS); });
+  // The success panel withdraws Cancel, but browser-back during the hand-off
+  // beat still sets this - and running the intent from a screen the customer
+  // has already left is the exact bug popstate cancellation exists to prevent.
+  if(waitState.cancelled){ closeWaitingExperience(); return undefined; }
+  closeWaitingExperience();
+
   // The backend and the database are both confirmed up. Continue to exactly
-   // where they were going, with anything added during the wait included.
+  // where they were going, with anything added during the wait included.
   return intent();
 }
 
@@ -9093,7 +10129,7 @@ async function runWithBackendReady(intent, context){
    no margin for the normal release, and a loading screen that can become the
    site is the one failure this must never have.
    --------------------------------------------------------------------------- */
-const AWAKEN_MIN_MS = 2600;
+const AWAKEN_MIN_MS = 2700;
 const AWAKEN_MAX_MS = 4500;
 const AWAKEN_SESSION_KEY = 'chakrashri_welcomed';
 let awakenHidden = false;
@@ -9340,6 +10376,11 @@ async function init(){
   //        no API call. ~50ms, and it is what makes the next step meaningful. ---
   const source = await hydrateCatalogFromCache();
   if(!source) paintCatalogSkeletons();
+  // The Shop dropdown is built from the catalog, so it is available from the
+  // SNAPSHOT — no API call, and therefore fully populated during a cold start
+  // rather than waiting out the boot. refreshCatalogViews() rebuilds it when
+  // the live catalog lands.
+  renderMegaMenu();
 
   // --- 3. ROUTE AND RENDER. This used to be the last thing init() did. ---
   const emailLink = isEmailActionLink();

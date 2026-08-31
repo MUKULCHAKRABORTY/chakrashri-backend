@@ -108,22 +108,50 @@ const MINOR_WORDS = ['and', 'or', 'of', 'the', 'a', 'an', 'for', 'in', 'on', 'wi
  * test/frontend.test.js runs both implementations over the same inputs and
  * fails if they ever diverge again.
  */
+/* MUST stay identical to catLabel/titleCaseTerm in index.html — a test runs
+   both over the same inputs and fails on any divergence. They disagreed once
+   already, and the symptom is silent: the page tells Google a different
+   category name than it shows the customer.
+
+   SUBCATEGORY-READY: A category may one day be hierarchical — "books/scripture" the moment
+   subcategories exist. Splitting on whitespace alone made that one "word", so it
+   rendered "Books/scripture" with the second half uncased. Segments are split on
+   the separator, cased independently, and rejoined with the SAME separator, so
+   the stored value is never rewritten and nothing downstream (URLs, JSON-LD,
+   the sitemap) has to learn a new format. */
 function titleCaseTerm(term) {
   return String(term)
     .toLowerCase()
-    .split(/\s+/)
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split('/')
+    .map((segment) =>
+      segment
+        .trim()
+        .split(' ')
+        .filter(Boolean)
+        .map((w, i) => {
+          if (i > 0 && MINOR_WORDS.indexOf(w) > -1) return w;
+          return w.charAt(0).toUpperCase() + w.slice(1);
+        })
+        .join(' ')
+    )
     .filter(Boolean)
-    .map((w, i) => {
-      if (i > 0 && MINOR_WORDS.indexOf(w) > -1) return w;
-      return w.charAt(0).toUpperCase() + w.slice(1);
-    })
-    .join(' ');
+    .join('/');
 }
 
+/* MUST stay identical to catLabel() in index.html. This pair has diverged
+   twice: once on title-casing, and once when the storefront gained the
+   separators-only guard below and this copy did not. The symptom is silent
+   both times — the page tells Google a different category name than it shows
+   the customer. A test now runs BOTH over the same inputs. */
 function catLabel(key) {
   if (!key) return 'Uncategorized';
   if (CAT_LABELS[key]) return CAT_LABELS[key];
-  return titleCaseTerm(String(key).replace(/[-_]+/g, ' '));
+  const label = titleCaseTerm(String(key).replace(/[-_]+/g, ' '));
+  // A value made only of separators ("///", "-", "_") title-cases to nothing,
+  // and an empty category in structured data is worse than a wrong one.
+  return label || 'Uncategorized';
 }
 
 /**
@@ -204,7 +232,13 @@ function productJsonLd(p) {
     name: p.name,
     description: descriptionFor(p).slice(0, 500),
     sku: p.sku || undefined,
-    category: p.category ? catLabel(p.category) : undefined,
+    // The full path when there is a subcategory, so structured data carries the
+    // same hierarchy the customer sees in the breadcrumb. schema.org/category
+    // accepts a path string, and catLabel cases each segment independently —
+    // "books/scripture" becomes "Books/Scripture", never "Books/scripture".
+    category: p.category
+      ? (catLabel(p.category) + (p.subcategory ? ('/' + catLabel(p.subcategory)) : ''))
+      : undefined,
     image: image ? [image] : [],
     offers: {
       '@type': 'Offer',
