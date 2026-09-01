@@ -512,6 +512,98 @@ would only add noise for a screen-reader user. The rotation is disabled under
 **Where to look:** `renderShopFilterSidebar()` in `index.html`, and the
 `.filter-chev` rules beside `.filter-subs`.
 
+### 4h. The category filter — disclosure, placement, and the device it is on
+
+Four problems, all measured on the live site before anything was changed.
+
+**The chevron could open but never close.** Expansion was a *side effect* of
+selecting a category: choosing one revealed its subcategories, and nothing
+anywhere collapsed them again. So the icon flipped up once and stayed there —
+the "down" state was unreachable for the rest of the session.
+
+Disclosure is now its own state (`expandedCats`), and the chevron is a real
+`<button>` that toggles it **without touching the filter**. That also lets
+somebody look inside a category without filtering the grid to it first, which is
+what a disclosure control is for. Selecting a category still opens it — the
+customer has just said they are interested — and the chevron is what closes it.
+
+**The chevron sat past the count.** Out at the right-hand edge beside the number
+it read as part of the count rather than as something belonging to the category.
+The row is now:
+
+```
+(o)  Book  v                                    4
+     |- All Book                                4
+     |- Scripture                               2
+```
+
+The count is pushed right by `margin-left:auto`, not by an invisible spacer
+icon on chevron-less rows — so every count aligns *by construction*, with no
+second constant to keep in step when the icon size or the gap changes. (The
+spacer approach was tried first and immediately broke: the "All Products" row is
+built outside the loop and missed it, landing its count 24px off.)
+
+**Three dead filters — P1.** The sidebar unioned a hardcoded starter list with
+the real catalog, so it advertised *Bracelets*, *Puja Samagri Kits* and
+*Spiritual Books* at zero. All three opened "No products found", and a dead
+"Spiritual Books (0)" sat directly beside the live "Book (4)". The mega-menu
+already derived its list from the catalog, so **the two surfaces disagreed about
+what the shop sells**. The sidebar now derives from the catalog too. The single
+exception: a category the customer is *currently* filtered to stays listed even
+at zero, so a shared `?category=` link explains itself instead of looking broken.
+
+**The mobile drawer was 291px taller than the screen.** Measured at 390×844 it
+computed **1135px** against an 844px viewport, so its bottom — including the
+Show Results button — was off-screen and unreachable. `top:0; bottom:0` should
+have bounded it and did not, once the flex column's content exceeded it.
+
+| Piece | Where |
+|---|---|
+| Disclosure state and toggle | `index.html` → `expandedCats`, `toggleCategoryOpen()` |
+| Row builder (one for every level) | `renderShopFilterSidebar()` → inner `row()` |
+| Drawer chrome | `.filter-drawer-head`, `.filter-scroll`, `#mobileFilterCount` |
+| Live results count | `syncMobileFilterCount()`, called from `renderShopGrid()` |
+
+The drawer is now a `100dvh` panel — `dvh`, not `vh`, because on a phone browser
+`100vh` is the viewport *without* the address bar and hides the last row behind
+it; a `100vh` line precedes it as the fallback. A pinned title with a 44px
+close, a scrolling list between, and a pinned **"Show N results"** that clears
+the iPhone home indicator with `env(safe-area-inset-bottom)`.
+
+**One CSS trap worth remembering.** The touch overrides must sit *after* the
+base `.filter-toggle` rules. Specificity is identical, so source order decides —
+and when the block sat earlier in the file it lost silently, leaving 26px
+chevrons on a phone while the stylesheet appeared to say 44. `[fe-39]` asserts
+the ordering, not just the values.
+
+Verified at 320×568, 768×1024 and 1440×900, in every state: no dead rows, counts
+aligned, no horizontal scroll, open → rotate → close working, and 44px rows and
+controls on touch while the desktop pointer keeps its compact 26px.
+
+### 4i. Password recovery can no longer lock a customer out of signing in
+
+`[http-3]` had a test titled *"FINDING: the 10-request budget is SHARED"*. It was
+documenting a real availability hole rather than guarding against one: all four
+auth routes mounted **one** limiter instance, so ten attempts were pooled across
+them. Anyone hammering `/forgot-password` — a script, or a customer who could
+not find the reset mail — consumed the budget `/login` needs and locked genuine
+sign-ins out of that IP for fifteen minutes. Behind a shared office or
+mobile-carrier NAT that is a lot of customers at once, none of whom did anything
+wrong.
+
+Split into two, in `src/routes/auth.routes.js`:
+
+- **`credentialLimiter`** — `/login` + `/admin/login`. Deliberately still shared:
+  both guess a password against the same account space, so moving between them
+  must not hand an attacker a fresh allowance.
+- **`recoveryLimiter`** — `/forgot-password` + `/reset-password`. Recovery
+  guesses nothing, and its expensive half is separately capped at five sends an
+  hour by `emailDispatchLimiter`, so a separate budget loosens nothing that
+  matters.
+
+The test now asserts the fix with real HTTP: exhaust recovery completely, and
+login still returns 401 rather than 429.
+
 ### 5. Where the tests are
 
 `test/frontend.test.js`, by section — each one names the defect it locks shut:
@@ -532,6 +624,7 @@ would only add noise for a screen-reader user. The rotation is disabled under
 | `[fe-36]` | **the orphan class** — a function built but never reached is a feature that does not exist |
 | `[fe-37]` | **warm-path latency and context-aware waiting copy** |
 | `[fe-38]` | **partial outage** — failure classification, the bulkhead, the money message, small-phone layout |
+| `[fe-39]` | **the category filter** — disclosure, chevron placement, no dead categories, the mobile drawer |
 | `[fe-39]` | **the disclosure chevron** — conditional affordance, column alignment, accessibility |
 
 ```bash

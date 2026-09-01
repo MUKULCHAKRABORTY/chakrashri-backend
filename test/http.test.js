@@ -220,31 +220,64 @@ section('[http-3] Per-route auth rate limiter (10 req / 15 min on /api/auth/logi
     assert.strictEqual(statuses[10], 429, 'the 11th attempt within the window must be blocked by the auth-specific limiter');
   });
 
-  test('FINDING: the 10-request budget is SHARED across /login and /forgot-password, not independent per route — both mount the same authLimiter instance', async () => {
-    // A fresh IP-scoped rate-limit window: uses the X-Forwarded-For override
-    // below so this test does not inherit the previous test's exhausted count
-    // (trust proxy=1 means exactly one X-Forwarded-For hop is honored).
-    const ip = '10.0.0.42';
+  test('THE FIX: password recovery has its OWN budget and cannot lock out login', async () => {
+    /* This test used to assert the OPPOSITE, under the title "FINDING: the
+       budget is SHARED". It was documenting a real availability hole rather
+       than guarding against one: all four auth routes mounted a single limiter
+       instance, so ten attempts were pooled across them.
+
+       Anyone hammering /forgot-password — a script, or a customer who could not
+       find the reset mail — consumed the budget /login needs and locked genuine
+       sign-ins out of that IP for fifteen minutes. Behind a shared office or
+       mobile-carrier NAT that is a lot of customers at once, none of whom did
+       anything wrong.
+
+       Recovery guesses no passwords, and the expensive half of it is separately
+       capped at five sends an hour, so giving it its own budget loosens nothing
+       that matters. */
+    const ip = '10.0.0.43';   // a fresh IP-scoped window (trust proxy = 1 hop)
     const headers = { 'Content-Type': 'application/json', 'X-Forwarded-For': ip };
-    for (let i = 0; i < 5; i++) {
-      const res = await req(PORT, '/api/auth/login', {
-        method: 'POST', headers, body: JSON.stringify({ email: 'nobody@example.com', password: 'wrong' })
-      });
-      assert.strictEqual(res.status, 401, `login attempt ${i + 1} should reach the handler normally`);
-    }
-    for (let i = 0; i < 5; i++) {
-      const res = await req(PORT, '/api/auth/forgot-password', {
+
+    // Exhaust the RECOVERY budget completely.
+    for (let i = 0; i < 10; i++) {
+      await req(PORT, '/api/auth/forgot-password', {
         method: 'POST', headers, body: JSON.stringify({ email: 'nobody@example.com' })
       });
-      assert.strictEqual(res.status, 200, `forgot-password attempt ${i + 1} should reach the handler normally (its own 5 slots of the SHARED 10)`);
     }
-    // The 11th request total for this IP, on a THIRD different route sharing
-    // the same limiter — if the budgets were independent per-route, this
-    // would still succeed (5/10 used on forgot-password). It doesn't.
+    const blocked = await req(PORT, '/api/auth/forgot-password', {
+      method: 'POST', headers, body: JSON.stringify({ email: 'nobody@example.com' })
+    });
+    assert.strictEqual(blocked.status, 429, 'recovery must still be rate limited on its own budget');
+
+    // THE POINT: login is untouched by that.
+    const login = await req(PORT, '/api/auth/login', {
+      method: 'POST', headers, body: JSON.stringify({ email: 'nobody@example.com', password: 'wrong' })
+    });
+    assert.strictEqual(login.status, 401,
+      'login must still reach the handler — a flood of password-reset requests must never lock a customer out of signing in');
+  });
+
+  test('login and admin login still SHARE one budget, which is correct', async () => {
+    // Both guess a password against the same account space, so an attacker
+    // moving between them must not be handed a fresh allowance by doing so.
+    const ip = '10.0.0.44';
+    const headers = { 'Content-Type': 'application/json', 'X-Forwarded-For': ip };
+    for (let i = 0; i < 5; i++) {
+      const r = await req(PORT, '/api/auth/login', {
+        method: 'POST', headers, body: JSON.stringify({ email: 'nobody@example.com', password: 'wrong' })
+      });
+      assert.strictEqual(r.status, 401, 'login attempt ' + (i + 1) + ' should reach the handler');
+    }
+    for (let i = 0; i < 5; i++) {
+      await req(PORT, '/api/auth/admin/login', {
+        method: 'POST', headers, body: JSON.stringify({ email: 'nobody@example.com', password: 'wrong' })
+      });
+    }
     const res = await req(PORT, '/api/auth/login', {
       method: 'POST', headers, body: JSON.stringify({ email: 'nobody@example.com', password: 'wrong' })
     });
-    assert.strictEqual(res.status, 429, 'the shared budget is exhausted by the combined 10 calls across both routes');
+    assert.strictEqual(res.status, 429,
+      'the credential budget must be shared between the two login routes, or one of them is a free retry pool for the other');
   });
 }
 

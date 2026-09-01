@@ -520,26 +520,22 @@ p{ color: var(--text-soft); }
 .mega .mega-cat{ margin-bottom:9px; }
 /* The sidebar's nested subcategory list. Indented and hairlined exactly like
    the dropdown, so the two read as the same hierarchy in two places. */
-.filter-subs{ padding-left:13px; border-left:1px solid var(--line); margin:2px 0 6px; }
+.filter-subs{ padding-left:15px; border-left:2px solid var(--gold-lt); margin:1px 0 7px 7px; animation:filterSubsIn .22s var(--ease) both; }
 .filter-subs .filter-check{ font-size:.82rem; }
+.filter-subs .filter-row{ padding-top:2px; padding-bottom:2px; }
+@keyframes filterSubsIn{ from{ opacity:0; transform:translateY(-5px); } to{ opacity:1; transform:none; } }
 
-/* The disclosure chevron, on categories that have subcategories.
+/* TOUCH DEVICES get real targets.
 
-   Sized in em so it tracks the row's own text, and given a fixed 14px box so a
-   row WITH a chevron and one without still align their counts. It points down
-   when collapsed and up when the category is selected — the direction says
-   which way the list is about to move, which is the only thing a chevron is
-   actually good at communicating.
+   Measured on the live site at 390x844: filter rows were 22px tall, half the
+   44px floor the Apple HIG and WCAG 2.5.8 both settle on. A 26px chevron is
+   right beside a name on a desktop pointer and far too small for a thumb, so
+   the size is raised on touch rather than everywhere — hover:none is the
+   capability query for that, and the width breakpoint catches a touch laptop
+   that reports hover.
 
-   A sub-row never gets one: there is no third level to disclose, and an icon
-   that expands nothing is worse than no icon. */
-.filter-check .filter-chev{ width:14px; height:14px; flex-shrink:0; color:var(--text-mute); transition:transform var(--dur) var(--ease), color var(--dur); }
-.filter-check:hover .filter-chev{ color:var(--ink); }
-.filter-check.active .filter-chev{ transform:rotate(180deg); color:var(--oxblood); }
-.filter-subs .filter-check .filter-chev{ display:none; }
-/* Reserves its space without being seen — see the note in renderShopFilterSidebar. */
-.filter-check .filter-chev.is-placeholder{ visibility:hidden; }
-@media (prefers-reduced-motion:reduce){ .filter-check .filter-chev{ transition:none; } }
+   Alignment is unaffected because the count is positioned by margin-left:auto,
+   not by matching the icon's width. */
 .mega a.mega-link.is-parent{ font-weight:600; color:var(--ink); padding-bottom:3px; }
 .mega .mega-subs{ display:flex; flex-direction:column; padding-left:12px; border-left:1px solid var(--line); margin:2px 0 4px; }
 .mega a.mega-sublink{ display:block; padding:4px 0; font-size:.79rem; color:var(--text-mute); transition:color var(--dur), transform var(--dur); }
@@ -954,12 +950,58 @@ p{ color: var(--text-soft); }
 .filter-block:last-child{ border-bottom:none; }
 .filter-title{ font-family:var(--f-display); font-size:1.02rem; color:var(--ink); margin-bottom:16px; display:flex; align-items:center; justify-content:space-between; }
 .filter-list{ display:flex; flex-direction:column; gap:11px; }
-.filter-check{ display:flex; align-items:center; gap:10px; font-size:.87rem; color:var(--text-soft); cursor:pointer; transition:color var(--dur); }
+.filter-row{ display:flex; align-items:center; gap:6px; border-radius:var(--radius-sm); padding:3px 6px; margin:0 -6px; transition:background var(--dur) var(--ease); }
+.filter-row:hover{ background:var(--parchment); }
+.filter-row.active{ background:var(--parchment); }
+.filter-check{ display:flex; align-items:center; gap:10px; font-size:.87rem; color:var(--text-soft); cursor:pointer; transition:color var(--dur); flex:0 1 auto; min-width:0; }
 .filter-check:hover{ color:var(--ink); }
 .filter-check input{ width:16px; height:16px; accent-color:var(--oxblood); flex-shrink:0; }
-.filter-check .n{ flex:1; }
-.filter-check .c{ color:var(--text-mute); font-size:.78rem; }
+/* NOT flex:1 any more. The name has to end where the text ends so the chevron
+   can sit against it; the count is pushed right on its own instead. */
+.filter-check .n{ flex:0 1 auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .filter-check.active{ color:var(--oxblood); font-weight:600; }
+/* margin-left:auto rather than a placeholder icon on chevron-less rows: every
+   count aligns by construction, with no invisible spacer to keep in step. */
+.filter-row .c{ margin-left:auto; padding-left:10px; color:var(--text-mute); font-size:.78rem; flex:0 0 auto; font-variant-numeric:tabular-nums; }
+.filter-row.active .c{ color:var(--oxblood); }
+
+/* The disclosure control. A real button, not a decoration on the label: it
+   toggles the list WITHOUT changing the filter, which is the gesture that was
+   missing when disclosure was a side effect of selection. */
+.filter-toggle{ display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; padding:0; border:0; background:transparent; color:var(--text-mute); border-radius:var(--radius-sm); cursor:pointer; flex:0 0 auto; transition:transform var(--dur) var(--ease), background var(--dur), color var(--dur); }
+.filter-toggle svg{ width:14px; height:14px; display:block; }
+.filter-toggle:hover{ background:var(--gold-lt); color:var(--oxblood); }
+.filter-toggle:focus-visible{ outline:2px solid var(--oxblood); outline-offset:1px; }
+.filter-row.is-open .filter-toggle{ transform:rotate(180deg); color:var(--oxblood); }
+.filter-row.is-open .filter-toggle:hover{ background:var(--gold-lt); }
+
+/* TOUCH DEVICES get real targets.
+
+   MUST stay AFTER the base .filter-row / .filter-toggle rules above. These
+   selectors have identical specificity, so the last one in the file wins — and
+   when this block sat earlier it lost silently, leaving 26px chevrons on a
+   phone that measured 44px in the stylesheet nobody had read in order.
+
+   Measured on the live site at 390x844 before any of this: filter rows were
+   22px tall, half the 44px floor the Apple HIG and WCAG 2.5.8 both settle on.
+   A 26px chevron is right beside a name under a desktop pointer and far too
+   small for a thumb, so the size is raised on touch rather than everywhere.
+   hover:none is the capability query for that; the width breakpoint catches a
+   touch laptop that still reports hover.
+
+   Alignment is unaffected: the count is positioned with margin-left:auto, not
+   by matching the icon's width. */@media (hover:none), (max-width:980px){
+  .filter-row{ min-height:44px; padding:5px 8px; margin:0 -8px; }
+  .filter-toggle{ width:44px; height:44px; }
+  .filter-toggle svg{ width:16px; height:16px; }
+  .filter-check{ font-size:.92rem; }
+  .filter-check input{ width:19px; height:19px; }
+  .filter-subs .filter-check{ font-size:.88rem; }
+}
+@media (prefers-reduced-motion:reduce){
+  .filter-toggle{ transition:none; }
+  .filter-subs{ animation:none; }
+}
 .price-range-display{ display:flex; align-items:center; justify-content:space-between; font-size:.85rem; color:var(--ink); font-weight:600; margin-bottom:10px; }
 .price-range-display span{ color:var(--oxblood); }
 input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
@@ -983,6 +1025,18 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
 .toolbar-sort select{ padding:9px 34px 9px 14px; border:1.5px solid var(--line); border-radius:var(--radius-sm); font-size:.82rem; font-weight:600; color:var(--ink); background:#fff; appearance:none; }
 .mobile-filter-btn{ display:none; align-items:center; gap:8px; padding:9px 16px; border:1.5px solid var(--line); border-radius:var(--radius-sm); font-size:.82rem; font-weight:600; }
 .mobile-filter-apply{ display:none; margin-top:6px; }
+/* Desktop: no drawer chrome, and the scroll container is an ordinary column so
+   the sidebar looks and behaves exactly as it did before the drawer existed. */
+.filter-drawer-head{ display:none; }
+.filter-scroll{ display:flex; flex-direction:column; gap:var(--sp-6); }
+.filter-drawer-head{ align-items:center; justify-content:space-between; flex:0 0 auto;
+  padding:14px 20px; border-bottom:1px solid var(--line); background:var(--ivory); }
+.filter-drawer-title{ font-family:var(--f-display); font-size:1.05rem; color:var(--oxblood); }
+.filter-drawer-close{ display:inline-flex; align-items:center; justify-content:center;
+  width:44px; height:44px; margin-right:-10px; border:0; background:transparent;
+  color:var(--text-soft); border-radius:var(--radius-sm); cursor:pointer; transition:background var(--dur), color var(--dur); }
+.filter-drawer-close svg{ width:20px; height:20px; }
+.filter-drawer-close:hover{ background:var(--parchment); color:var(--oxblood); }
 .mobile-filter-btn svg{ width:15px; height:15px; }
 .active-filters{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:var(--sp-5); }
 .active-filter-chip{ display:flex; align-items:center; gap:7px; background:var(--parchment); padding:7px 12px; border-radius:var(--radius-full); font-size:.78rem; color:var(--ink); }
@@ -1003,8 +1057,41 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
 @media (max-width:980px){
   .shop-layout{ grid-template-columns:1fr; }
   .shop-sidebar{ display:none; }
-  .shop-sidebar.mobile-show{ display:flex; position:fixed; top:0; left:0; bottom:0; width:min(340px,86vw); background:var(--ivory); z-index:95; padding:90px 24px 24px; overflow-y:auto; box-shadow:var(--shadow-lg); }
-  .shop-sidebar.mobile-show .mobile-filter-apply{ display:flex; }
+  /* THE FILTER DRAWER.
+
+     Measured on the live site at 390x844 before this: the panel computed
+     1135px tall against an 844px viewport, so its bottom 291px — including the
+     Show Results button — was off-screen and unreachable. `top:0; bottom:0`
+     should have bounded it and did not once the flex column's content exceeded
+     it, so the height is now stated outright.
+
+     100dvh, not 100vh: on a phone browser 100vh is the viewport WITHOUT the
+     address bar, which leaves the last row of a full-height panel hidden behind
+     it. dvh tracks the bar as it collapses. The vh line before it is the
+     fallback for a browser that does not know dvh.
+
+     The list scrolls between a pinned title and a pinned action, so the count
+     of what the filters have selected is always in view and the way out is
+     never something you have to scroll to find. */
+  .shop-sidebar.mobile-show{
+    display:flex; flex-direction:column; position:fixed; top:0; left:0;
+    width:min(360px,88vw); height:100vh; height:100dvh; max-height:100dvh;
+    background:var(--ivory); z-index:95; padding:0; overflow:hidden;
+    box-shadow:var(--shadow-lg); animation:filterDrawerIn .26s var(--ease) both;
+  }
+  @keyframes filterDrawerIn{ from{ transform:translateX(-100%); } to{ transform:none; } }
+  @media (prefers-reduced-motion:reduce){ .shop-sidebar.mobile-show{ animation:none; } }
+
+  .shop-sidebar.mobile-show .filter-drawer-head{ display:flex; }
+  .shop-sidebar.mobile-show .filter-scroll{
+    flex:1 1 auto; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch;
+    padding:18px 20px 8px; display:flex; flex-direction:column; gap:var(--sp-6);
+  }
+  .shop-sidebar.mobile-show .mobile-filter-apply{
+    display:flex; flex:0 0 auto; margin:0; border-radius:0;
+    /* Clear of the iPhone home indicator. */
+    padding-bottom:calc(14px + env(safe-area-inset-bottom, 0px));
+  }
   .mobile-filter-btn{ display:flex; }
 }
 
@@ -2639,7 +2726,16 @@ a.p-media:focus-visible, a.p-name:focus-visible{ outline:2px solid var(--oxblood
   <div class="section tight" style="padding-top:0;">
     <div class="container">
       <div class="shop-layout">
-        <aside class="shop-sidebar" id="shopSidebar">
+        <aside class="shop-sidebar" id="shopSidebar" aria-label="Product filters">
+          <!-- Drawer chrome. Hidden on desktop, where the sidebar is simply a
+               column in the page; shown only once .mobile-show is applied. -->
+          <div class="filter-drawer-head">
+            <span class="filter-drawer-title">Filters</span>
+            <button type="button" class="filter-drawer-close" onclick="toggleMobileFilters(false)" aria-label="Close filters">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </button>
+          </div>
+          <div class="filter-scroll">
           <div class="filter-block">
             <div class="filter-title">Category</div>
             <div class="filter-list" id="filterCategoryList"></div>
@@ -2659,13 +2755,18 @@ a.p-media:focus-visible, a.p-name:focus-visible{ outline:2px solid var(--oxblood
             </label>
           </div>
           <button class="btn btn-ghost btn-sm" id="clearFiltersBtn" onclick="clearShopFilters()">Clear all filters</button>
-          <button class="btn btn-primary btn-block mobile-filter-apply" onclick="toggleMobileFilters(false)">Show Results</button>
           <div class="sidebar-promo">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M22 16.9v3a2 2 0 01-2.2 2 19.8 19.8 0 01-8.6-3 19.5 19.5 0 01-6-6 19.8 19.8 0 01-3-8.7A2 2 0 014.1 2h3a2 2 0 012 1.7c.1 1 .4 2 .7 3a2 2 0 01-.5 2.1L8 10a16 16 0 006 6l1.2-1.3a2 2 0 012.1-.5c1 .3 2 .5 3 .7a2 2 0 011.7 2z"/></svg>
             <strong>Need Help Choosing?</strong>
             <p>Chat with Chakra, our AI assistant, for personal recommendations.</p>
             <button class="btn btn-outline btn-sm on-dark" onclick="openChat()">Ask Chakra AI</button>
           </div>
+          </div><!-- /.filter-scroll -->
+          <!-- Pinned outside the scroller so the customer can always see what
+               their filters have selected, and always reach the way out. -->
+          <button class="btn btn-primary btn-block mobile-filter-apply" onclick="toggleMobileFilters(false)">
+            Show <span id="mobileFilterCount">0</span> results
+          </button>
         </aside>
 
         <div class="shop-main">
@@ -4514,6 +4615,15 @@ let currentBlogId = null;
 let adminUnlocked = false;
 let adminEditingProductId = null;
 let adminEditingPostId = null;
+/* Which categories are showing their subcategories.
+
+   Kept SEPARATE from shopFilters.cat on purpose. Tying disclosure to selection
+   meant a category could be opened but never closed — selecting it expanded it,
+   and there was no gesture that collapsed it again, so the chevron flipped up
+   once and stayed there. Separating them is also what lets somebody LOOK at
+   what is inside a category without filtering the grid to it first. */
+let expandedCats = new Set();
+
 let shopFilters = { cat:'all', subcat:'', maxPrice:15000, minRating:0, inStockOnly:false, search:'', sortBy:'popularity', view:'grid', page:1 };
 const PAGE_SIZE = 9;
 let selectedPuja = null, pujaMode = 'home', pujaSlot = '6-8 AM';
@@ -4988,10 +5098,6 @@ async function loadOrders(){
     ORDERS = (r && r.value) ? JSON.parse(r.value) : [];
   }catch(e){ ORDERS = []; }
 }
-async function saveOrders(){
-  try{ await window.storage.set('store_orders', JSON.stringify(ORDERS), true); }catch(e){ /* best effort */ }
-}
-
 /* ============================================================
    ROUTING  —  SEO-01
    ============================================================
@@ -6531,71 +6637,104 @@ async function handleDemoAuth(e){
 }
 /* ---------- Shop: filter sidebar rendering ---------- */
 function renderShopFilterSidebar(){
+  /* THE CATEGORY FILTER.
+
+     Row shape, and why:
+
+         (o)  Book  v                                    4
+              |- All Book                                4
+              |- Scripture                               2
+
+     The chevron sits immediately after the NAME, because that is the thing it
+     describes. Parked out at the right-hand edge next to the count it read as
+     part of the number rather than as something belonging to the category.
+
+     The count is pushed right with margin-left:auto instead of being spaced by
+     a placeholder icon, so every count aligns whether or not its row has a
+     chevron — no invisible spacer to keep in step, and nothing to drift when
+     the icon size or the gap changes.
+
+     Categories come from the CATALOG, never from a hardcoded list. The starter
+     list used to be unioned in "for merchandising", which was reasonable when
+     the shop had no products and wrong the moment it did: it advertised
+     Bracelets, Puja Samagri Kits and Spiritual Books at zero, all three of
+     which opened an empty grid, and put a dead "Spiritual Books (0)" directly
+     beside the live "Book (4)". The mega-menu already derived its list from the
+     catalog, so the two surfaces disagreed about what the shop even sells.
+
+     The one exception is a category the customer is CURRENTLY filtered to: it
+     stays listed even at zero so a shared ?category= link explains itself
+     rather than looking broken. */
   const catCounts = {};
-  PRODUCTS.forEach(function(p){ catCounts[p.cat] = (catCounts[p.cat]||0)+1; });
-  /* "All Products" is built here rather than in the loop below, so it needs the
-     placeholder chevron explicitly. Without it this one row's count sat 24px to
-     the right of every other row — the exact misalignment the placeholder was
-     added to prevent, reintroduced by the single row that skips the loop. */
-  const chevSpacer = '<svg class="filter-chev is-placeholder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true" focusable="false"><path d="M6 9l6 6 6-6"/></svg>';
-  let catHTML = '<label class="filter-check ' + (shopFilters.cat==='all'?'active':'') + '"><input aria-label="catf" type="radio" name="catf" ' + (shopFilters.cat==='all'?'checked':'') + ' onchange="setCategoryFilter(\'all\')"><span class="n">All Products</span><span class="c">' + PRODUCTS.length + '</span>' + chevSpacer + '</label>';
-  // Union of the known starter categories (shown even at zero count, for
-  // merchandising) and any category actually present in the real catalog —
-  // previously this only ever iterated the fixed CAT_LABELS keys, so a new
-  // category typed into the admin product form could never be filtered by by customers.
-  const allCatKeys = Object.keys(Object.assign({}, CAT_LABELS, catCounts));
-  allCatKeys.sort(function(a,b){ return catLabel(a).localeCompare(catLabel(b)); });
-  /* Counted before the category loop runs, because the loop now needs to know
-     whether a category has children in order to decide on its chevron.
-
-     Subcategories are nested under their parent here as well as in the
-     dropdown. The mega-menu is a HOVER surface and does not exist on a phone,
-     so the sidebar is the only way a mobile customer can reach a subcategory at
-     all — shipping the menu alone left the feature unreachable for them.
-
-     Counted from the real catalog, and only rendered under the category the
-     customer has actually selected: listing every subcategory of every category
-     at once would be a wall of checkboxes on a catalog of any size. */
   const subCounts = {};
   PRODUCTS.forEach(function(p){
-    if(!p.cat || !p.subcat) return;
+    if(!p || !p.cat) return;
+    catCounts[p.cat] = (catCounts[p.cat] || 0) + 1;
+    if(!p.subcat) return;
     if(!subCounts[p.cat]) subCounts[p.cat] = {};
     subCounts[p.cat][p.subcat] = (subCounts[p.cat][p.subcat] || 0) + 1;
   });
+  if(shopFilters.cat && shopFilters.cat !== 'all' && catCounts[shopFilters.cat] === undefined){
+    catCounts[shopFilters.cat] = 0;
+  }
+
+  const allCatKeys = Object.keys(catCounts).sort(function(a,b){
+    return catLabel(a).localeCompare(catLabel(b));
+  });
+
+  function row(opts){
+    // One row builder for every level, so a category row and a subcategory row
+    // can never drift apart in markup, spacing or tap size.
+    const active = opts.active ? ' active' : '';
+    const chev = opts.hasSubs
+      ? '<button type="button" class="filter-toggle" aria-expanded="' + (opts.expanded ? 'true' : 'false') +
+        '" aria-label="' + escapeHtml((opts.expanded ? 'Hide' : 'Show') + ' subcategories of ' + opts.label) +
+        '" onclick="event.preventDefault(); event.stopPropagation(); toggleCategoryOpen(' + jsAttr(opts.key) + ');">' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 9l6 6 6-6"/></svg>' +
+        '</button>'
+      : '';
+    return '<div class="filter-row' + active + (opts.hasSubs ? ' has-subs' : '') + (opts.expanded ? ' is-open' : '') + '">' +
+      '<label class="filter-check' + active + '">' +
+        '<input type="radio" name="' + opts.group + '" aria-label="' + escapeHtml(opts.label) + '"' + (opts.active ? ' checked' : '') +
+        ' onchange="' + opts.onChange + '">' +
+        '<span class="n">' + escapeHtml(opts.label) + '</span>' +
+      '</label>' +
+      chev +
+      '<span class="c">' + opts.count + '</span>' +
+    '</div>';
+  }
+
+  let catHTML = row({
+    key: 'all', group: 'catf', label: 'All Products', count: PRODUCTS.length,
+    active: shopFilters.cat === 'all', hasSubs: false, expanded: false,
+    onChange: "setCategoryFilter('all')"
+  });
+
   allCatKeys.forEach(function(key){
-    /* A chevron ONLY on a category that actually has subcategories.
-
-       Without it there is no way to tell a category that expands from one that
-       does not until you have already clicked it and changed what the grid is
-       showing — the customer has to commit to a filter just to find out whether
-       there was anything to find. That is the whole reason this affordance
-       exists, and it is why the icon is conditional rather than decorative: a
-       chevron on a category with nothing under it would be a promise the UI
-       cannot keep.
-
-       It rotates when the category is selected, because selecting it is what
-       reveals the list. aria-hidden: the radio already carries the semantics
-       and the label already carries the name, so announcing a decorative
-       triangle would only add noise for a screen-reader user. */
-    const hasSubs = Object.keys(subCounts[key] || {}).length > 0;
-    /* A row WITHOUT subcategories still renders the same icon, hidden with
-       visibility rather than omitted. Omitting it made the counts on plain rows
-       sit 24px further right than the counts on rows with a chevron, and
-       compensating with a margin would have hard-coded the icon width and the
-       flex gap in a second place — two constants to keep in step for a purely
-       visual result. An invisible placeholder keeps every row the same shape by
-       construction, so the columns cannot drift apart again. */
-    const chevron = '<svg class="filter-chev' + (hasSubs ? '' : ' is-placeholder') +
-      '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 9l6 6 6-6"/></svg>';
-    catHTML += '<label class="filter-check ' + (shopFilters.cat===key?'active':'') + (hasSubs?' has-subs':'') + '"><input aria-label="catf" type="radio" name="catf" ' + (shopFilters.cat===key?'checked':'') + ' onchange="setCategoryFilter(' + jsAttr(key) + ')"><span class="n">' + escapeHtml(catLabel(key)) + '</span><span class="c">' + (catCounts[key]||0) + '</span>' + chevron + '</label>';
-    if(shopFilters.cat !== key) return;
-    const subs = Object.keys(subCounts[key] || {}).sort(function(a,b){ return catLabel(a).localeCompare(catLabel(b)); });
-    if(!subs.length) return;
+    const subs = Object.keys(subCounts[key] || {}).sort(function(a,b){
+      return catLabel(a).localeCompare(catLabel(b));
+    });
+    const hasSubs = subs.length > 0;
+    const open = hasSubs && expandedCats.has(key);
+    catHTML += row({
+      key: key, group: 'catf', label: catLabel(key), count: catCounts[key] || 0,
+      active: shopFilters.cat === key, hasSubs: hasSubs, expanded: open,
+      onChange: 'setCategoryFilter(' + jsAttr(key) + ')'
+    });
+    if(!open) return;
     catHTML += '<div class="filter-subs">';
     // "All <category>" clears the refinement without leaving the category.
-    catHTML += '<label class="filter-check ' + (!shopFilters.subcat?'active':'') + '"><input aria-label="subcatf" type="radio" name="subcatf" ' + (!shopFilters.subcat?'checked':'') + ' onchange="setSubcategoryFilter(' + jsAttr(key) + ', \'\')"><span class="n">All ' + escapeHtml(catLabel(key)) + '</span><span class="c">' + (catCounts[key]||0) + '</span></label>';
+    catHTML += row({
+      key: key + '::all', group: 'subcatf', label: 'All ' + catLabel(key), count: catCounts[key] || 0,
+      active: shopFilters.cat === key && !shopFilters.subcat, hasSubs: false, expanded: false,
+      onChange: 'setSubcategoryFilter(' + jsAttr(key) + ", '')"
+    });
     subs.forEach(function(sk){
-      catHTML += '<label class="filter-check ' + (shopFilters.subcat===sk?'active':'') + '"><input aria-label="subcatf" type="radio" name="subcatf" ' + (shopFilters.subcat===sk?'checked':'') + ' onchange="setSubcategoryFilter(' + jsAttr(key) + ', ' + jsAttr(sk) + ')"><span class="n">' + escapeHtml(catLabel(sk)) + '</span><span class="c">' + subCounts[key][sk] + '</span></label>';
+      catHTML += row({
+        key: key + '::' + sk, group: 'subcatf', label: catLabel(sk), count: subCounts[key][sk],
+        active: shopFilters.cat === key && shopFilters.subcat === sk, hasSubs: false, expanded: false,
+        onChange: 'setSubcategoryFilter(' + jsAttr(key) + ', ' + jsAttr(sk) + ')'
+      });
     });
     catHTML += '</div>';
   });
@@ -6611,6 +6750,25 @@ function renderShopFilterSidebar(){
   qs('#priceRange').value = shopFilters.maxPrice;
   qs('#priceRangeVal').textContent = formatINR(shopFilters.maxPrice);
   qs('#inStockOnly').checked = shopFilters.inStockOnly;
+  syncMobileFilterCount();
+}
+
+/* Opens or closes one category's subcategory list, WITHOUT touching the filter.
+
+   This is the gesture that was missing. Before it, disclosure was a side effect
+   of selection: a category opened when you filtered to it and there was no way
+   to close it again, so the chevron turned up once and never came back down. */
+function toggleCategoryOpen(key){
+  if(expandedCats.has(key)) expandedCats.delete(key);
+  else expandedCats.add(key);
+  renderShopFilterSidebar();
+}
+
+/* The count on the mobile "Show results" button, so the drawer can tell the
+   customer what their filters have done before they close it. */
+function syncMobileFilterCount(){
+  const el = qs('#mobileFilterCount');
+  if(el) el.textContent = getFilteredSortedProducts().length;
 }
 
 /* ---------- Shop: filter setters ---------- */
@@ -6620,6 +6778,9 @@ function setCategoryFilter(cat){
   // filter ("books" + "rudraksha") and an empty grid with nothing on screen to
   // explain it.
   if(cat !== shopFilters.cat) shopFilters.subcat = '';
+  // Selecting a category reveals its refinements: the customer has just said
+  // they are interested in it. The chevron is what closes it again.
+  if(cat && cat !== 'all') expandedCats.add(cat);
   shopFilters.cat = cat; shopFilters.page = 1;
   // Selecting a category reveals (or hides) its subcategory list.
   renderShopFilterSidebar();
@@ -6629,6 +6790,7 @@ function setCategoryFilter(cat){
 function setSubcategoryFilter(cat, subcat){
   shopFilters.cat = cat || 'all';
   shopFilters.subcat = subcat || '';
+  if(cat && cat !== 'all') expandedCats.add(cat);
   shopFilters.page = 1;
   // The sidebar itself changes shape here — the subcategory list only exists
   // under the SELECTED category — so re-rendering the grid alone would leave
@@ -6740,6 +6902,10 @@ function renderShopGrid(){
   qs('#sortSelect').value = shopFilters.sortBy;
   qs('#viewGridBtn').classList.toggle('active', shopFilters.view==='grid');
   qs('#viewListBtn').classList.toggle('active', shopFilters.view==='list');
+  // Every filter change lands here, so this is the one place that keeps the
+  // drawer's "Show N results" honest — price, rating and stock included, not
+  // only the category rows that rebuild the sidebar.
+  syncMobileFilterCount();
 }
 
 /* ---------- Search ---------- */
@@ -7405,11 +7571,6 @@ const REVIEW_TEXT = {
   books: ['Print quality is good and the translation is easy to follow.', 'Exactly what I needed for a daily reading routine.', 'Good binding — pages have held up well after months of use.'],
   samagri: ['Everything needed was in the box, nothing was missing.', 'Saved me a trip to three different shops — very convenient.', 'A well organised kit with a helpful printed checklist inside.']
 };
-function seededPick(arr, seedStr, offset){
-  let seed = 0;
-  for(let i=0;i<seedStr.length;i++) seed += seedStr.charCodeAt(i);
-  return arr[(seed + offset) % arr.length];
-}
 /* The old fake-review generator was removed: it fabricated reviews with
    invented names and labelled every one "Verified Purchase", which is
    misleading to customers. Real reviews are rendered by renderReviewsTab()

@@ -21,7 +21,11 @@ const SALT_ROUNDS = parseInt(process.env.BCRYPT_SALT_ROUNDS || '12', 10);
 // The global API rate limiter is far too loose to stop credential stuffing or
 // brute-forced passwords against login specifically. This caps login/admin-login
 // attempts much tighter, per IP.
-const authLimiter = rateLimit({
+//
+// Deliberately SHARED between /login and /admin/login: both guess a password
+// against the same account space, so an attacker moving between them must not
+// get a fresh budget by doing so.
+const credentialLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
   standardHeaders: true,
@@ -29,9 +33,31 @@ const authLimiter = rateLimit({
   message: { error: 'Too many attempts. Please wait a few minutes and try again.' }
 });
 
+/* Password RECOVERY gets its own budget, and this is the fix for a real
+   availability hole the test suite had already flagged and left standing.
+
+   All four of these routes used to mount one limiter instance, so the ten
+   attempts were pooled. Anyone hammering /forgot-password — a script, or a
+   customer who simply could not find the reset mail — consumed the same budget
+   that /login needs, and locked genuine sign-ins out of that IP for fifteen
+   minutes. On a shared office or mobile-carrier NAT that is a lot of customers
+   at once, and none of them did anything wrong.
+
+   Recovery is also the less dangerous surface: it guesses nothing. The
+   expensive half of it, actually sending mail, is separately capped at five an
+   hour by emailDispatchLimiter below, so splitting the budget loosens nothing
+   that matters. */
+const recoveryLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: parseInt(process.env.RECOVERY_RATE_LIMIT_MAX || '10', 10),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many attempts. Please wait a few minutes and try again.' }
+});
+
 // AUTH-04 — registration had NO route-level limiter at all, only the global
 // 200/15min budget, so a script could open hundreds of accounts. Deliberately a
-// SEPARATE limiter instance rather than reusing authLimiter: sharing one budget
+// SEPARATE limiter instance rather than reusing credentialLimiter: sharing one budget
 // would mean a customer who mistyped their password a few times could not then
 // create an account, which is a real support ticket for no security gain.
 const registerLimiter = rateLimit({
@@ -177,7 +203,7 @@ router.post(
 // ---------- Customer login ----------
 router.post(
   '/login',
-  authLimiter,
+  credentialLimiter,
   [body('email').isEmail().normalizeEmail(), body('password').notEmpty(), handleValidation],
   asyncHandler(async (req, res) => {
     const { email, password } = req.body;
@@ -210,7 +236,7 @@ router.post(
 // never store admin credentials in front-end code.
 router.post(
   '/admin/login',
-  authLimiter,
+  credentialLimiter,
   [body('email').isEmail().normalizeEmail(), body('password').notEmpty(), handleValidation],
   asyncHandler(async (req, res) => {
     const { email, password } = req.body;
@@ -244,7 +270,7 @@ router.post(
 // would let anyone enumerate which addresses are registered.
 router.post(
   '/forgot-password',
-  authLimiter,
+  recoveryLimiter,
   emailDispatchLimiter,
   [body('email').isEmail().normalizeEmail()],
   asyncHandler(async (req, res) => {
@@ -287,7 +313,7 @@ router.post(
 // ---------- Reset password ----------
 router.post(
   '/reset-password',
-  authLimiter,
+  recoveryLimiter,
   [body('token').notEmpty().isLength({ max: 200 }), body('newPassword').notEmpty(), handleValidation],
   asyncHandler(async (req, res) => {
     const { token, newPassword } = req.body;

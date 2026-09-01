@@ -3269,68 +3269,145 @@ section('[fe-38] Partial outage: one dead endpoint must not close the shop');
 }
 
 // ============================================================
-section('[fe-39] The disclosure chevron says which categories expand');
+section('[fe-39] The category filter: disclosure, placement, and touch');
 // ============================================================
 {
   const html = read('index.html');
+  const strip = s => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const code = strip(html);
   function grab(name) {
-    const i = html.search(new RegExp('(async )?function ' + name + '\\('));
+    const i = code.search(new RegExp('(async )?function ' + name + '\\('));
     if (i < 0) throw new Error('missing ' + name);
-    let d = 0; const s = html.indexOf('{', i);
-    for (let k = s; k < html.length; k++) {
-      if (html[k] === '{') d++;
-      else if (html[k] === '}') { d--; if (!d) return html.slice(i, k + 1); }
+    let d = 0; const s = code.indexOf('{', i);
+    for (let k = s; k < code.length; k++) {
+      if (code[k] === '{') d++;
+      else if (code[k] === '}') { d--; if (!d) return code.slice(i, k + 1); }
     }
   }
-  const fn = grab('renderShopFilterSidebar');
 
-  test('THE AFFORDANCE: only a category with subcategories shows a chevron', () => {
-    // Subcategories are revealed by SELECTING a category, so without an
-    // indicator the customer has to commit to a filter — changing what the grid
-    // shows — just to discover whether there was anything to discover. A
-    // chevron on a category with nothing under it would be a promise the UI
-    // cannot keep, so it is conditional, not decorative.
-    assert.match(fn, /const hasSubs = Object\.keys\(subCounts\[key\] \|\| \{\}\)\.length > 0;/,
-      'the indicator must be driven by real subcategory counts');
-    assert.match(fn, /hasSubs \? '' : ' is-placeholder'/,
-      'a category without subcategories gets the placeholder, never a live chevron');
-    assert.match(fn, /\(hasSubs\?' has-subs':''\)/,
-      'the row needs the class the rotation rule hangs off');
+  test('THE MISSING GESTURE: disclosure is separate from selection, so it can close', () => {
+    // The chevron flipped up once and stayed there. Expansion was a SIDE EFFECT
+    // of selecting a category, and nothing anywhere collapsed it again — so the
+    // "up" state was reachable and the "down" state was not.
+    //
+    // Expansion is now its own state, and the chevron is a real button that
+    // toggles it WITHOUT touching the filter. That also lets somebody look
+    // inside a category without filtering the grid to it first.
+    assert.match(code, /let expandedCats = new Set\(\);/,
+      'expansion must be its own state, not inferred from shopFilters.cat');
+    const toggle = grab('toggleCategoryOpen');
+    assert.match(toggle, /expandedCats\.delete\(key\)/, 'it must be able to CLOSE');
+    assert.match(toggle, /expandedCats\.add\(key\)/, 'and to open');
+    assert.ok(!/shopFilters/.test(toggle),
+      'toggling disclosure must not change the filter — that is the whole point of separating them');
+    // Selecting still opens, because the customer has expressed interest.
+    assert.match(grab('setCategoryFilter'), /expandedCats\.add\(cat\)/,
+      'selecting a category should reveal its refinements');
   });
 
-  test('THE ALIGNMENT: every row reserves the same space, by construction', () => {
-    // Omitting the icon on plain rows pushed their counts 24px right of the
-    // rest. Compensating with a margin would hard-code the icon width AND the
-    // flex gap in a second place — two constants to keep in step for a purely
-    // visual result. An invisible placeholder keeps every row the same shape.
-    assert.match(html, /\.filter-check \.filter-chev\.is-placeholder\{ visibility:hidden; \}/,
-      'the placeholder must reserve space, so visibility — never display:none');
-    // "All Products" is built outside the loop and was the one row that missed
-    // it, which put its count 24px out on its own.
-    assert.match(fn, /const chevSpacer = '<svg class="filter-chev is-placeholder"/,
-      'the All Products row is built separately and needs the spacer explicitly');
-    assert.match(fn, /All Products<\/span><span class="c">' \+ PRODUCTS\.length \+ '<\/span>' \+ chevSpacer/,
-      'and it must actually be appended to that row');
+  test('THE PLACEMENT: the chevron sits beside the NAME, not out by the count', () => {
+    // Parked at the right-hand edge next to the number it read as part of the
+    // count rather than as something belonging to the category.
+    const fn = grab('renderShopFilterSidebar');
+    const labelAt = fn.indexOf("'</label>'");
+    const chevAt = fn.indexOf('chev +');
+    const countAt = fn.indexOf('\'<span class="c">\'');
+    assert.ok(labelAt > -1 && chevAt > labelAt && countAt > chevAt,
+      'row order must be label(name) -> chevron -> count');
+    // Alignment by layout, not by a spacer that has to be kept in step.
+    assert.match(html, /\.filter-row \.c\{ margin-left:auto;/,
+      'the count must be pushed right by the layout, so every row aligns whether or not it has a chevron');
+    assert.ok(!/is-placeholder/.test(html),
+      'the invisible-spacer approach is gone; nothing to drift when the icon size changes');
   });
 
-  test('it points the way the list will move, and never lies about a third level', () => {
-    assert.match(html, /\.filter-check\.active \.filter-chev\{ transform:rotate\(180deg\)/,
-      'selected means expanded, so the chevron must turn');
-    assert.match(html, /\.filter-subs \.filter-check \.filter-chev\{ display:none; \}/,
-      'a sub-row has nothing beneath it — an icon that expands nothing is worse than no icon');
-    assert.match(html, /@media \(prefers-reduced-motion:reduce\)\{ \.filter-check \.filter-chev\{ transition:none; \} \}/,
-      'the rotation must be still for anyone who asked for less motion');
+  test('the chevron appears only where there is something to disclose', () => {
+    const fn = grab('renderShopFilterSidebar');
+    assert.match(fn, /const hasSubs = subs\.length > 0;/,
+      'driven by real subcategory counts, never rendered unconditionally');
+    assert.match(fn, /opts\.hasSubs\s*\?/, 'and only rendered when that is true');
+    // A sub-row can never carry one: there is no third level.
+    assert.match(fn, /hasSubs: false, expanded: false,[\s\S]{0,200}?setSubcategoryFilter/,
+      'subcategory rows must be built with hasSubs false');
   });
 
-  test('the icon is decorative — the radio and label carry the meaning', () => {
-    const svgs = fn.match(/<svg class="filter-chev[^>]*>/g) || [];
-    assert.strictEqual(svgs.length, 2, 'expected the live chevron and the All Products spacer');
-    for (const s of svgs) {
-      assert.match(s, /aria-hidden="true"/, 'announcing a decorative triangle only adds noise: ' + s.slice(0, 60));
-      assert.match(s, /focusable="false"/, 'and it must never take a tab stop: ' + s.slice(0, 60));
-    }
+  test('it is a real control, announced and reachable', () => {
+    const fn = grab('renderShopFilterSidebar');
+    assert.match(fn, /<button type="button" class="filter-toggle" aria-expanded="/,
+      'a button, not a decorated label — it performs an action');
+    assert.match(fn, /aria-expanded="' \+ \(opts\.expanded \? 'true' : 'false'\)/,
+      'its state must be announced, not only drawn');
+    assert.match(fn, /aria-label="' \+ escapeHtml\(\(opts\.expanded \? 'Hide' : 'Show'\)/,
+      'and it needs a name that says what it will do');
+    assert.match(fn, /event\.preventDefault\(\); event\.stopPropagation\(\);/,
+      'it sits inside a row whose label would otherwise swallow the click and change the filter');
+    assert.match(html, /\.filter-toggle:focus-visible\{ outline:/, 'keyboard focus must be visible');
+    assert.match(html, /\.filter-row\.is-open \.filter-toggle\{ transform:rotate\(180deg\)/,
+      'and it must point the other way once open');
+  });
+
+  test('P1: the filter offers no category that would open an empty grid', () => {
+    // Measured on the live site: the sidebar unioned a hardcoded starter list
+    // with the real catalog and advertised Bracelets, Puja Samagri Kits and
+    // Spiritual Books at ZERO — all three opened "No products found" — while
+    // putting a dead "Spiritual Books (0)" directly beside the live "Book (4)".
+    // The mega-menu already derived its list from the catalog, so the two
+    // surfaces disagreed about what the shop sells.
+    const fn = grab('renderShopFilterSidebar');
+    assert.ok(!/CAT_LABELS/.test(fn),
+      'the category list must come from the catalog, never from a hardcoded starter list');
+    assert.match(fn, /PRODUCTS\.forEach/, 'counted from the products themselves');
+    // The one exception, so a shared ?category= link still explains itself.
+    assert.match(fn, /catCounts\[shopFilters\.cat\] === undefined/,
+      'a category the customer is currently filtered to must stay listed even at zero');
+  });
+
+  test('TOUCH: rows and controls meet the 44px floor, and the rule actually wins', () => {
+    // Measured live at 390x844: filter rows were 22px, half the floor the Apple
+    // HIG and WCAG 2.5.8 both settle on.
+    //
+    // The override block MUST come after the base rules. Specificity is equal
+    // between them, so source order decides — and when this block sat earlier
+    // in the file it lost silently, leaving 26px chevrons on a phone while the
+    // stylesheet appeared to say 44.
+    const baseAt = html.indexOf('.filter-toggle{ display:inline-flex');
+    const touchAt = html.indexOf('@media (hover:none), (max-width:980px){');
+    assert.ok(baseAt > -1 && touchAt > baseAt,
+      'the touch overrides must come AFTER the base .filter-toggle rule or they lose on source order');
+    const block = html.slice(touchAt, html.indexOf('}\n', html.indexOf('.filter-subs .filter-check', touchAt)));
+    assert.match(block, /\.filter-row\{ min-height:44px;/);
+    assert.match(block, /\.filter-toggle\{ width:44px; height:44px; \}/);
+  });
+
+  test('MOBILE: the drawer is bounded by the viewport and its action is always reachable', () => {
+    // Measured live at 390x844 before this: the panel computed 1135px tall
+    // against an 844px viewport, so its bottom 291px — including Show Results —
+    // was off-screen and unreachable. top:0/bottom:0 should have bounded it and
+    // did not once the flex column's content exceeded it.
+    assert.match(html, /height:100vh; height:100dvh; max-height:100dvh;/,
+      'the height must be stated outright; dvh tracks a collapsing mobile address bar, with vh as the fallback');
+    assert.match(html, /\.shop-sidebar\.mobile-show \.filter-scroll\{[\s\S]{0,140}overflow-y:auto/,
+      'the LIST scrolls, so the head and the action stay pinned');
+    assert.match(html, /env\(safe-area-inset-bottom/,
+      'the action must clear the iPhone home indicator');
+    assert.match(html, /class="filter-drawer-head"/, 'a titled header with a way out');
+    assert.match(html, /id="mobileFilterCount"/, 'and a live count of what the filters have selected');
+    // Desktop must be untouched by all of it.
+    assert.match(html, /\.filter-drawer-head\{ display:none; \}/,
+      'the drawer chrome must not appear on desktop');
+    assert.match(html, /\.filter-scroll\{ display:flex; flex-direction:column; gap:var\(--sp-6\); \}/,
+      'and the scroll wrapper must be an ordinary column there');
+  });
+
+  test('the results count tracks every filter, not only the category rows', () => {
+    // Price, rating and stock changes re-render the grid without rebuilding the
+    // sidebar, so counting only in the sidebar renderer would leave the drawer
+    // promising a number that was two filters out of date.
+    assert.match(grab('renderShopGrid'), /syncMobileFilterCount\(\);/,
+      'the grid render is the one place every filter change passes through');
   });
 }
+
 
 // ============================================================
 // Runner
