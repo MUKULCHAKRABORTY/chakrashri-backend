@@ -1128,10 +1128,154 @@ section('[db-11] A failed send releases its claim instead of losing the customer
 }
 
 // ============================================================
+section('[db-12] "Most sold" must count money that was actually taken');
+// ============================================================
+// The category ranking behind the storefront's top-15 list summed
+// order_items.quantity across a LEFT JOIN whose status filter sat in the ON
+// clause. The filter was in the right place — a WHERE would have dropped every
+// category that has never sold — but the SUM was not conditioned on it, so the
+// order_items row survived when the orders row did not. A pending, cancelled,
+// refunded or payment_failed order therefore counted exactly as much toward
+// "most sold" as a delivered one.
+{
+  // The real query, lifted out of the route so this tests what ships.
+  const routeSrc = require('fs').readFileSync(
+    require('path').join(__dirname, '..', 'src', 'routes', 'products.routes.js'), 'utf8');
+  const start = routeSrc.indexOf("router.get('/meta/top-categories'");
+  const sqlStart = routeSrc.indexOf('`SELECT p.category', start);
+  const sqlEnd = routeSrc.indexOf('`', sqlStart + 1);
+  const TOP_CATEGORIES_SQL = routeSrc.slice(sqlStart + 1, sqlEnd);
+
+  async function makeProductIn(category, stock = 100) {
+    const { rows } = await db.query(
+      `INSERT INTO products (sku, name, slug, category, price_paise, mrp_paise, stock_qty, gst_rate)
+       VALUES ($1,$2,$3,$4,10000,10000,$5,3) RETURNING id`,
+      [uniq('SKU'), 'Rank Test', uniq('rank-product'), category, stock]
+    );
+    created.products.push(rows[0].id);
+    return rows[0].id;
+  }
+
+  async function makeOrderWith(userId, addressId, productId, quantity, status) {
+    const { rows } = await db.query(
+      `INSERT INTO orders (order_number, user_id, shipping_address_id, status, payment_method,
+                           subtotal_paise, gst_paise, shipping_paise, discount_paise, total_paise)
+       VALUES ($1,$2,$3,$4,'razorpay',10000,0,0,0,10000) RETURNING id`,
+      // order_number is VARCHAR(30) UNIQUE NOT NULL; uniq() keeps it short and
+      // collision-free across a parallel run.
+      [uniq('T'), userId, addressId, status]
+    );
+    created.orders.push(rows[0].id);
+    await db.query(
+      `INSERT INTO order_items (order_id, product_id, product_name_snapshot, quantity,
+                                unit_price_paise, line_total_paise)
+       VALUES ($1,$2,'Rank Test',$3,10000,$4)`,
+      [rows[0].id, productId, quantity, 10000 * quantity]
+    );
+    return rows[0].id;
+  }
+
+  async function unitsFor(category) {
+    const { rows } = await db.query(TOP_CATEGORIES_SQL, [20]);
+    const hit = rows.find(r => r.category === category);
+    return hit ? hit.units_sold : null;
+  }
+
+  test('THE FINDING: an unpaid order contributes nothing to the ranking', async () => {
+    const userId = await makeUser();
+    const addressId = await makeAddress(userId);
+    const cat = uniq('rankcat');
+    const productId = await makeProductIn(cat);
+
+    // One genuine sale.
+    await makeOrderWith(userId, addressId, productId, 2, 'delivered');
+    assert.strictEqual(await unitsFor(cat), 2, 'a delivered order must count');
+
+    // Everything that is not money in the bank.
+    for (const status of ['pending', 'cancelled', 'refunded', 'payment_failed']) {
+      await makeOrderWith(userId, addressId, productId, 50, status);
+    }
+    const after = await unitsFor(cat);
+    assert.strictEqual(after, 2,
+      `200 units across pending/cancelled/refunded/payment_failed inflated the count to ${after}`);
+  });
+
+  test('every status that IS money still counts', async () => {
+    const userId = await makeUser();
+    const addressId = await makeAddress(userId);
+    const cat = uniq('rankcat');
+    const productId = await makeProductIn(cat);
+
+    // partially_refunded counts: part of that sale was kept.
+    const counted = ['paid', 'processing', 'shipped', 'delivered', 'partially_refunded'];
+    for (const status of counted) await makeOrderWith(userId, addressId, productId, 3, status);
+
+    assert.strictEqual(await unitsFor(cat), counted.length * 3,
+      'a status that represents taken money must not be dropped');
+  });
+
+  test('a category that has never sold is still listed, at zero', async () => {
+    // This is why the filter belongs in the JOIN. Moving it to a WHERE would
+    // make the list silently omit every new category until its first sale.
+    const cat = uniq('rankcat');
+    await makeProductIn(cat);
+    assert.strictEqual(await unitsFor(cat), 0,
+      'it must appear with 0, not vanish and not come back NULL');
+  });
+
+  test('the order is TOTAL, so "top 15" is the same 15 every time', async () => {
+    // Equal units and equal product counts must still have a defined order, or
+    // the list reshuffles between page loads for no visible reason.
+    const userId = await makeUser();
+    const addressId = await makeAddress(userId);
+    const a = 'zz-' + uniq('rank');
+    const b = 'aa-' + uniq('rank');
+    const pa = await makeProductIn(a);
+    const pb = await makeProductIn(b);
+    await makeOrderWith(userId, addressId, pa, 5, 'delivered');
+    await makeOrderWith(userId, addressId, pb, 5, 'delivered');
+
+    const seen = [];
+    for (let i = 0; i < 3; i++) {
+      const { rows } = await db.query(TOP_CATEGORIES_SQL, [20]);
+      seen.push(rows.filter(r => r.category === a || r.category === b).map(r => r.category).join(','));
+    }
+    assert.strictEqual(new Set(seen).size, 1, 'the same query returned different orders: ' + seen.join(' | '));
+    assert.ok(seen[0].startsWith(b), 'equal rows must break the tie alphabetically, so "' + b + '" comes first');
+  });
+}
+
+// ============================================================
 // Runner + cleanup
 // ============================================================
+/* Is this the database going away, rather than a test failing?
+
+   The distinction matters more than it looks. When the connection drops
+   mid-run, EVERY remaining test throws the same transport error, and the suite
+   used to report each one as a failure — one dropped connection was read as a
+   dozen broken behaviours, with the real cause buried in the first line of a
+   long log. That is a suite that lies about what it found, and the cost is
+   somebody hunting a bug that was never there.
+
+   Matching on codes first and message text only as a fallback: node and pg
+   report these inconsistently, but an assertion error carries neither. */
+const TRANSPORT_CODES = new Set([
+  'ENOTFOUND', 'ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'EAI_AGAIN',
+  'EPIPE', 'EHOSTUNREACH', 'ENETUNREACH', 'ENETDOWN', 'ECONNABORTED',
+  '57P01', '57P02', '57P03', '08000', '08003', '08006', '08001', '08004'
+]);
+const TRANSPORT_TEXT = /connection terminated|connection ended|client has encountered a connection error|terminating connection|server closed the connection|connection refused|getaddrinfo|socket hang up|timeout exceeded when trying to connect/i;
+
+function isDatabaseGone(err) {
+  if (!err) return false;
+  // An assertion failure is never a transport failure, whatever it says.
+  if (err.name === 'AssertionError' || err.code === 'ERR_ASSERTION') return false;
+  if (err.code && TRANSPORT_CODES.has(String(err.code))) return true;
+  return TRANSPORT_TEXT.test(String(err.message || ''));
+}
+
 (async () => {
-  let passed = 0; let failed = 0;
+  let passed = 0; let failed = 0; let aborted = null;
   for (const item of queue) {
     if (item.type === 'section') { console.log('\n' + item.name); continue; }
     try {
@@ -1139,9 +1283,35 @@ section('[db-11] A failed send releases its claim instead of losing the customer
       console.log('  PASS -', item.name);
       passed++;
     } catch (e) {
+      if (isDatabaseGone(e)) {
+        // Stop here. Every remaining test would throw the same transport error
+        // and report it as if the code were at fault.
+        aborted = { at: item.name, err: e };
+        break;
+      }
       console.log('  FAIL -', item.name, '\n        ', e.message);
       failed++;
     }
+  }
+
+  if (aborted) {
+    console.log('\n' + '='.repeat(72));
+    console.log('  THE DATABASE CONNECTION WENT AWAY. THIS IS NOT A CODE FAILURE.');
+    console.log('='.repeat(72));
+    console.log('  Lost during: ' + aborted.at);
+    console.log('  Reason:      ' + (aborted.err.code ? aborted.err.code + ' — ' : '') + aborted.err.message);
+    console.log('');
+    console.log('  ' + passed + ' test(s) passed before the connection dropped; the rest never ran.');
+    console.log('  Nothing here says anything about the code under test.');
+    console.log('');
+    console.log('  Neon free-tier computes suspend when idle and the pooler endpoint can');
+    console.log('  briefly stop resolving. Re-run the suite:');
+    console.log('');
+    console.log('      npm run test:db-integration');
+    console.log('');
+    console.log('  The run is still marked FAILED, because a gate that has not actually');
+    console.log('  verified anything must never report green.');
+    console.log('='.repeat(72));
   }
 
   // Clean up in FK order. Best-effort: a cleanup failure must not turn a green
@@ -1171,7 +1341,9 @@ section('[db-11] A failed send releases its claim instead of losing the customer
     console.warn('  (cleanup warning:', err.message, ')');
   }
 
-  console.log(`\n${passed} passed, ${failed} failed\n`);
+  console.log(`\n${passed} passed, ${failed} failed${aborted ? ', RUN ABORTED (database unreachable)' : ''}\n`);
   await db.pool.end().catch(() => {});
-  process.exit(failed ? 1 : 0);
+  // An abort exits non-zero even with no failed assertion: the gate verified
+  // less than it was asked to, and that must never read as success.
+  process.exit(failed || aborted ? 1 : 0);
 })();

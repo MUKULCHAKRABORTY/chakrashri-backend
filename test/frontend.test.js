@@ -3309,16 +3309,50 @@ section('[fe-39] The category filter: disclosure, placement, and touch');
     // Parked at the right-hand edge next to the number it read as part of the
     // count rather than as something belonging to the category.
     const fn = grab('renderShopFilterSidebar');
+    // The chevron is the FIRST thing in the right-hand group and the count the
+    // last, so the icon still lands against the name. Only the button's reach
+    // extends to the edge; the icon does not travel with it.
+    const chevAt = fn.indexOf('class="filter-chev"');
+    const countInToggle = fn.indexOf('countHTML +');
+    assert.ok(chevAt > -1 && countInToggle > chevAt,
+      'inside the toggle the chevron must precede the count, or the icon drifts out to the number');
     const labelAt = fn.indexOf("'</label>'");
-    const chevAt = fn.indexOf('chev +');
-    const countAt = fn.indexOf('\'<span class="c">\'');
-    assert.ok(labelAt > -1 && chevAt > labelAt && countAt > chevAt,
-      'row order must be label(name) -> chevron -> count');
+    assert.ok(labelAt > -1 && fn.indexOf('toggle +') > labelAt,
+      'and the row order is label(name) -> toggle');
     // Alignment by layout, not by a spacer that has to be kept in step.
-    assert.match(html, /\.filter-row \.c\{ margin-left:auto;/,
+    assert.match(html, /\.filter-check > \.c, \.filter-row > \.c\{ margin-left:auto;/,
       'the count must be pushed right by the layout, so every row aligns whether or not it has a chevron');
     assert.ok(!/is-placeholder/.test(html),
       'the invisible-spacer approach is gone; nothing to drift when the icon size changes');
+  });
+
+  test('THE HIT AREAS: between them the two targets cover the whole row', () => {
+    // A 16px radio is not a target anyone hits with a thumb, and the count sat
+    // in dead space at the widest part of the row. Measured after the change at
+    // 320/375/768: both targets are 44px tall and reach the row's right edge,
+    // and every count glyph lands on the same pixel (spread 0) whether its row
+    // has a disclosure button or not.
+    const fn = grab('renderShopFilterSidebar');
+    // Where the count lives depends on which target owns that row.
+    assert.match(fn, /opts\.hasSubs \? '' : countHTML/,
+      'with no button the count must sit INSIDE the label, or the row stops being selectable short of its own edge');
+    // Slice the toggle expression itself rather than guessing a character
+    // window: an inline SVG sits between the two, and its length is nobody's
+    // business but the icon's.
+    const tExpr = fn.slice(fn.indexOf('const toggle = opts.hasSubs'), fn.indexOf('<div class="filter-row'));
+    assert.ok(tExpr.indexOf('class="filter-chev"') > -1 && tExpr.indexOf('countHTML +') > tExpr.indexOf('class="filter-chev"'),
+      'with a button the count must sit inside it, after the chevron, so clicking the number discloses');
+    assert.match(html, /\.filter-check\{[^}]*flex:1 1 auto/,
+      'the label has to STRETCH; a label sized to its text is the 16px-radio problem again');
+    assert.match(html, /\.filter-toggle\{[^}]*margin-left:auto/,
+      'and the button has to be pushed to the right edge');
+    // Both must fill the row's height on touch, not sit 28px tall inside a 44px row.
+    const touchAt = html.indexOf('@media (hover:none), (max-width:980px){');
+    const block = html.slice(touchAt, html.indexOf('.filter-subs .filter-check', touchAt));
+    assert.match(block, /\.filter-check\{[^}]*min-height:44px; align-self:stretch/,
+      'the label must fill the row height, or the top and bottom of every row look tappable and are not');
+    assert.match(block, /\.filter-toggle\{[^}]*min-height:44px[^}]*align-self:stretch/,
+      'and so must the button');
   });
 
   test('the chevron appears only where there is something to disclose', () => {
@@ -3342,8 +3376,12 @@ section('[fe-39] The category filter: disclosure, placement, and touch');
     assert.match(fn, /event\.preventDefault\(\); event\.stopPropagation\(\);/,
       'it sits inside a row whose label would otherwise swallow the click and change the filter');
     assert.match(html, /\.filter-toggle:focus-visible\{ outline:/, 'keyboard focus must be visible');
-    assert.match(html, /\.filter-row\.is-open \.filter-toggle\{ transform:rotate\(180deg\)/,
+    // The CHEVRON rotates, not the button. The button now carries the count as
+    // well, and rotating it would turn the number upside-down.
+    assert.match(html, /\.filter-row\.is-open \.filter-toggle \.filter-chev\{ transform:rotate\(180deg\)/,
       'and it must point the other way once open');
+    assert.ok(!/\.filter-row\.is-open \.filter-toggle\{ transform:rotate/.test(html),
+      'rotating the whole button would flip the count with it');
   });
 
   test('P1: the filter offers no category that would open an empty grid', () => {
@@ -3371,12 +3409,25 @@ section('[fe-39] The category filter: disclosure, placement, and touch');
     // in the file it lost silently, leaving 26px chevrons on a phone while the
     // stylesheet appeared to say 44.
     const baseAt = html.indexOf('.filter-toggle{ display:inline-flex');
-    const touchAt = html.indexOf('@media (hover:none), (max-width:980px){');
+    // THE filter touch block, not merely the first block with that media query:
+    // other components have their own touch overrides now, and indexOf() would
+    // happily measure one of those instead and prove nothing about this one.
+    const MQ = '@media (hover:none), (max-width:980px){';
+    let touchAt = -1;
+    for (let at = html.indexOf(MQ); at > -1; at = html.indexOf(MQ, at + 1)) {
+      const end = html.indexOf('\n}', at);
+      if (html.slice(at, end).includes('.filter-row{')) { touchAt = at; break; }
+    }
+    assert.ok(touchAt > -1, 'the filter touch-override block must exist');
     assert.ok(baseAt > -1 && touchAt > baseAt,
       'the touch overrides must come AFTER the base .filter-toggle rule or they lose on source order');
     const block = html.slice(touchAt, html.indexOf('}\n', html.indexOf('.filter-subs .filter-check', touchAt)));
     assert.match(block, /\.filter-row\{ min-height:44px;/);
-    assert.match(block, /\.filter-toggle\{ width:44px; height:44px; \}/);
+    // The button is no longer a 44px square: it carries the count too, so it is
+    // sized by a floor plus stretch rather than a fixed box.
+    assert.match(block, /\.filter-toggle\{ min-height:44px;/);
+    assert.match(block, /\.filter-toggle \.filter-chev\{ width:22px; height:22px; \}/,
+      'the icon keeps its own size independent of the button it now shares');
   });
 
   test('MOBILE: the drawer is bounded by the viewport and its action is always reachable', () => {
@@ -3408,6 +3459,581 @@ section('[fe-39] The category filter: disclosure, placement, and touch');
   });
 }
 
+
+// ============================================================
+section('[fe-40] The shipping address: reuse it, never invent a new row per order');
+// ============================================================
+// A LIVE bug, reported from the real site: checkout said "A valid shipping
+// address is required to place an order" while the customer was looking at a
+// complete, valid address. Both halves of that message were wrong.
+{
+  const html = read('index.html');
+  function grab(name) {
+    const i = html.search(new RegExp('(async )?function ' + name + '\\('));
+    if (i < 0) throw new Error('missing ' + name);
+    let d = 0; const s = html.indexOf('{', i);
+    for (let k = s; k < html.length; k++) {
+      if (html[k] === '{') d++;
+      else if (html[k] === '}') { d--; if (!d) return html.slice(i, k + 1); }
+    }
+  }
+  const same = new Function('return ' + grab('sameAddress') + '; ')();
+
+  test('THE FINDING: an identical address is reused, not inserted again', () => {
+    // The checkout POSTed a brand-new row on EVERY Place Order — it never
+    // listed, matched or reused one, and the storefront has no screen for
+    // managing them. The server caps an account at 25, so after twenty-five
+    // checkouts the POST returned 409, the client swallowed it into
+    // console.warn, and create-order then rejected the resulting null id with a
+    // message about the address being invalid.
+    const fn = grab('resolveShippingAddressId');
+    assert.match(fn, /apiFetch\('\/api\/addresses'\)/,
+      'it must LIST what is already saved before creating anything');
+    assert.match(fn, /saved\.find\(function\(a\)\{ return sameAddress\(a, payload\); \}\)/,
+      'and reuse a matching row rather than inserting a duplicate');
+    const listAt = fn.indexOf("apiFetch('/api/addresses')");
+    const postAt = fn.indexOf("method: 'POST'");
+    assert.ok(listAt > -1 && postAt > listAt,
+      'the match has to be attempted BEFORE the insert, or reuse never happens');
+  });
+
+  test('matching is forgiving about case and spacing, strict about the address', () => {
+    const base = { full_name: 'Mukul Chakraborty', phone: '9876543210', line1: '12 Temple Road',
+                   city: 'Kolkata', state: 'West Bengal', pincode: '700001' };
+    assert.ok(same(base, Object.assign({}, base, { full_name: '  MUKUL   CHAKRABORTY ' })),
+      'a saved row and a freshly typed one differ in case and spacing constantly');
+    assert.ok(same(base, Object.assign({}, base, { city: 'kolkata' })));
+    // Anything that changes WHERE it goes is a different address.
+    for (const field of ['line1', 'city', 'state', 'pincode', 'phone', 'full_name']) {
+      const changed = Object.assign({}, base); changed[field] = 'something else 9';
+      assert.ok(!same(base, changed), 'a different ' + field + ' must NOT be treated as the same address');
+    }
+    assert.ok(!same(base, Object.assign({}, base, { pincode: '700002' })),
+      'a different PIN is a different destination — this is the one that would ship to the wrong place');
+  });
+
+  test('an account already at the cap can still order', () => {
+    // 409 is the exact failure the live site hit. Recycling the oldest
+    // NON-default row is safe: it is overwritten with precisely what the
+    // customer just typed, and the alternative is a permanently broken
+    // checkout on an account with no way to delete anything.
+    const fn = grab('resolveShippingAddressId');
+    assert.match(fn, /=== 409/, 'the capacity case has to be recognised');
+    assert.match(fn, /filter\(function\(a\)\{ return !a\.is_default; \}\)/,
+      'the default address must be protected from recycling');
+    assert.match(fn, /method: 'PUT'/, 'it must overwrite a row rather than give up');
+  });
+
+  test('THE MESSAGE: a failure is never reported as an invalid address', () => {
+    const caller = grab('placeOrderNow');
+    assert.ok(!/console\.warn\('Could not create shipping address on server, proceeding without it'/.test(caller),
+      'the swallow is what turned a save failure into a lie about the address');
+    assert.match(caller, /shippingAddressId = await resolveShippingAddressId\(addrPayload\);/);
+    // The catch must STOP, not carry on with a null id.
+    const catchAt = caller.indexOf('Could not resolve a shipping address');
+    assert.ok(catchAt > -1, 'the failure has to be handled explicitly');
+    const after = caller.slice(catchAt, catchAt + 700);
+    assert.match(after, /return;/, 'it must return rather than reaching create-order with no address');
+    assert.match(after, /\(e && e\.error\) \? e\.error/, "and show the server's own reason");
+    assert.match(after, /checkoutProcessing/, 'the processing pane must be dismissed');
+    assert.match(after, /checkoutLayout/, 'and the form the customer can act on brought back');
+  });
+
+  test('the server still refuses an order with no address', () => {
+    // The client-side fix must not be mistaken for permission to relax this.
+    const routes = read('src/routes/payments.routes.js');
+    assert.match(routes, /A valid shipping address is required to place an order/,
+      'a paid order with nowhere to ship it is still an order that must not exist');
+    assert.match(routes, /!isUuid\(shippingAddressId\)/,
+      'and the shape is still checked before it reaches Postgres');
+  });
+}
+
+// ============================================================
+section('[fe-41] The mobile drawer: the only route a phone has into a subcategory');
+// ============================================================
+// The mega-menu is a HOVER surface. It does not exist on a phone, so the
+// navigation drawer is the only way a mobile visitor reaches a category from
+// the nav at all — and it was still carrying seven hardcoded links.
+{
+  const html = read('index.html');
+  const strip = s => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const code = strip(html);
+  function grab(name) {
+    const i = code.search(new RegExp('(async )?function ' + name + '\\('));
+    if (i < 0) throw new Error('missing ' + name);
+    let d = 0; const s = code.indexOf('{', i);
+    for (let k = s; k < code.length; k++) {
+      if (code[k] === '{') d++;
+      else if (code[k] === '}') { d--; if (!d) return code.slice(i, k + 1); }
+    }
+  }
+
+  test('THE FINDING: the drawer offered categories the shop does not sell', () => {
+    // The hardcoded list advertised Bracelets, Spiritual Books and Puja Samagri
+    // Kits. All three hold nothing and open an empty grid — the same defect
+    // already fixed in the shop sidebar, still live in the drawer because the
+    // list was written by hand in the markup.
+    const drawer = html.slice(html.indexOf('id="mobileDrawer"'), html.indexOf('id="mobileDrawer"') + 4000);
+    assert.ok(!/openShopWithCategory\('bracelets'\)/.test(drawer),
+      'a category with no products must not be advertised anywhere');
+    assert.ok(!/openShopWithCategory\('samagri'\)/.test(drawer));
+    assert.match(html, /<div class="mnav-sub" id="mnavShopSub"><\/div>/,
+      'the list must be an empty host the renderer fills, not markup');
+  });
+
+  test('it is derived from the catalog, by the same law as every other surface', () => {
+    const fn = grab('renderMobileNavCategories');
+    assert.match(fn, /categoryTree\(\)/,
+      'same source as the mega-menu and the shop sidebar, so the three cannot disagree');
+    assert.match(fn, /node\.subs\.forEach/, 'subcategories must be listed, not only top-level categories');
+    assert.match(fn, /cls: 'mnav-subrow'/, 'and marked as a level down');
+    assert.match(fn, /openShopWithCategory\(' \+ jsAttr\(node\.cat\) \+ ', ' \+ jsAttr\(s\.sub\)/,
+      'a subcategory link must carry BOTH parts or it filters to the parent');
+    assert.match(fn, /jsAttr\(/, 'slugs go into an onclick attribute, so they must be escaped for that context');
+  });
+
+  test('the two fixed entries come last, in the right order', () => {
+    // All Products is still the final row. All Categories now sits directly
+    // above it: a browser for everything the top slice left out.
+    const fn = grab('renderMobileNavCategories');
+    const listAt = fn.indexOf('shown.forEach');
+    const catsAt = fn.indexOf('mnav-actionrow');
+    const allAt = fn.indexOf("key: 'all'");
+    assert.ok(listAt > -1 && catsAt > listAt,
+      'All Categories comes after the category list');
+    assert.ok(allAt > catsAt,
+      'and All Products after that — it is the escape hatch from a list of narrowings, not one of them');
+    assert.match(fn, /PRODUCTS\.length/, 'and its count is the whole catalog');
+  });
+
+  test('THE TOP SLICE: a drawer lists the best sellers, not the whole catalogue', () => {
+    // A phone menu that lists forty categories is a wall, not a menu. The
+    // drawer shows the top N by units actually sold; the rest live one tap away
+    // in a browser that can be searched, which a list of rows cannot be.
+    const fn = grab('renderMobileNavCategories');
+    assert.match(code, /const MNAV_TOP_CATEGORIES = \d+;/, 'the cut-off is a named constant, not a literal buried in a slice');
+    assert.match(fn, /rankedCategories\(tree\)\.slice\(0, MNAV_TOP_CATEGORIES\)/,
+      'the list must be the ranked head, not an arbitrary slice of the tree');
+    // The All Categories row must reach everything, so it counts the whole tree.
+    assert.match(fn, /'<span class="mnav-count">' \+ tree\.length \+ '<\/span>'/,
+      'its count is every category, not the shown slice — that is the point of it');
+  });
+
+  test('THE RANKING: a total order, and a real fallback when sales are unknown', () => {
+    // Proven behaviourally in scripts/drawer-fuzz.js over 40 categories with
+    // deliberate ties: units desc, then catalogue depth, then name — the same
+    // three keys the SQL sorts by, so client and server cannot disagree about
+    // which category sits at position 15.
+    const fn = grab('rankedCategories');
+    assert.match(fn, /if\(!categorySalesRank\) return tree\.slice\(\);/,
+      'no sales data must fall back to the tree order, not to no order');
+    assert.match(fn, /if\(ua !== ub\) return ub - ua;/, 'units sold is the primary key');
+    assert.match(fn, /if\(a\.count !== b\.count\) return b\.count - a\.count;/, 'then catalogue depth');
+    assert.match(fn, /return a\.cat\.localeCompare\(b\.cat\);/,
+      'then the name — without it, equal rows reshuffle between page loads');
+    // An unranked category sorts below every ranked one. This is what makes a
+    // 20-row server window safe for a 15-row client list.
+    assert.match(fn, /hasOwnProperty\.call\(rank, a\.cat\) \? rank\[a\.cat\] : -1/,
+      'absent from the ranking must sort below a genuine zero');
+    assert.match(code, /let categorySalesRank = null;/,
+      'null means "unknown", which is a different thing from "all zero"');
+  });
+
+  test('SERVER: "most sold" counts only orders that were actually paid', () => {
+    // The storefront ranks by what this query returns, so the arithmetic behind
+    // it is part of this feature. Proven against a real database in
+    // test/db-integration.test.js [db-12].
+    const routes = read('src/routes/products.routes.js');
+    assert.match(routes, /SUM\(CASE WHEN o\.id IS NOT NULL THEN oi\.quantity ELSE 0 END\)/,
+      'the sum must be conditioned on the order surviving the status filter');
+    assert.ok(!/COALESCE\(SUM\(oi\.quantity\), 0\)/.test(routes),
+      'an unconditional sum counted pending, cancelled and refunded orders as sales');
+    assert.match(routes, /ORDER BY units_sold DESC, product_count DESC, p\.category ASC/,
+      'and the server order must match the client order exactly');
+  });
+
+  test('ORPHAN GUARD: the renderer is actually called, on both paints', () => {
+    // A function built, tested and never invoked is the catPath mistake. It has
+    // to run at the cold first paint (from the snapshot, no API) AND again when
+    // the live catalog lands.
+    assert.match(grab('refreshCatalogViews'), /renderMobileNavCategories\(\);/,
+      'rebuilt when the live catalog replaces the snapshot');
+    const calls = (code.match(/renderMobileNavCategories\(\);/g) || []).length;
+    assert.ok(calls >= 2,
+      'it must also run at the cold first paint, or a phone gets an empty Shop menu for the whole 30-60s wake');
+  });
+
+  test('THE COLLAPSE: one wrapper child, or the menu will not close', () => {
+    // grid-template-rows:0fr sizes only the FIRST explicit row. With sibling
+    // links the rest fall into implicit auto rows and stay on screen with the
+    // menu "closed" — measured before the wrapper was added.
+    const fn = grab('renderMobileNavCategories');
+    assert.match(fn, /host\.innerHTML = '<div class="mnav-sub-inner">' \+ html \+ '<\/div>'/,
+      'the generated list must be wrapped in exactly one element');
+    // The empty case used to be a second, separate assignment. It is now the
+    // SAME one — there is no early return any more, so an empty catalog falls
+    // through to the same wrapper carrying just All Products. One assignment
+    // means the structure cannot vary by branch, which is stronger than two
+    // assignments that happen to agree today.
+    const assignments = fn.match(/host\.innerHTML =/g) || [];
+    assert.equal(assignments.length, 1,
+      'exactly one place sets the list, so the empty case cannot drift from the normal one');
+    assert.match(html, /\.mnav-sub\{[^}]*grid-template-rows:0fr/,
+      'closed state');
+    assert.match(html, /\.mnav-item\.open \.mnav-sub\{ grid-template-rows:1fr; \}/,
+      'open state sizes to the real content');
+    // The height is not knowable in advance any more, so it must not be guessed.
+    assert.ok(!/\.mnav-item\.open \.mnav-sub\{ max-height:\d+px/.test(html),
+      'a fixed max-height would silently clip a catalog with enough categories');
+    assert.match(html, /@media \(prefers-reduced-motion:reduce\)\{ \.mnav-sub\{ transition:none; \} \}/,
+      'and the animation must be suppressible');
+  });
+
+  test('THE DISCLOSURE: a category with subcategories carries its own chevron', () => {
+    // The drawer listed every subcategory permanently, indented, with no way to
+    // collapse anything — so the list grew without bound as the catalog does,
+    // and there was no signal at all about which categories hold refinements.
+    // It now follows the SAME two-target law as a shop filter row:
+    //   [ name ................ ][ chevron ... count ]
+    //     ^ opens the category     ^ reveals its subcategories
+    const fn = grab('renderMobileNavCategories');
+    assert.match(fn, /const hasSubs = node\.subs\.length > 0;/,
+      'driven by real subcategory counts, never rendered unconditionally');
+    assert.match(fn, /class="mnav-cattoggle" aria-expanded="/,
+      'a real button, announced — not a decorated span');
+    assert.match(fn, /aria-label="' \+ escapeHtml\(\(opts\.expanded \? 'Hide' : 'Show'\)/,
+      'and named for what it will do');
+    assert.match(fn, /event\.preventDefault\(\); event\.stopPropagation\(\);/,
+      'it sits beside a link that would otherwise navigate and close the drawer');
+    // Chevron before count, both inside the button: the icon stays against the
+    // name while the target reaches the right-hand edge.
+    const tExpr = fn.slice(fn.indexOf('const toggle = opts.hasSubs'), fn.indexOf("return '<div class=\"mnav-row"));
+    assert.ok(tExpr.indexOf('class="mnav-chev"') > -1 &&
+              tExpr.indexOf('countHTML') > tExpr.indexOf('class="mnav-chev"'),
+      'chevron first, count second — otherwise the icon drifts out to the number');
+    // No button means no dead space: the count goes back inside the link.
+    assert.match(fn, /\(opts\.hasSubs \? '' : countHTML\)/,
+      'a row with no button keeps its count inside the label');
+
+    // THE PAIRS, exactly as the shop filter builds them: a radio and a name in
+    // one target, a chevron and a count in the other. The radio is not
+    // decoration — the drawer is rebuilt on open, so it shows which category is
+    // currently being viewed, which a list of plain links could not.
+    assert.match(fn, /<input type="radio" name="' \+ opts\.group \+ '"/,
+      'the selection pair needs a real radio, grouped like the filter rows');
+    assert.match(fn, /'<label class="mnav-check' \+ active \+ '">'/,
+      'and it must be wrapped in a LABEL, so the name selects as well as the circle');
+    assert.match(fn, /group: 'mnavCat'/, 'categories share one radio group');
+    assert.match(fn, /group: 'mnavSub'/,
+      'and subcategories a different one, so selecting a category does not fight a sub');
+    assert.match(fn, /active: curCat === node\.cat && !curSub/,
+      'the checked row must track the CURRENT filter, not a hardcoded default');
+    assert.match(fn, /if\(curCat && curSub\) mnavOpenCats\.add\(curCat\);/,
+      'and an active subcategory must reveal its group, or the one row that matters is hidden');
+  });
+
+  test('the disclosure toggles both ways, and does not disturb the filter panel', () => {
+    // Measured at 320/375/768 with transitions disabled: the list goes
+    // 357 -> 401 -> 357px, the group 0 -> 44 -> 0, aria false -> true -> false.
+    const fn = grab('toggleMnavCat');
+    assert.match(fn, /mnavOpenCats\.add\(key\)/, 'it must be able to open');
+    assert.match(fn, /mnavOpenCats\.delete\(key\)/, 'and to CLOSE — the defect the shop sidebar had');
+    assert.match(fn, /setAttribute\('aria-expanded'/, 'the state must be announced, not only drawn');
+    assert.match(fn, /setAttribute\('aria-label'/, 'and the name updated to match');
+    // Separate state from the shop sidebar: two surfaces, two moments.
+    assert.ok(!/expandedCats/.test(fn),
+      'the nav must not silently rearrange the shop filter panel behind it');
+    assert.match(code, /let mnavOpenCats = new Set\(\);/,
+      'and the open rows must survive the rebuild when the live catalog lands');
+    // Toggled in place, so the expand animates instead of jumping.
+    assert.ok(!/renderMobileNavCategories\(\);/.test(fn),
+      'a full re-render would replace the element, and a new element starts at its final size');
+  });
+
+  test('only the chevron rotates, and the nested group collapses on its own wrapper', () => {
+    assert.match(html, /\.mnav-cat\.open \.mnav-cattoggle \.mnav-chev\{ transform:rotate\(180deg\); \}/,
+      'rotating the button would turn the count it carries upside-down');
+    assert.match(html, /\.mnav-subs\{[^}]*grid-template-rows:0fr/, 'closed');
+    assert.match(html, /\.mnav-cat\.open \.mnav-subs\{ grid-template-rows:1fr; \}/, 'open');
+    assert.match(html, /\.mnav-subs > \.mnav-subs-inner\{ min-height:0/,
+      'one wrapper here too, or sibling links escape the collapse into implicit rows');
+    assert.match(html, /@media \(prefers-reduced-motion:reduce\)\{ \.mnav-subs\{ transition:none; \} \}/);
+    assert.match(html, /\.mnav-cattoggle:focus-visible\{ outline:/, 'keyboard focus must be visible');
+  });
+
+  test('the counts line up whether or not the row has a chevron', () => {
+    // Measured: spread 0 at 320, 375 and 768. The count is pushed right by the
+    // layout in BOTH homes, and both keep the drawer's own 22px gutter, so the
+    // column lands on one pixel whether or not the row has a button.
+    assert.match(html, /\.mnav-check > \.mnav-count\{ margin-left:auto; padding-left:10px; padding-right:22px; \}/,
+      'a count with no button beside it still keeps the drawer gutter');
+    assert.match(html, /\.mnav-cattoggle\{[^}]*padding:8px 22px 8px 10px/,
+      "and the button's right gutter must match the drawer's own");
+  });
+
+  test('every row in the drawer is a 44px target', () => {
+    // Measured at 320/375/768 after the change: min 44px on every row.
+    assert.match(html, /\.mnav-check\{[^}]*min-height:44px/,
+      'a nav row on a phone is a thumb target');
+    assert.match(html, /\.mnav-check\{[^}]*flex:1 1 auto/,
+      'and the selection pair must STRETCH — an 18px circle on its own is the defect, not the target');
+    assert.match(html, /\.mnav-subrow \.mnav-check\{[^}]*padding-left:58px/,
+      'a subcategory reads as a level down, matching the sidebar and the mega-menu');
+    assert.match(html, /\.mnav-subrow::before\{[^}]*background:var\(--gold-lt\)/,
+      'and carries the same hairline the sidebar uses for the same hierarchy');
+    assert.match(html, /\.mnav-count\{/, 'each row states how many products it holds');
+  });
+}
+
+// ============================================================
+section('[fe-42] Derived lists must survive a catalog nobody has seen yet');
+// ============================================================
+// Both of these are the same defect in different directions: a list DERIVED
+// from the catalog living in a container that quietly assumed how big it would
+// get. Found by running the real renderer against catalogs it had never seen.
+{
+  const html = read('index.html');
+  const strip = s => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const code = strip(html);
+  function grab(name) {
+    const i = code.search(new RegExp('(?:async )?function ' + name + '\\('));
+    if (i < 0) throw new Error('missing ' + name);
+    let d = 0; const s = code.indexOf('{', i);
+    for (let k = s; k < code.length; k++) {
+      if (code[k] === '{') d++;
+      else if (code[k] === '}') { d--; if (!d) return code.slice(i, k + 1); }
+    }
+  }
+
+  test('EMPTY: the drawer still offers All Products with no categories at all', () => {
+    // It used to bail the moment the tree was empty, so a cold start where even
+    // the snapshot failed — or a shop with nothing active — expanded into a
+    // completely empty box. The category loop needs a tree; All Products does
+    // not, and it is the row that should always be there.
+    const fn = grab('renderMobileNavCategories');
+    assert.ok(!/if\(!tree\.length\)\{[^}]*return;/.test(fn),
+      'no early return on an empty tree — that is what removed All Products with it');
+    const treeAt = fn.indexOf('const tree = categoryTree();');
+    const allAt = fn.indexOf("key: 'all'");
+    assert.ok(treeAt > -1 && allAt > treeAt,
+      'All Products is appended after the loop, so it does not depend on the loop running');
+  });
+
+  test('SCALE: the mega-menu cannot grow past the bottom of the screen', () => {
+    // Measured at 1440x900 with 30 categories x 8 subcategories: the panel's
+    // natural height is 4163px. It is position:absolute, so before the cap the
+    // lower 3263px hung off-screen with no way to scroll to it. Capped, it
+    // reports clientHeight 774 and scrolls.
+    //
+    // Same defect class as the drawer's old max-height:600px, sign flipped:
+    // there a derived list was clipped by a guessed ceiling, here it had none.
+    const megaAt = html.indexOf('.mega{');
+    const block = html.slice(megaAt, html.indexOf('}', html.indexOf('overflow-y', megaAt)));
+    assert.match(block, /max-height:calc\(100vh - var\(--header-h\) - 24px\);/,
+      'a vh fallback first, for anything without dvh');
+    assert.match(block, /max-height:calc\(100dvh - var\(--header-h\) - 24px\);/,
+      'and dvh so a collapsing mobile address bar is accounted for');
+    assert.match(block, /overflow-y:auto/,
+      'a cap with no scroll would hide the overflow instead of clipping it — worse, not better');
+    assert.match(block, /overscroll-behavior:contain/,
+      'scrolling the panel to its end must not then scroll the page behind it');
+    // It has to use the same header variable everything else does, or it drifts
+    // the next time the header height changes.
+    assert.match(html, /--header-h: \d+px;/, 'the header height is a variable, not a guess');
+  });
+
+  test('the drawer opening can never be blocked by the category list', () => {
+    // The drawer also carries Home, Puja Booking, Astrology and Contact, which
+    // have nothing to do with the catalog. Rendering before opening would let
+    // one bad category row hold the whole site's navigation hostage.
+    const at = code.indexOf("qs('#mobileMenuOpen').addEventListener");
+    const handler = code.slice(at, at + 400);
+    const openAt = handler.indexOf('openMobileDrawer();');
+    const renderAt = handler.indexOf('renderMobileNavCategories();');
+    assert.ok(openAt > -1 && renderAt > openAt,
+      'the drawer must OPEN before the list is rebuilt');
+    assert.match(handler, /try\{ renderMobileNavCategories\(\); \}/,
+      'and the rebuild must be guarded, so the worst case is a stale list in a working menu');
+  });
+
+  test('a category name an admin actually typed cannot break the markup', () => {
+    // jsAttr is JSON.stringify wrapped in escapeHtml: the first makes a valid JS
+    // string literal out of quotes and backslashes, the second keeps it inside
+    // an HTML attribute. Both layers are load-bearing.
+    const fn = grab('jsAttr');
+    assert.match(fn, /escapeHtml\(JSON\.stringify\(/,
+      'both layers, in that order — either alone lets a quote out');
+    const render = grab('renderMobileNavCategories');
+    assert.ok(!/onchange="[^"]*'\s*\+\s*opts\.key/.test(render),
+      'no slug may be concatenated into an attribute without going through jsAttr');
+    assert.match(render, /data-cat="' \+ escapeHtml\(node\.cat\) \+ '"/,
+      'and the data attribute is escaped too');
+    // toggleMnavCat matches the attribute VALUE in JS rather than building a CSS
+    // selector, so a slug containing a quote or a bracket needs no escaping.
+    assert.match(grab('toggleMnavCat'), /getAttribute\('data-cat'\) !== key/,
+      'matching in JS avoids having to escape a free-form slug into a selector');
+  });
+}
+
+// ============================================================
+section('[fe-43] Service Booking, and the All Categories browser');
+// ============================================================
+{
+  const html = read('index.html');
+  const strip = s => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const code = strip(html);
+  function grab(name) {
+    const i = code.search(new RegExp('(?:async )?function ' + name + '\\('));
+    if (i < 0) throw new Error('missing ' + name);
+    let d = 0; const s = code.indexOf('{', i);
+    for (let k = s; k < code.length; k++) {
+      if (code[k] === '{') d++;
+      else if (code[k] === '}') { d--; if (!d) return code.slice(i, k + 1); }
+    }
+  }
+
+  test('Service Booking is one menu above Shop, and its two links moved INTO it', () => {
+    // Puja Booking and Astrology were two loose rows further down the drawer.
+    // They are one thing a customer comes for, so they are one menu — and the
+    // originals are gone, because the same destination twice in one drawer is
+    // a defect, not a convenience.
+    const svcAt = html.indexOf('id="mServiceToggle"');
+    const shopAt = html.indexOf('id="mShopToggle"');
+    assert.ok(svcAt > -1 && shopAt > -1 && svcAt < shopAt,
+      'Service Booking must sit above Shop');
+    assert.match(html, /class="mnav-servicelink"[^>]*onclick="navigateTo\('puja'\)/);
+    assert.match(html, /class="mnav-servicelink"[^>]*onclick="navigateTo\('astrology'\)/);
+    // Exactly one drawer row per destination.
+    const drawerStart = html.indexOf('<div class="drawer-body">');
+    const drawerEnd = html.indexOf('</div>', html.indexOf('id="mnavShopSub"'));
+    const drawer = html.slice(drawerStart, html.indexOf('drawer-foot', drawerEnd));
+    assert.equal((drawer.match(/navigateTo\('puja'\)/g) || []).length, 1,
+      'Puja Booking must appear exactly once in the drawer');
+    assert.equal((drawer.match(/navigateTo\('astrology'\)/g) || []).length, 1,
+      'Astrology must appear exactly once in the drawer');
+  });
+
+  test('ONE disclosure behaviour, shared — not a copy per section', () => {
+    // Shop and Service Booking behave identically and must keep doing so. Two
+    // hand-written copies is exactly how they stop.
+    assert.match(code, /function wireDrawerSection\(itemId\)\{/);
+    assert.match(code, /wireDrawerSection\('mShopToggle'\);/);
+    assert.match(code, /wireDrawerSection\('mServiceToggle'\);/);
+    const fn = grab('wireDrawerSection');
+    assert.match(fn, /setAttribute\('aria-expanded'/, 'the state must be announced, not only drawn');
+    // The service row is the whole toggle: there is no "all services" page, so
+    // a split label would navigate nowhere.
+    assert.match(html, /id="mServiceToggle">\s*<button class="mnav-toggle"/,
+      'the whole row toggles, because its label has nowhere honest to go');
+  });
+
+  test('the All Categories browser is complete, searchable, and works cold', () => {
+    const fn = grab('renderAllCategories');
+    assert.match(fn, /categoryTree\(\)/,
+      'built from the same derived tree as every other category surface, so it is complete from the snapshot alone');
+    // Searching must match what the customer can SEE, not only the slug.
+    assert.match(fn, /String\(catLabel\(value\)\)\.toLowerCase\(\)\.indexOf\(q\)/,
+      'a customer searches the words on screen; they have never seen the slug');
+    assert.match(fn, /const subs = catHit \? node\.subs : node\.subs\.filter/,
+      'a category matched by name keeps all its subcategories; one matched through a subcategory shows the matches');
+    assert.match(fn, /allcats-empty/, 'a search with no results needs to say so');
+    // Both levels are reachable, and both escape into the shop correctly.
+    assert.match(fn, /openShopWithCategory\(' \+ jsAttr\(node\.cat\) \+ '\); closeAllCategories\(\);/);
+    assert.match(fn, /jsAttr\(node\.cat\) \+ ', ' \+ jsAttr\(s\.sub\) \+ '\); closeAllCategories\(\);/);
+  });
+
+  test('opening the browser closes the drawer, and Escape closes the browser', () => {
+    const fn = grab('openAllCategories');
+    assert.match(fn, /closeAllDrawers\(\);/,
+      'two stacked overlays is not a browsing experience');
+    assert.match(fn, /openModal\('allCatsModal'\)/, 'it reuses the page modal convention rather than inventing one');
+    // Focus the search only where a keyboard exists: doing it on a phone raises
+    // the on-screen keyboard over the grid the customer opened this to read.
+    assert.match(fn, /matchMedia\('\(hover:hover\) and \(min-width:641px\)'\)/,
+      'auto-focus belongs on desktop only');
+    assert.match(code, /closeModal\('allCatsModal'\);/, 'Escape must close it like every other modal');
+  });
+
+  test('the browser sizes itself by ID, so stylesheet order cannot break it', () => {
+    // .allcats-box and .modal-box have EQUAL specificity, and the modal rules
+    // are defined later in this file than the drawer rules this block lives
+    // with — so .modal-box{max-height:88vh} was silently beating both the base
+    // rule and the phone media query, rendering a 715px box where a full-height
+    // sheet was intended. Measured before and after at 375x812: 715 -> 812.
+    assert.match(html, /#allCatsModal \.allcats-box\{[^}]*max-height:88dvh/,
+      'scoped by id so it wins on specificity rather than on position in the file');
+    assert.match(html, /#allCatsModal \.allcats-box\{ max-width:none;[^}]*height:100dvh/,
+      'and the phone override must be scoped the same way');
+    assert.match(html, /@media \(hover:none\), \(max-width:980px\)\{\s*\.allcat-chip\{ min-height:44px/,
+      'a subcategory chip is a real destination, so on touch it gets a real target');
+  });
+}
+
+// ============================================================
+section('[fe-44] The gate cannot quietly stop running a suite');
+// ============================================================
+// This has now happened twice. test:frontend existed, passed locally, and was
+// absent from CI — the comment in ci.yml is the record of it. Then test:drawer
+// was added to verify:full only, where CI never looks, and would have shipped
+// having never run in the gate once.
+//
+// CI lists its steps by hand, so nothing structural kept that list honest. This
+// is that structure: a suite either runs in CI, or it is exempt ON PURPOSE and
+// says why. There is no third state where it silently does not run.
+{
+  const pkg = JSON.parse(read('package.json'));
+  const ci = read('.github/workflows/ci.yml');
+
+  // Suites CI deliberately does not run, each with the reason it cannot.
+  const EXEMPT = {
+    'test:db': 'a live connectivity probe against the real database, not a test suite',
+    'test:razorpay': 'a live connectivity probe against the payment gateway',
+    'test:drawer:watch': 'a developer convenience wrapper, if one is ever added'
+  };
+
+  const suites = Object.keys(pkg.scripts).filter(k => /^test:/.test(k));
+
+  test('every test:* suite either runs in CI or is exempt with a stated reason', () => {
+    const missing = suites.filter(s =>
+      !Object.prototype.hasOwnProperty.call(EXEMPT, s) &&
+      !ci.includes('npm run ' + s));
+    assert.deepStrictEqual(missing, [],
+      'these suites exist and pass locally but the gate never runs them: ' + missing.join(', '));
+  });
+
+  test('the offline chain runs every suite that needs nothing external', () => {
+    // `npm test` is what the docs call the pre-commit gate. A suite that needs
+    // no services belongs in it; one bolted onto verify:full only is invisible
+    // to CI, which runs the suites individually.
+    const NEEDS_SERVICES = new Set(['test:db-integration', 'test:db', 'test:razorpay']);
+    const offline = suites.filter(s => !NEEDS_SERVICES.has(s));
+    const missing = offline.filter(s => !pkg.scripts.test.includes('npm run ' + s));
+    assert.deepStrictEqual(missing, [],
+      'these run without any external service but are not in `npm test`: ' + missing.join(', '));
+  });
+
+  test('no suite is run twice by the same command', () => {
+    // verify:full runs verify, which runs test. Appending a suite to BOTH is a
+    // duplicate run: slower, and it hides which chain is actually covering it.
+    const full = pkg.scripts['verify:full'] || '';
+    const dupes = suites.filter(s => full.includes('npm run ' + s) && pkg.scripts.test.includes('npm run ' + s));
+    assert.deepStrictEqual(dupes, [],
+      'already covered through `npm test`, so naming them again in verify:full runs them twice: ' + dupes.join(', '));
+  });
+
+  test('the drawer fuzz is a real file, and it is committed', () => {
+    // An npm script pointing at a path nobody committed is a green gate that
+    // runs nothing on any machine but this one.
+    assert.match(pkg.scripts['test:drawer'], /node scripts\/drawer-fuzz\.js/);
+    const src = read('scripts/drawer-fuzz.js');
+    assert.ok(src.length > 2000, 'the harness must actually be there');
+    assert.ok(!/[A-Za-z]:[\\/]Users[\\/]/.test(src),
+      'no absolute path from one machine — it must resolve its own root');
+    assert.match(src, /path\.join\(__dirname, '\.\.'\)/,
+      'it locates the repo relative to itself, so it runs anywhere');
+  });
+}
 
 // ============================================================
 // Runner

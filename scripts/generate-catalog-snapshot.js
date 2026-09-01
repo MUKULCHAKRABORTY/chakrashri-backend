@@ -138,7 +138,10 @@ async function main() {
   }
 
   const [categories, puja, astrology] = await Promise.all([
-    softFetch('/api/products/meta/top-categories?limit=7', (b) => b.categories, 'top categories'),
+    // 20, not 7: the home rail shows 7 of these, but the mobile drawer ranks a
+    // top 15 from the same list and must have enough of it to do so during a
+    // cold start. 20 is the server's own ceiling for this endpoint.
+    softFetch('/api/products/meta/top-categories?limit=20', (b) => b.categories, 'top categories'),
     softFetch('/api/booking-services?type=puja', (b) => b.services, 'puja services'),
     softFetch('/api/booking-services?type=astrology', (b) => b.services, 'astrology services')
   ]);

@@ -508,6 +508,16 @@ p{ color: var(--text-soft); }
   padding:var(--sp-6); display:grid; grid-template-columns:repeat(4,190px); gap:var(--sp-6);
   opacity:0; visibility:hidden; transform:translateY(8px); transition:opacity var(--dur) var(--ease), transform var(--dur) var(--ease), visibility var(--dur);
   z-index:65; border-top:3px solid var(--gold);
+  /* This panel is DERIVED from the catalog and has no natural ceiling: two
+     columns of categories plus every subcategory under each. Left unbounded it
+     simply grew past the bottom of the screen, and because it is
+     position:absolute there was no way to scroll to the part hanging off — the
+     same defect as the drawer's old max-height:600px, with the sign flipped.
+     dvh so a mobile browser's collapsing chrome is accounted for, vh first as
+     the fallback. */
+  max-height:calc(100vh - var(--header-h) - 24px);
+  max-height:calc(100dvh - var(--header-h) - 24px);
+  overflow-y:auto; overscroll-behavior:contain;
 }
 .main-nav > li:hover .mega{ opacity:1; visibility:visible; transform:translateY(0); }
 .mega-col-title{ font-family:var(--f-display); font-size:.92rem; color:var(--oxblood); margin-bottom:12px; display:flex; align-items:center; gap:9px; }
@@ -581,9 +591,138 @@ p{ color: var(--text-soft); }
 #mShopToggle.open .chev{ transform:rotate(180deg); }
 .mnav-item svg.chev{ width:11px; height:11px; transition:transform var(--dur); flex-shrink:0; }
 .mnav-item.open svg.chev{ transform:rotate(180deg); }
-.mnav-sub{ max-height:0; overflow:hidden; transition:max-height var(--dur) var(--ease); background:var(--parchment); }
-.mnav-item.open .mnav-sub{ max-height:600px; }
-.mnav-sub a{ display:block; padding:12px 22px 12px 40px; font-size:.88rem; color:var(--text-soft); }
+/* grid-template-rows 0fr -> 1fr, not max-height.
+
+   max-height animation needs a guessed ceiling, and the guess was 600px: this
+   list is DERIVED from the catalog now, so a shop with enough categories and
+   subcategories would have been silently clipped with no way to reach the rest.
+   The grid technique animates to the content's real height, whatever it is. */
+.mnav-sub{ display:grid; grid-template-rows:0fr; overflow:hidden; transition:grid-template-rows var(--dur) var(--ease); background:var(--parchment); }
+/* ONE child, always. grid-template-rows:0fr sizes only the first explicit row —
+   sibling links would fall into implicit auto rows and stay on screen with the
+   menu "closed". The renderer therefore emits a single wrapper. */
+.mnav-sub > .mnav-sub-inner{ min-height:0; overflow:hidden; }
+.mnav-item.open .mnav-sub{ grid-template-rows:1fr; }
+@media (prefers-reduced-motion:reduce){ .mnav-sub{ transition:none; } }
+/* ---- a category row in the drawer ----
+   The shop filter's row, moved here: a selection pair and a disclosure pair,
+   which between them cover the whole row. Deliberately the same rules, so the
+   two surfaces cannot drift apart the way the hardcoded lists once did. */
+.mnav-row{ display:flex; align-items:stretch; gap:6px; transition:background var(--dur) var(--ease); }
+.mnav-row.active{ background:var(--parchment); }
+.mnav-row:active{ background:var(--ivory); }
+/* The selection pair. It STRETCHES: a 16px circle is not a thumb target, so
+   the name and the space around it belong to the same label. */
+.mnav-check{ display:flex; align-items:center; gap:10px; flex:1 1 auto; min-width:0;
+  min-height:44px; padding:8px 0 8px 40px; font-size:.88rem; color:var(--text-soft); cursor:pointer;
+  transition:color var(--dur); }
+.mnav-check input{ width:18px; height:18px; accent-color:var(--oxblood); flex-shrink:0; }
+.mnav-check .n{ flex:0 1 auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.mnav-check.active{ color:var(--oxblood); font-weight:600; }
+/* A count with no button beside it keeps the drawer's 22px gutter, so it lands
+   on the same pixel as one that lives inside a button. */
+.mnav-check > .mnav-count{ margin-left:auto; padding-left:10px; padding-right:22px; }
+/* A subcategory is indented one further step and hairlined, so the hierarchy
+   reads the same here as in the mega-menu and the shop sidebar. */
+.mnav-subrow{ position:relative; }
+.mnav-subrow .mnav-check{ padding-left:58px; font-size:.82rem; color:var(--text-mute); }
+.mnav-subrow::before{ content:""; position:absolute; left:44px; top:10px; bottom:10px; width:2px;
+  border-radius:2px; background:var(--gold-lt); }
+.mnav-allrow{ border-top:1px solid var(--line); }
+.mnav-allrow .mnav-check{ font-weight:700; color:var(--oxblood); }
+/* The disclosure pair. */
+.mnav-cattoggle{ display:flex; align-items:center; gap:8px; flex:0 0 auto; min-height:44px;
+  padding:8px 22px 8px 10px; border:0; background:transparent; color:var(--text-mute); cursor:pointer; }
+/* Only the CHEVRON rotates. The button carries the count as well, and rotating
+   the button would turn the number upside-down. */
+.mnav-cattoggle .mnav-chev{ display:inline-flex; width:20px; height:20px; align-items:center; justify-content:center;
+  transition:transform var(--dur) var(--ease); }
+.mnav-cattoggle .mnav-chev svg{ width:15px; height:15px; display:block; }
+.mnav-cat.open .mnav-cattoggle .mnav-chev{ transform:rotate(180deg); }
+.mnav-cat.open .mnav-cattoggle{ color:var(--oxblood); }
+.mnav-cattoggle:active{ background:var(--ivory); }
+.mnav-cattoggle:focus-visible{ outline:2px solid var(--oxblood); outline-offset:-2px; }
+/* Same collapse technique as the outer list, one level down. */
+.mnav-subs{ display:grid; grid-template-rows:0fr; overflow:hidden; transition:grid-template-rows var(--dur) var(--ease); }
+.mnav-subs > .mnav-subs-inner{ min-height:0; overflow:hidden; }
+.mnav-cat.open .mnav-subs{ grid-template-rows:1fr; }
+@media (prefers-reduced-motion:reduce){ .mnav-subs{ transition:none; } }
+
+.mnav-count{ font-size:.72rem; color:var(--text-mute); font-variant-numeric:tabular-nums; flex-shrink:0; }
+/* "All Categories" is an ACTION row. It borrows .mnav-check's metrics so it
+   lines up with the selectable rows above it, and overrides only what a button
+   needs — a label's defaults are not a button's. */
+.mnav-check.mnav-action{ width:100%; border:0; background:transparent; text-align:left; font-family:inherit; }
+.mnav-actionrow .mnav-ic{ display:inline-flex; width:18px; height:18px; align-items:center; justify-content:center;
+  flex-shrink:0; color:var(--oxblood); }
+.mnav-actionrow .mnav-ic svg{ width:16px; height:16px; display:block; }
+.mnav-actionrow .n{ font-weight:600; color:var(--oxblood); }
+.mnav-actionrow:active{ background:var(--ivory); }
+.mnav-check.mnav-action:focus-visible{ outline:2px solid var(--oxblood); outline-offset:-2px; }
+
+/* ---------- the All Categories browser ---------- */
+#allCatsModal .allcats-box{ max-width:920px; display:flex; flex-direction:column; max-height:88vh; max-height:88dvh; overflow:hidden; }
+.allcats-head{ position:relative; padding:22px 22px 16px; border-bottom:1px solid var(--line); background:#fff; flex-shrink:0; }
+.allcats-head h2{ font-family:var(--f-display); font-size:1.25rem; color:var(--ink); margin:0 46px 2px 0; }
+.allcats-sub{ font-size:.8rem; color:var(--text-mute); margin:0; }
+#allCatsModal .allcats-close{ top:16px; right:16px; }
+.allcats-search{ display:flex; align-items:center; gap:10px; margin-top:14px; background:var(--parchment);
+  border-radius:var(--radius-full); padding:0 16px; border:1px solid transparent; transition:border-color var(--dur); }
+.allcats-search:focus-within{ border-color:var(--gold); }
+.allcats-search svg{ width:16px; height:16px; color:var(--text-mute); flex-shrink:0; }
+/* 16px minimum: anything smaller makes iOS Safari zoom the page on focus, which
+   on a phone throws the customer out of the panel they just opened. */
+.allcats-search input{ flex:1; min-width:0; background:none; border:none; padding:12px 0; font-size:16px;
+  font-family:inherit; color:var(--ink); }
+.allcats-search input::-webkit-search-cancel-button{ cursor:pointer; }
+/* The BODY scrolls, so the title and the search box stay put while the
+   customer reads — the whole point of a searchable browser. */
+.allcats-body{ overflow-y:auto; overscroll-behavior:contain; padding:18px 22px 24px;
+  display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:14px; align-content:start; }
+.allcat-card{ border:1px solid var(--line); border-radius:var(--radius-md); padding:14px 15px; background:#fff;
+  transition:border-color var(--dur), box-shadow var(--dur), transform var(--dur) var(--ease); }
+.allcat-card:hover{ border-color:var(--gold); box-shadow:var(--shadow-sm); }
+.allcat-top{ display:flex; align-items:center; gap:10px; width:100%; border:0; background:none; padding:0;
+  font-family:inherit; text-align:left; cursor:pointer; min-height:44px; }
+.allcat-top .nm{ font-weight:700; font-size:.95rem; color:var(--ink); flex:1; min-width:0;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.allcat-top .ct{ font-size:.72rem; color:var(--text-mute); font-variant-numeric:tabular-nums; flex-shrink:0;
+  background:var(--parchment); border-radius:var(--radius-full); padding:3px 9px; }
+.allcat-top:hover .nm{ color:var(--oxblood); }
+.allcat-top:focus-visible{ outline:2px solid var(--oxblood); outline-offset:2px; border-radius:var(--radius-sm); }
+.allcat-subs{ display:flex; flex-wrap:wrap; gap:7px; margin-top:11px; padding-top:11px; border-top:1px dashed var(--line); }
+.allcat-chip{ font-size:.76rem; color:var(--text-soft); background:var(--parchment); border:0; cursor:pointer;
+  border-radius:var(--radius-full); padding:8px 12px; min-height:34px; font-family:inherit;
+  transition:background var(--dur), color var(--dur); }
+/* A chip is a real destination, so on touch it gets a real target. 34px is
+   fine under a mouse and is a miss under a thumb. */
+@media (hover:none), (max-width:980px){
+  .allcat-chip{ min-height:44px; padding:11px 14px; font-size:.8rem; }
+}
+.allcat-chip:hover{ background:var(--gold-lt); color:var(--oxblood); }
+.allcat-chip:focus-visible{ outline:2px solid var(--oxblood); outline-offset:1px; }
+.allcat-chip .n{ font-variant-numeric:tabular-nums; opacity:.6; margin-left:5px; }
+.allcats-empty{ grid-column:1 / -1; text-align:center; padding:40px 20px; color:var(--text-mute); font-size:.9rem; }
+.allcats-empty strong{ display:block; color:var(--ink); font-size:1rem; margin-bottom:6px; }
+@media (max-width:640px){
+  /* A sheet, not a floating card: on a phone the panel IS the screen. */
+  #allCatsModal{ padding:0; }
+  #allCatsModal .allcats-box{ max-width:none; max-height:100vh; max-height:100dvh; height:100dvh; border-radius:0; }
+  #allCatsModal .allcats-body{ grid-template-columns:1fr; padding-bottom:calc(24px + env(safe-area-inset-bottom, 0px)); }
+}
+@media (prefers-reduced-motion:reduce){ .allcat-card{ transition:none; } }
+/* Service Booking's own rows. These are page links, not filters, so they stay
+   links — no radio, nothing to select. They keep the 44px floor and the same
+   indent as a category row so the drawer reads as one list. */
+.mnav-sub a.mnav-servicelink{ display:flex; align-items:center; justify-content:space-between; gap:10px;
+  min-height:44px; padding:11px 22px 11px 40px; font-size:.88rem; color:var(--text-soft); }
+.mnav-sub a.mnav-servicelink:active{ background:var(--ivory); }
+/* The label sits left, the hint beside it, the chevron hard right — the
+   .mnav-item > button.mnav-toggle rule already lays the row out; this just
+   stops the hint from being pushed to the far edge with the chevron. */
+#mServiceToggle > .mnav-toggle{ gap:8px; }
+#mServiceToggle > .mnav-toggle .chev{ margin-left:auto; }
+
 .drawer-foot{ padding:20px 22px; border-top:1px solid var(--line); flex-shrink:0; }
 .drawer-foot .contact-line{ display:flex; align-items:center; gap:10px; font-size:.85rem; color:var(--text-soft); margin-bottom:10px; }
 .drawer-foot .contact-line svg{ width:16px; height:16px; color:var(--oxblood); flex-shrink:0; }
@@ -953,7 +1092,9 @@ p{ color: var(--text-soft); }
 .filter-row{ display:flex; align-items:center; gap:6px; border-radius:var(--radius-sm); padding:3px 6px; margin:0 -6px; transition:background var(--dur) var(--ease); }
 .filter-row:hover{ background:var(--parchment); }
 .filter-row.active{ background:var(--parchment); }
-.filter-check{ display:flex; align-items:center; gap:10px; font-size:.87rem; color:var(--text-soft); cursor:pointer; transition:color var(--dur); flex:0 1 auto; min-width:0; }
+/* The label STRETCHES. A 16px radio is not a target; the name and the space
+   around it are. On a row with no chevron it takes the whole width. */
+.filter-check{ display:flex; align-items:center; gap:10px; font-size:.87rem; color:var(--text-soft); cursor:pointer; transition:color var(--dur); flex:1 1 auto; min-width:0; padding:2px 0; }
 .filter-check:hover{ color:var(--ink); }
 .filter-check input{ width:16px; height:16px; accent-color:var(--oxblood); flex-shrink:0; }
 /* NOT flex:1 any more. The name has to end where the text ends so the chevron
@@ -962,18 +1103,32 @@ p{ color: var(--text-soft); }
 .filter-check.active{ color:var(--oxblood); font-weight:600; }
 /* margin-left:auto rather than a placeholder icon on chevron-less rows: every
    count aligns by construction, with no invisible spacer to keep in step. */
-.filter-row .c{ margin-left:auto; padding-left:10px; color:var(--text-mute); font-size:.78rem; flex:0 0 auto; font-variant-numeric:tabular-nums; }
+/* Whichever element owns the count, it is pushed to the row's right edge and
+   lands on the SAME pixel — a column of numbers that does not jitter between a
+   row with a disclosure button and a row without one. */
+.filter-check > .c, .filter-row > .c{ margin-left:auto; padding-right:2px; }
+.filter-row .c{ padding-left:2px; color:var(--text-mute); font-size:.78rem; flex:0 0 auto; font-variant-numeric:tabular-nums; min-width:1.6em; text-align:right; }
 .filter-row.active .c{ color:var(--oxblood); }
+.filter-toggle .c{ color:inherit; padding-right:0; }
+.filter-toggle .c{ color:inherit; }
 
 /* The disclosure control. A real button, not a decoration on the label: it
    toggles the list WITHOUT changing the filter, which is the gesture that was
    missing when disclosure was a side effect of selection. */
-.filter-toggle{ display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; padding:0; border:0; background:transparent; color:var(--text-mute); border-radius:var(--radius-sm); cursor:pointer; flex:0 0 auto; transition:transform var(--dur) var(--ease), background var(--dur), color var(--dur); }
-.filter-toggle svg{ width:14px; height:14px; display:block; }
+/* The disclosure target runs from the chevron to the right-hand edge and takes
+   the count with it, so the widest part of the row does something instead of
+   being dead space. The chevron still sits against the name — only the button's
+   REACH extends; the icon does not move.
+
+   The button is NOT rotated: only the chevron inside it is, or the count would
+   turn upside-down with it. */
+.filter-toggle{ display:inline-flex; align-items:center; gap:8px; padding:6px 2px 6px 6px; /* right pad matches .c padding-right so both columns align */ border:0; background:transparent; color:var(--text-mute); border-radius:var(--radius-sm); cursor:pointer; flex:0 0 auto; margin-left:auto; transition:background var(--dur), color var(--dur); }
+.filter-toggle .filter-chev{ display:inline-flex; width:18px; height:18px; align-items:center; justify-content:center; transition:transform var(--dur) var(--ease); }
+.filter-toggle .filter-chev svg{ width:14px; height:14px; display:block; }
 .filter-toggle:hover{ background:var(--gold-lt); color:var(--oxblood); }
 .filter-toggle:focus-visible{ outline:2px solid var(--oxblood); outline-offset:1px; }
-.filter-row.is-open .filter-toggle{ transform:rotate(180deg); color:var(--oxblood); }
-.filter-row.is-open .filter-toggle:hover{ background:var(--gold-lt); }
+.filter-row.is-open .filter-toggle .filter-chev{ transform:rotate(180deg); }
+.filter-row.is-open .filter-toggle{ color:var(--oxblood); }
 
 /* TOUCH DEVICES get real targets.
 
@@ -992,9 +1147,15 @@ p{ color: var(--text-soft); }
    Alignment is unaffected: the count is positioned with margin-left:auto, not
    by matching the icon's width. */@media (hover:none), (max-width:980px){
   .filter-row{ min-height:44px; padding:5px 8px; margin:0 -8px; }
-  .filter-toggle{ width:44px; height:44px; }
-  .filter-toggle svg{ width:16px; height:16px; }
-  .filter-check{ font-size:.92rem; }
+  /* align-self:stretch on BOTH targets, not just min-height on the row.
+     The row was already 44px tall while the label inside it was 28px, so the
+     top and bottom of every row was dead space that looked tappable and was
+     not — which is the same class of miss as the 16px radio. Stretching makes
+     the two targets fill the row's full height between them. */
+  .filter-toggle{ min-height:44px; padding:8px 2px 8px 10px; gap:10px; align-self:stretch; }
+  .filter-toggle .filter-chev{ width:22px; height:22px; }
+  .filter-toggle .filter-chev svg{ width:17px; height:17px; }
+  .filter-check{ font-size:.92rem; min-height:44px; align-self:stretch; }
   .filter-check input{ width:19px; height:19px; }
   .filter-subs .filter-check{ font-size:.88rem; }
 }
@@ -2371,24 +2532,38 @@ a.p-media:focus-visible, a.p-name:focus-visible{ outline:2px solid var(--oxblood
       </form>
     </div>
     <div class="mnav-item"><a href="/" onclick="navigateTo('home'); closeAllDrawers(); return false;">Home</a></div>
+    <!-- Puja Booking and Astrology used to sit further down as two loose links.
+         They are one thing a customer comes for, so they are one menu now — and
+         they are NOT duplicated below, because the same destination appearing
+         twice in one drawer is a defect, not a convenience.
+
+         The whole row is the toggle, unlike Shop's split row: Shop's label has
+         somewhere to go (all products) and this has no "all services" page, so
+         a label that navigated nowhere would be a lie. -->
+    <div class="mnav-item" id="mServiceToggle">
+      <button class="mnav-toggle" aria-expanded="false" aria-label="Expand service booking options">
+        Service Booking <span class="mnav-hint">Puja &amp; Astrology</span>
+        <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <div class="mnav-sub" id="mnavServiceSub">
+        <div class="mnav-sub-inner">
+          <a class="mnav-servicelink" href="/puja" onclick="navigateTo('puja'); closeAllDrawers(); return false;">Puja Booking</a>
+          <a class="mnav-servicelink" href="/astrology" onclick="navigateTo('astrology'); closeAllDrawers(); return false;">Astrology Booking</a>
+        </div>
+      </div>
+    </div>
     <div class="mnav-item" id="mShopToggle">
       <div class="mnav-split">
         <a href="/shop?category=all" class="mnav-split-label" onclick="openShopWithCategory('all'); closeAllDrawers(); return false;">Shop <span class="mnav-hint">All Products</span></a>
         <button class="mnav-toggle" aria-label="Expand shop categories" aria-expanded="false"><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></button>
       </div>
-      <div class="mnav-sub">
-        <a href="/shop?category=lingam" onclick="openShopWithCategory('lingam'); closeAllDrawers(); return false;">Sphatik Lingams</a>
-        <a href="/shop?category=yantra" onclick="openShopWithCategory('yantra'); closeAllDrawers(); return false;">Sri Yantras</a>
-        <a href="/shop?category=idols" onclick="openShopWithCategory('idols'); closeAllDrawers(); return false;">Idols &amp; Murtis</a>
-        <a href="/shop?category=malas" onclick="openShopWithCategory('malas'); closeAllDrawers(); return false;">Malas</a>
-        <a href="/shop?category=bracelets" onclick="openShopWithCategory('bracelets'); closeAllDrawers(); return false;">Bracelets</a>
-        <a href="/shop?category=books" onclick="openShopWithCategory('books'); closeAllDrawers(); return false;">Spiritual Books</a>
-        <a href="/shop?category=samagri" onclick="openShopWithCategory('samagri'); closeAllDrawers(); return false;">Puja Samagri Kits</a>
-        <a href="/shop?category=all" onclick="openShopWithCategory('all'); closeAllDrawers(); return false;">View All</a>
-      </div>
+      <!-- Built by renderMobileNavCategories() from the real catalog. These
+           were the same seven hardcoded links the shop sidebar and the
+           mega-menu used to carry, so a phone was offered Bracelets, Spiritual
+           Books and Puja Samagri Kits — three categories that hold nothing and
+           open an empty grid — and no subcategories at all. -->
+      <div class="mnav-sub" id="mnavShopSub"></div>
     </div>
-    <div class="mnav-item"><a href="/puja" onclick="navigateTo('puja'); closeAllDrawers(); return false;">Puja Booking</a></div>
-    <div class="mnav-item"><a href="/astrology" onclick="navigateTo('astrology'); closeAllDrawers(); return false;">Astrology</a></div>
     <div class="mnav-item"><a href="/blog" onclick="navigateTo('blog'); closeAllDrawers(); return false;">Journal</a></div>
     <div class="mnav-item"><a href="/wishlist" onclick="navigateTo('wishlist'); closeAllDrawers(); return false;">Wishlist</a></div>
     <div class="mnav-item"><a href="/about" onclick="navigateTo('about'); closeAllDrawers(); return false;">About Us</a></div>
@@ -3619,6 +3794,30 @@ a.p-media:focus-visible, a.p-name:focus-visible{ outline:2px solid var(--oxblood
   </div>
 </div>
 
+<!-- The All Categories browser. Opened from the drawer, but deliberately not
+     built inside it: it is a full surface with its own search, and the drawer
+     closes when it opens so the customer is looking at one thing. -->
+<div class="modal-wrap" id="allCatsModal" role="dialog" aria-modal="true" aria-labelledby="allCatsTitle">
+  <div class="modal-backdrop" onclick="closeAllCategories()"></div>
+  <div class="modal-box allcats-box">
+    <div class="allcats-head">
+      <div>
+        <h2 id="allCatsTitle">All Categories</h2>
+        <p class="allcats-sub" id="allCatsSub"></p>
+      </div>
+      <button class="modal-close allcats-close" onclick="closeAllCategories()" aria-label="Close all categories">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+      <div class="allcats-search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>
+        <input type="search" id="allCatsSearch" placeholder="Search categories…" aria-label="Search categories"
+               autocomplete="off" oninput="renderAllCategories(this.value)">
+      </div>
+    </div>
+    <div class="allcats-body" id="allCatsBody"></div>
+  </div>
+</div>
+
 <div class="modal-wrap" id="qvModal">
   <div class="modal-backdrop" onclick="closeModal('qvModal')"></div>
   <div class="modal-box">
@@ -3827,6 +4026,246 @@ function categoryTree(){
     delete n._subIndex;
   });
   return tree;
+}
+
+/* The Shop section of the mobile/tablet navigation drawer.
+
+   Same tree, same source, same law as the mega-menu and the shop sidebar: it
+   is DERIVED from PRODUCTS, so a category or subcategory added in the admin
+   appears here the moment a product uses it, and one that holds nothing never
+   appears at all.
+
+   The mega-menu is a hover surface that does not exist on a phone, so this
+   drawer is the only route a mobile customer has into a subcategory from the
+   navigation — which is exactly why it could not stay a hardcoded list. */
+/* Which categories are expanded IN THE DRAWER.
+
+   Deliberately its own state, not shared with the shop sidebar's expandedCats:
+   the two are different surfaces a customer uses at different moments, and
+   opening a category in the nav should not silently rearrange the filter panel
+   behind it (or the reverse). The Set lives outside the renderer so the open
+   rows survive a rebuild when the live catalog replaces the snapshot. */
+let mnavOpenCats = new Set();
+
+function toggleMnavCat(key, label){
+  const willOpen = !mnavOpenCats.has(key);
+  if(willOpen) mnavOpenCats.add(key); else mnavOpenCats.delete(key);
+  const host = qs('#mnavShopSub');
+  if(!host) return;
+  /* Toggled IN PLACE rather than re-rendered. A full rebuild would replace the
+     elements, and a brand-new element starts at its final size — the expand
+     would jump instead of animating. Matching on the attribute value in JS also
+     avoids having to escape a free-form slug into a CSS selector. */
+  const rows = host.querySelectorAll('.mnav-cat');
+  for(let i = 0; i < rows.length; i++){
+    const row = rows[i];
+    if(row.getAttribute('data-cat') !== key) continue;
+    row.classList.toggle('open', willOpen);
+    const btn = row.querySelector('.mnav-cattoggle');
+    if(btn){
+      btn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+      btn.setAttribute('aria-label', (willOpen ? 'Hide' : 'Show') + ' subcategories of ' + label);
+    }
+  }
+}
+
+function renderMobileNavCategories(){
+  const host = qs('#mnavShopSub');
+  if(!host) return;
+  /* NOT an early return when the tree is empty.
+
+     It used to bail here, so a catalog that had not arrived yet — a cold start
+     where even the snapshot failed, or a shop with nothing active — expanded
+     into a completely empty box: no categories, and no All Products either.
+     (The Shop row's own label still reached the shop, so this was a confusing
+     dead disclosure rather than a dead end.) The category loop is what depends
+     on having a tree; All Products does not, and it is the one row that should
+     always be there. */
+  const tree = categoryTree();
+
+  /* ONE row builder, and it is the shop filter's row moved into the drawer:
+
+       [ (o) name ............ ][ chevron ...... count ]
+         ^ selection pair        ^ disclosure pair
+
+     Same two pairs, same law about which half owns the count, same reason. The
+     radio is not decoration — the drawer is rebuilt each time it opens, so it
+     shows at a glance which category you are currently looking at, which a list
+     of plain links never could. And the whole "(o) name" strip selects, not
+     just the 16px circle. */
+  function mnavRow(opts){
+    const active = opts.active ? ' active' : '';
+    const countHTML = '<span class="mnav-count">' + opts.count + '</span>';
+    const toggle = opts.hasSubs
+      ? '<button type="button" class="mnav-cattoggle" aria-expanded="' + (opts.expanded ? 'true' : 'false') +
+        '" aria-label="' + escapeHtml((opts.expanded ? 'Hide' : 'Show') + ' subcategories of ' + opts.label) +
+        '" onclick="event.preventDefault(); event.stopPropagation(); toggleMnavCat(' +
+        jsAttr(opts.key) + ', ' + jsAttr(opts.label) + ');">' +
+        '<span class="mnav-chev" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M6 9l6 6 6-6"/></svg></span>' +
+        countHTML +
+        '</button>'
+      : '';
+    return '<div class="mnav-row' + active + (opts.cls ? ' ' + opts.cls : '') + '">' +
+      '<label class="mnav-check' + active + '">' +
+        '<input type="radio" name="' + opts.group + '" aria-label="' + escapeHtml(opts.label) + '"' +
+        (opts.active ? ' checked' : '') + ' onchange="' + opts.onChange + '">' +
+        '<span class="n">' + escapeHtml(opts.label) + '</span>' +
+        // No button on this row, so the count goes in the label — otherwise it
+        // sits in dead space and the row stops selecting short of its own edge.
+        (opts.hasSubs ? '' : countHTML) +
+      '</label>' +
+      toggle +
+    '</div>';
+  }
+
+  const curCat = (typeof shopFilters === 'object' && shopFilters) ? shopFilters.cat : '';
+  const curSub = (typeof shopFilters === 'object' && shopFilters) ? shopFilters.subcat : '';
+  /* Same law as the shop sidebar: being filtered to a subcategory REVEALS the
+     group it belongs to. Without this the drawer would open with a checked
+     radio inside a collapsed group — the one row the customer most needs to
+     see would be the one row hidden from them. */
+  if(curCat && curSub) mnavOpenCats.add(curCat);
+
+  /* Only the top slice is listed. Everything else is one tap away in the
+     All Categories browser below, which is searchable — which a list of forty
+     rows in a drawer is not. */
+  const shown = rankedCategories(tree).slice(0, MNAV_TOP_CATEGORIES);
+
+  let html = '';
+  shown.forEach(function(node){
+    const label = catLabel(node.cat);
+    const hasSubs = node.subs.length > 0;
+    const open = mnavOpenCats.has(node.cat);
+    let subs = '';
+    node.subs.forEach(function(s){
+      subs += mnavRow({
+        key: node.cat + '/' + s.sub, label: catLabel(s.sub), count: s.count,
+        group: 'mnavSub', cls: 'mnav-subrow', hasSubs: false, expanded: false,
+        active: curCat === node.cat && curSub === s.sub,
+        onChange: 'openShopWithCategory(' + jsAttr(node.cat) + ', ' + jsAttr(s.sub) + '); closeAllDrawers();'
+      });
+    });
+    html += '<div class="mnav-cat' + (open ? ' open' : '') + '" data-cat="' + escapeHtml(node.cat) + '">' +
+      mnavRow({
+        key: node.cat, label: label, count: node.count, group: 'mnavCat',
+        hasSubs: hasSubs, expanded: open, active: curCat === node.cat && !curSub,
+        onChange: 'openShopWithCategory(' + jsAttr(node.cat) + '); closeAllDrawers();'
+      }) +
+      // One wrapper, same rule as the outer list: grid-template-rows sizes only
+      // the first explicit row, so siblings would escape the collapse.
+      (hasSubs ? '<div class="mnav-subs"><div class="mnav-subs-inner">' + subs + '</div></div>' : '') +
+    '</div>';
+  });
+  /* All Categories sits ABOVE All Products and is an ACTION, not a filter —
+     it opens a browser rather than selecting anything, so it carries no radio.
+     It reuses .mnav-check for its metrics so the label, the count and the 44px
+     floor line up exactly with the rows above it; only the control type
+     differs, because only the behaviour differs. Shown even when every
+     category already fits, because the browser it opens can be SEARCHED and
+     the drawer list cannot. */
+  html += '<div class="mnav-row mnav-actionrow">' +
+    '<button type="button" class="mnav-check mnav-action" onclick="openAllCategories();">' +
+      '<span class="mnav-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></span>' +
+      '<span class="n">All Categories</span>' +
+      '<span class="mnav-count">' + tree.length + '</span>' +
+    '</button>' +
+  '</div>';
+
+  // Last, deliberately: it is the escape hatch from a list of narrowings, not
+  // one of the narrowings.
+  html += mnavRow({
+    key: 'all', label: 'All Products', count: PRODUCTS.length, group: 'mnavCat',
+    cls: 'mnav-allrow', hasSubs: false, expanded: false,
+    active: !curCat || curCat === 'all',
+    onChange: "openShopWithCategory('all'); closeAllDrawers();"
+  });
+  // Single wrapper: see .mnav-sub in the stylesheet — the collapse depends on
+  // this element being the only child.
+  host.innerHTML = '<div class="mnav-sub-inner">' + html + '</div>';
+}
+
+/* THE ALL CATEGORIES BROWSER.
+
+   The drawer lists the top 15 by units sold. Everything else lives here, and
+   so does the thing a long list cannot offer: SEARCH. A customer who knows the
+   word they want types it and gets there; one who does not can read the whole
+   catalogue laid out as cards with their subcategories visible, which is far
+   easier to scan than fifteen collapsed rows.
+
+   Built from categoryTree() like every other category surface, so it is
+   complete during a cold start from the snapshot alone. */
+function openAllCategories(){
+  closeAllDrawers();
+  renderAllCategories('');
+  openModal('allCatsModal');
+  const box = qs('#allCatsSearch');
+  if(box){
+    box.value = '';
+    /* Focus only where there is a real keyboard. Focusing an input on a phone
+       raises the on-screen keyboard over the very grid the customer opened
+       this to look at, which is the opposite of helpful. */
+    if(window.matchMedia && window.matchMedia('(hover:hover) and (min-width:641px)').matches){
+      setTimeout(function(){ try{ box.focus(); }catch(e){} }, 60);
+    }
+  }
+}
+
+function closeAllCategories(){ closeModal('allCatsModal'); }
+
+function renderAllCategories(query){
+  const body = qs('#allCatsBody'), sub = qs('#allCatsSub');
+  if(!body) return;
+  const tree = categoryTree();
+  const q = String(query == null ? '' : query).trim().toLowerCase();
+
+  /* Matching on the LABEL as well as the slug. A customer searching "books"
+     is reading "Books" off the screen; they have never seen the slug, and a
+     search that only matched slugs would miss its own visible text. */
+  const hit = function(value){
+    if(!q) return true;
+    return String(value).toLowerCase().indexOf(q) > -1 ||
+           String(catLabel(value)).toLowerCase().indexOf(q) > -1;
+  };
+
+  const matches = [];
+  tree.forEach(function(node){
+    const catHit = hit(node.cat);
+    // A category whose NAME matches keeps all its subcategories; one that only
+    // matches through a subcategory shows just the ones that matched.
+    const subs = catHit ? node.subs : node.subs.filter(function(s){ return hit(s.sub); });
+    if(catHit || subs.length) matches.push({ node: node, subs: subs });
+  });
+
+  if(sub){
+    const totalSubs = tree.reduce(function(n, c){ return n + c.subs.length; }, 0);
+    sub.textContent = q
+      ? (matches.length + (matches.length === 1 ? ' match' : ' matches') + ' for “' + query.trim() + '”')
+      : (tree.length + (tree.length === 1 ? ' category' : ' categories') +
+         (totalSubs ? ', ' + totalSubs + (totalSubs === 1 ? ' subcategory' : ' subcategories') : ''));
+  }
+
+  if(!matches.length){
+    body.innerHTML = '<div class="allcats-empty"><strong>Nothing matches “' + escapeHtml(query.trim()) + '”</strong>' +
+      'Try a shorter word, or browse the full list by clearing the search.</div>';
+    return;
+  }
+
+  body.innerHTML = matches.map(function(m){
+    const node = m.node;
+    let html = '<div class="allcat-card">' +
+      '<button type="button" class="allcat-top" onclick="openShopWithCategory(' + jsAttr(node.cat) + '); closeAllCategories();">' +
+        '<span class="nm">' + escapeHtml(catLabel(node.cat)) + '</span>' +
+        '<span class="ct">' + node.count + '</span>' +
+      '</button>';
+    if(m.subs.length){
+      html += '<div class="allcat-subs">' + m.subs.map(function(s){
+        return '<button type="button" class="allcat-chip" onclick="openShopWithCategory(' +
+          jsAttr(node.cat) + ', ' + jsAttr(s.sub) + '); closeAllCategories();">' +
+          escapeHtml(catLabel(s.sub)) + '<span class="n">' + s.count + '</span></button>';
+      }).join('') + '</div>';
+    }
+    return html + '</div>';
+  }).join('');
 }
 
 /* "Books/Scripture" for a product that has a subcategory, "Books" otherwise.
@@ -4452,7 +4891,11 @@ function renderTopCategories(cats){
   grid.innerHTML = cats.map(function(c){
     const icon = CAT_ICONS[c.category] || DEFAULT_CAT_ICON;
     const count = c.product_count === 1 ? '1 item' : c.product_count + ' items';
-    return '<a href="#" class="cat-card" onclick="openShopWithCategory(\'' + escapeHtml(c.category) + '\'); return false;">' +
+    // jsAttr, not escapeHtml: this value goes into a JS STRING inside an HTML
+    // attribute, and escapeHtml only handles the second of those two layers.
+    // With escapeHtml alone, a category containing an apostrophe closed the
+    // string and broke every card in the rail.
+    return '<a href="#" class="cat-card" onclick="openShopWithCategory(' + jsAttr(c.category) + '); return false;">' +
       '<div class="cat-ring"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.6">' + icon + '</svg></div>' +
       '<span class="name">' + escapeHtml(catLabel(c.category)) + '</span>' +
       '<span class="count">' + count + '</span>' +
@@ -4461,14 +4904,65 @@ function renderTopCategories(cats){
   grid.dataset.state = 'ready';
 }
 
+/* HOW MANY CATEGORIES THE DRAWER SHOWS BEFORE "All Categories" takes over.
+   A phone menu that lists forty categories is not a menu, it is a wall. */
+const MNAV_TOP_CATEGORIES = 15;
+
+/* units sold per category, or null while unknown.
+
+   null is a real state, not a missing value: during a cold start the API has
+   not answered yet and the drawer is being rendered from the snapshot. Ranking
+   must degrade to catalogue depth in that case rather than showing nothing or
+   waiting, so `null` and `{}` mean different things here and are kept distinct. */
+let categorySalesRank = null;
+
+/* A TOTAL order over categories, so "the top 15" is the same 15 every time.
+
+   Primary key is units actually sold; the server computes that from paid orders
+   only (see /meta/top-categories — it counts SUM(quantity) conditioned on the
+   order having reached a paid status, so an abandoned or cancelled order cannot
+   buy a category a higher rank). Ties fall back to catalogue depth and then the
+   name, which is the same rule the server sorts by, so client and server can
+   never disagree about the boundary at position 15.
+
+   A category ABSENT from the ranking is one the server did not return inside
+   its top-20 window. By definition its unit count is at most the twentieth
+   category's, so it cannot belong in a top FIFTEEN — sorting it below every
+   ranked category is correct, not merely convenient. */
+function rankedCategories(tree){
+  // categoryTree() is already totally ordered (count desc, then name), so with
+  // no sales data the existing order is the right fallback and needs no work.
+  if(!categorySalesRank) return tree.slice();
+  const rank = categorySalesRank;
+  return tree.slice().sort(function(a, b){
+    const ua = Object.prototype.hasOwnProperty.call(rank, a.cat) ? rank[a.cat] : -1;
+    const ub = Object.prototype.hasOwnProperty.call(rank, b.cat) ? rank[b.cat] : -1;
+    if(ua !== ub) return ub - ua;
+    if(a.count !== b.count) return b.count - a.count;
+    return a.cat.localeCompare(b.cat);
+  });
+}
+
 async function loadTopCategories(){
   const grid = qs('#catGrid');
   if(!grid) return;
   try{
-    const body = await apiFetch('/api/products/meta/top-categories?limit=7', { background: true });
-    renderTopCategories(body.categories || []);
+    // 20, not 7: the home rail needs 7 but the drawer needs to rank a top 15,
+    // and one request serving both beats two requests disagreeing with each
+    // other. 20 is the server's own ceiling.
+    const body = await apiFetch('/api/products/meta/top-categories?limit=20', { background: true });
+    const cats = (body && body.categories) || [];
+    categorySalesRank = Object.create(null);
+    cats.forEach(function(c){ categorySalesRank[c.category] = Number(c.units_sold) || 0; });
+    // The drawer was built from the snapshot before this landed; now that real
+    // sales figures exist, rebuild it so the top 15 is ranked rather than
+    // merely the deepest fifteen.
+    try{ renderMobileNavCategories(); }catch(e){ /* never let the rail fail with it */ }
+    renderTopCategories(cats.slice(0, 7));
   }catch(e){
     console.warn('Could not load categories', e);
+    // categorySalesRank stays null, so the drawer keeps ranking by catalogue
+    // depth instead of falling back to no order at all.
     // Deliberately NOT clearing the rail. If the snapshot already filled it,
     // a failed background refresh must not replace real categories with
     // nothing. The one case that does need clearing is a rail still showing
@@ -4880,7 +5374,20 @@ async function hydrateCatalogFromCache(){
   if(snap){
     PRODUCTS = snap.products.map(mapApiProduct);
     writeCachedCatalog(snap.products);
-    if(Array.isArray(snap.categories) && snap.categories.length) renderTopCategories(snap.categories);
+    /* The snapshot carries units_sold, so the drawer's top 15 is ranked by real
+       sales from the very first paint rather than falling back to catalogue
+       depth for the whole 30-60s wake. loadTopCategories() replaces this with
+       live figures the moment the API answers.
+
+       Sliced to 7 for the rail, exactly as the live path does: the snapshot now
+       holds up to 20 so the ranking has enough to work with, and handing all of
+       them to the rail would draw twenty tiles that shrink to seven a moment
+       later. */
+    if(Array.isArray(snap.categories) && snap.categories.length){
+      categorySalesRank = Object.create(null);
+      snap.categories.forEach(function(c){ categorySalesRank[c.category] = Number(c.units_sold) || 0; });
+      renderTopCategories(snap.categories.slice(0, 7));
+    }
     if(snap.bookingServices) applyBookingServices(snap.bookingServices.puja, snap.bookingServices.astrology);
     catalogSource = 'snapshot';
     return catalogSource;
@@ -5011,6 +5518,7 @@ function refreshCatalogViews(){
     // live catalog when it lands. Without this the menu would show whatever the
     // snapshot held for the rest of the session.
     renderMegaMenu();
+    renderMobileNavCategories();
     renderMegaMenuPicks();
     updateCartUI();
     updateWishUI();
@@ -6683,14 +7191,33 @@ function renderShopFilterSidebar(){
   });
 
   function row(opts){
-    // One row builder for every level, so a category row and a subcategory row
-    // can never drift apart in markup, spacing or tap size.
+    /* One row builder for every level, so a category row and a subcategory row
+       can never drift apart in markup, spacing or tap size.
+
+       THE HIT AREAS. A 16px radio is not something anybody can hit reliably
+       with a thumb, and the count sitting in dead space wasted the widest part
+       of the row. The row is therefore exactly two targets that between them
+       cover all of it:
+
+         [ radio + name .... stretches ][ chevron ....... count ]
+          ^ selects the category         ^ opens/closes the list
+
+       The chevron and the count live in ONE button, which is what lets the
+       disclosure target reach the right-hand edge while the chevron itself
+       still sits against the name where it belongs. The count is presentational
+       inside it, and the button carries an explicit aria-label, so a screen
+       reader hears "Show subcategories of Book" rather than the number.
+
+       On a row with no subcategories there is no button, and the label takes
+       the whole width instead — so every part of every row does something. */
     const active = opts.active ? ' active' : '';
-    const chev = opts.hasSubs
+    const countHTML = '<span class="c">' + opts.count + '</span>';
+    const toggle = opts.hasSubs
       ? '<button type="button" class="filter-toggle" aria-expanded="' + (opts.expanded ? 'true' : 'false') +
         '" aria-label="' + escapeHtml((opts.expanded ? 'Hide' : 'Show') + ' subcategories of ' + opts.label) +
         '" onclick="event.preventDefault(); event.stopPropagation(); toggleCategoryOpen(' + jsAttr(opts.key) + ');">' +
-        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 9l6 6 6-6"/></svg>' +
+        '<span class="filter-chev" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M6 9l6 6 6-6"/></svg></span>' +
+        countHTML +
         '</button>'
       : '';
     return '<div class="filter-row' + active + (opts.hasSubs ? ' has-subs' : '') + (opts.expanded ? ' is-open' : '') + '">' +
@@ -6698,9 +7225,12 @@ function renderShopFilterSidebar(){
         '<input type="radio" name="' + opts.group + '" aria-label="' + escapeHtml(opts.label) + '"' + (opts.active ? ' checked' : '') +
         ' onchange="' + opts.onChange + '">' +
         '<span class="n">' + escapeHtml(opts.label) + '</span>' +
+        // With no subcategories there is no button, so the count goes in the
+        // LABEL instead — otherwise it would sit in dead space and the row
+        // would stop being selectable roughly 30px short of its own edge.
+        (opts.hasSubs ? '' : countHTML) +
       '</label>' +
-      chev +
-      '<span class="c">' + opts.count + '</span>' +
+      toggle +
     '</div>';
   }
 
@@ -8010,6 +8540,89 @@ async function placeOrder(){
   });
 }
 
+/* ---------------------------------------------------------------------------
+   RESOLVING THE SHIPPING ADDRESS
+   ---------------------------------------------------------------------------
+   THE LIVE BUG THIS FIXES: checkout said "A valid shipping address is required
+   to place an order" while the customer was looking at a complete, valid
+   address. Both halves of that were wrong.
+
+   What actually happened: the checkout POSTed a BRAND-NEW address row on every
+   single Place Order — it never listed, matched or reused one, and the
+   storefront has no screen for managing them. The server caps an account at 25
+   saved addresses, so after twenty-five checkouts the POST began returning 409
+   "You have reached the maximum number of saved addresses". The client caught
+   that, logged it to the console, and carried on with shippingAddressId = null.
+   create-order then rejected the null id with a message about the address being
+   invalid — so the customer was told their address was wrong when the truth was
+   that we had run out of room to store another copy of it.
+
+   Three things had to change, and the message was the least important:
+
+     1. REUSE. An address identical to one already saved returns that row's id
+        instead of inserting a duplicate. This is what stops the count climbing
+        at all, and it is also the correct behaviour on its own terms: a
+        returning customer ordering to the same house should not accumulate a
+        row per order. Fewer copies of somebody's home address is also simply
+        better PII hygiene.
+     2. RECYCLE. An account already at the cap with no match overwrites its
+        oldest non-default address rather than failing. Safe, because it is
+        overwritten with exactly what the customer just typed into the form.
+     3. TELL THE TRUTH. If it still cannot be resolved, the real reason is
+        raised to the caller instead of being swallowed into console.warn.
+
+   Returns an address id, or throws with a message worth showing. */
+function sameAddress(a, b){
+  const norm = function(v){ return String(v == null ? '' : v).trim().toLowerCase().replace(/\s+/g, ' '); };
+  return norm(a.full_name) === norm(b.full_name) &&
+         norm(a.phone)     === norm(b.phone) &&
+         norm(a.line1)     === norm(b.line1) &&
+         norm(a.city)      === norm(b.city) &&
+         norm(a.state)     === norm(b.state) &&
+         norm(a.pincode)   === norm(b.pincode);
+}
+
+async function resolveShippingAddressId(payload){
+  let saved = [];
+  try{
+    const list = await apiFetch('/api/addresses');
+    saved = (list && Array.isArray(list.addresses)) ? list.addresses : [];
+  }catch(e){
+    // Not fatal on its own: we can still try to create one. A transport
+    // failure here just means we cannot look for a match first.
+    saved = [];
+  }
+
+  const match = saved.find(function(a){ return sameAddress(a, payload); });
+  if(match && match.id) return match.id;
+
+  try{
+    const created = await apiFetch('/api/addresses', { method: 'POST', body: JSON.stringify(payload) });
+    if(created && created.id) return created.id;
+    throw { error: 'The delivery address could not be saved. Please try again.' };
+  }catch(err){
+    /* At the cap: overwrite the oldest address that is not the default rather
+       than leaving the customer unable to order at all. The row is replaced
+       with exactly what they typed, so nothing can be shipped to a stale
+       address — and the alternative is a permanently broken checkout on an
+       account with no way to delete anything. */
+    const atCapacity = Number(err && (err.status || err.statusCode)) === 409;
+    if(atCapacity && saved.length){
+      const recyclable = saved.filter(function(a){ return !a.is_default; });
+      const oldest = (recyclable.length ? recyclable : saved).slice(-1)[0];
+      if(oldest && oldest.id){
+        try{
+          const updated = await apiFetch('/api/addresses/' + encodeURIComponent(oldest.id), {
+            method: 'PUT', body: JSON.stringify(payload)
+          });
+          if(updated && updated.id) return updated.id;
+        }catch(e2){ /* fall through to the honest error below */ }
+      }
+    }
+    throw err;
+  }
+}
+
 async function placeOrderNow(){
   if(!getAuthToken()){
     await promptLoginRequired('Please log in or create an account to place your order.');
@@ -8071,9 +8684,21 @@ async function placeOrderNow(){
         pincode: qs('#ckPin') ? (qs('#ckPin').value.trim()) : '',
         country: 'India'
       };
-      const addrRes = await apiFetch('/api/addresses', { method: 'POST', body: JSON.stringify(addrPayload) });
-      if(addrRes && addrRes.id) shippingAddressId = addrRes.id;
-    }catch(e){ console.warn('Could not create shipping address on server, proceeding without it', e); }
+      shippingAddressId = await resolveShippingAddressId(addrPayload);
+    }catch(e){
+      /* NOT swallowed any more.
+
+         Carrying on with a null id produced "A valid shipping address is
+         required to place an order" from create-order — a message about the
+         address being wrong, when the address was fine and saving it was what
+         failed. Whatever the real reason is, the customer sees THAT, and the
+         checkout returns them to a form they can act on. */
+      console.error('Could not resolve a shipping address', e);
+      const proc = qs('#checkoutProcessing'); if(proc) proc.style.display = 'none';
+      const layout = qs('#checkoutLayout'); if(layout) layout.style.display = '';
+      toast((e && e.error) ? e.error : 'We could not save your delivery address just now. Nothing has been charged — please check the address and try again.', 'err');
+      return;
+    }
 
     /* What the customer was actually reading, captured immediately before the
        commit so it reflects any refresh the wait has just done. The server
@@ -10873,11 +11498,12 @@ async function init(){
   //        no API call. ~50ms, and it is what makes the next step meaningful. ---
   const source = await hydrateCatalogFromCache();
   if(!source) paintCatalogSkeletons();
-  // The Shop dropdown is built from the catalog, so it is available from the
-  // SNAPSHOT — no API call, and therefore fully populated during a cold start
-  // rather than waiting out the boot. refreshCatalogViews() rebuilds it when
-  // the live catalog lands.
+  // The Shop dropdown and the mobile drawer's category list are both built from
+  // the catalog, so both are available from the SNAPSHOT — no API call, and
+  // therefore fully populated during a cold start rather than waiting out the
+  // boot. refreshCatalogViews() rebuilds them when the live catalog lands.
   renderMegaMenu();
+  renderMobileNavCategories();
 
   // --- 3. ROUTE AND RENDER. This used to be the last thing init() did. ---
   const emailLink = isEmailActionLink();
@@ -10911,18 +11537,43 @@ async function init(){
     });
   });
 
-  qs('#mobileMenuOpen').addEventListener('click', openMobileDrawer);
+  qs('#mobileMenuOpen').addEventListener('click', function(){
+    /* Open FIRST, then rebuild, and never let the rebuild block the open.
+
+       The list is rebuilt on open — not only when the catalog changes —
+       because the radios show which category is currently being viewed, and
+       that changes as the customer browses while the drawer sits closed.
+
+       But the drawer also carries Home, Puja Booking, Astrology, Contact and
+       the rest, which have nothing to do with the catalog. Rendering before
+       opening would have meant one bad category row could stop the whole menu
+       from opening at all: the navigation of the entire site held hostage by a
+       list of shop categories. Ordered this way, the worst case is a stale
+       category list inside a menu that still works. */
+    openMobileDrawer();
+    try{ renderMobileNavCategories(); }
+    catch(e){ console.error('Could not rebuild the drawer category list', e); }
+  });
   qs('#mobileDrawerClose').addEventListener('click', closeAllDrawers);
   qs('#cartBtn').addEventListener('click', openCartDrawer);
   qs('#cartDrawerClose').addEventListener('click', closeAllDrawers);
   qs('#drawerOverlay').addEventListener('click', closeAllDrawers);
   qs('#accountBtn').addEventListener('click', function(){ openAccountModal(); });
-  const shopToggleBtn = qs('#mShopToggle .mnav-toggle');
-  if(shopToggleBtn) shopToggleBtn.addEventListener('click', function(){
-    const item = qs('#mShopToggle');
-    item.classList.toggle('open');
-    shopToggleBtn.setAttribute('aria-expanded', item.classList.contains('open') ? 'true' : 'false');
-  });
+  /* One disclosure behaviour for every collapsible drawer section, rather than
+     a copy per section. Shop and Service Booking behave identically and must
+     keep doing so; two hand-written copies is how they stop. */
+  function wireDrawerSection(itemId){
+    const item = qs('#' + itemId);
+    const btn = item && item.querySelector('.mnav-toggle');
+    if(!item || !btn) return;
+    btn.addEventListener('click', function(){
+      const open = !item.classList.contains('open');
+      item.classList.toggle('open', open);
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+  }
+  wireDrawerSection('mShopToggle');
+  wireDrawerSection('mServiceToggle');
 
   qs('#searchForm').addEventListener('submit', handleSearchSubmit);
   qs('#searchInput').addEventListener('input', function(e){ handleSearchInput(e.target.value); });
@@ -10970,6 +11621,7 @@ async function init(){
       // would leave an order firing later with nothing on screen to explain it.
       if(waitState.open){ cancelWaitingExperience(); return; }
       closeAllDrawers();
+      closeModal('allCatsModal');
       closeModal('qvModal');
       closeModal('acctModal');
       if(document.getElementById('bookingModal')) closeModal('bookingModal');

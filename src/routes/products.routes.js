@@ -133,20 +133,38 @@ router.get('/meta/subcategories', asyncHandler(async (req, res) => {
 }));
 
 router.get('/meta/top-categories', asyncHandler(async (req, res) => {
+  // 20 is the ceiling the storefront's "top 15" sits under; an unbounded limit
+  // here would be a cheap way to make the database do arbitrary work.
   const limit = Math.min(20, Math.max(1, parseInt(req.query.limit, 10) || 7));
   const { rows } = await db.query(
     `SELECT p.category,
             COUNT(DISTINCT p.id)::int AS product_count,
-            COALESCE(SUM(oi.quantity), 0)::int AS units_sold
+            -- THE CONDITION IS ON THE SUM, not only on the join.
+            --
+            -- The status filter below correctly lives in the JOIN rather than a
+            -- WHERE clause, so categories that have never sold anything are not
+            -- silently dropped. But a LEFT JOIN keeps the order_items row even
+            -- when no matching orders row survives that filter, and the old
+            -- SUM(oi.quantity) added those quantities anyway — so a pending,
+            -- cancelled, refunded or payment_failed order counted exactly as
+            -- much toward "most sold" as a delivered one. A single large
+            -- abandoned cart could rank a category above one that genuinely
+            -- outsold it.
+            --
+            -- o.id IS NULL is precisely "this order_item's order did not pass
+            -- the status filter", so this counts units from paid orders only
+            -- while still reporting 0 (not NULL, not absent) for the rest.
+            COALESCE(SUM(CASE WHEN o.id IS NOT NULL THEN oi.quantity ELSE 0 END), 0)::int AS units_sold
      FROM products p
      LEFT JOIN order_items oi ON oi.product_id = p.id
-     -- The status filter lives in the JOIN, not WHERE: in a WHERE clause it
-     -- would turn this LEFT JOIN into an INNER JOIN and silently drop every
-     -- category that has never sold anything.
      LEFT JOIN orders o ON o.id = oi.order_id
             AND o.status IN ('paid','processing','shipped','delivered','partially_refunded')
      WHERE p.is_active = true AND p.category IS NOT NULL AND p.category <> ''
      GROUP BY p.category
+     -- A TOTAL order, so "top 15" is the same 15 on every request: units first,
+     -- then catalogue depth as the tie-break, then the name. Without the final
+     -- p.category the order of equal rows would be whatever the plan returned,
+     -- and the list would reshuffle between page loads.
      ORDER BY units_sold DESC, product_count DESC, p.category ASC
      LIMIT $1`,
     [limit]

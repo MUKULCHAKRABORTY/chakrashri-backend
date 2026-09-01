@@ -120,6 +120,18 @@ jobs:
         # drifts silently; this is what that drift looked like.
         run: npm run test:frontend
 
+      - name: Drawer and category-ranking fuzz
+        # Added in the same breath as the suite itself, because the comment
+        # above is the record of what happens otherwise: a suite that exists,
+        # passes locally, and is never once run by the gate.
+        #
+        # Needs nothing external — it lifts the real functions out of index.html
+        # and runs them over ~20 generated catalogues, including category names
+        # an admin could really type and a 40x12 catalogue that does not exist
+        # yet. It is the only thing checking that "top 15 by most sold" is a
+        # total order rather than whatever the sort happened to return.
+        run: npm run test:drawer
+
       - name: Install Chromium for the browser regression tests
         run: npx playwright install --with-deps chromium
 

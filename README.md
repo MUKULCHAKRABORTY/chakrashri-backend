@@ -140,7 +140,7 @@ recorded so nobody re-opens them:
 | Variant products carrying separate stock | they do not in this catalog; the base `stockQty` is the only figure, so capping on it is correct |
 | `Infinity` as a quantity | collapses to **1**, not to all of stock — a nonsense input must never reserve the seller's inventory |
 
-### 4c. Variants — a variant is its own product
+### 4b. Variants — a variant is its own product
 
 `migrations/008_product_variants.sql` gives every variant its **own**
 `price_paise` (NULL = inherit the base) and its **own** `stock_qty`, and
@@ -172,7 +172,7 @@ never zero — the same principle as the price guard.
 The differential fuzz already covers variant pricing: it assigns an independent
 unit price to every line, which is exactly what a variant line is.
 
-### 4b. The proof the money maths is right — differential fuzzing
+### 4c. The proof the money maths is right — differential fuzzing
 
 Hand-picked test cases prove a function works on the cases somebody thought of.
 `[fe-32]` instead runs the **real client function** against the **real server
@@ -512,7 +512,7 @@ would only add noise for a screen-reader user. The rotation is disabled under
 **Where to look:** `renderShopFilterSidebar()` in `index.html`, and the
 `.filter-chev` rules beside `.filter-subs`.
 
-### 4h. The category filter — disclosure, placement, and the device it is on
+### 4i. The category filter — disclosure, placement, and the device it is on
 
 Four problems, all measured on the live site before anything was changed.
 
@@ -580,7 +580,7 @@ Verified at 320×568, 768×1024 and 1440×900, in every state: no dead rows, cou
 aligned, no horizontal scroll, open → rotate → close working, and 44px rows and
 controls on touch while the desktop pointer keeps its compact 26px.
 
-### 4i. Password recovery can no longer lock a customer out of signing in
+### 4j. Password recovery can no longer lock a customer out of signing in
 
 `[http-3]` had a test titled *"FINDING: the 10-request budget is SHARED"*. It was
 documenting a real availability hole rather than guarding against one: all four
@@ -604,6 +604,373 @@ Split into two, in `src/routes/auth.routes.js`:
 The test now asserts the fix with real HTTP: exhaust recovery completely, and
 login still returns 401 rather than 429.
 
+### 4k. The shipping address — a live checkout outage, and its real cause
+
+**Reported from the live site:** *Place Order* answered *"A valid shipping
+address is required to place an order"* while the customer was looking at a
+complete, valid address. Both halves of that message were wrong.
+
+**What actually happened.** The checkout POSTed a **brand-new address row on
+every single Place Order**. It never listed, matched or reused one, and the
+storefront has no screen for managing them. The server caps an account at **25**
+saved addresses (`src/routes/addresses.routes.js`), so after twenty-five
+checkouts the POST began returning `409`. The client caught that, wrote it to
+`console.warn`, and carried on with `shippingAddressId = null`. `create-order`
+then rejected the null id with a message about the *address* — so the customer
+was told their address was invalid when the truth was that we had run out of
+room to store another copy of it.
+
+An account that reached the cap was **permanently unable to order**, with no way
+to clear it from the storefront.
+
+`resolveShippingAddressId()` in `index.html` replaces the blind POST. Three
+changes, and the message was the least important of them:
+
+| | What it does | Why |
+|---|---|---|
+| **Reuse** | An address identical to one already saved returns that row's id | Stops the count climbing at all. Also correct on its own terms: a returning customer ordering to the same house should not accumulate a row per order — and fewer stored copies of somebody's home address is better PII hygiene |
+| **Recycle** | At the cap with no match, overwrite the oldest **non-default** row | Safe: it is overwritten with exactly what the customer just typed. The alternative is a checkout that can never succeed |
+| **Tell the truth** | Any remaining failure raises the server's own reason | The swallow is what turned a save failure into a lie about the address |
+
+Matching (`sameAddress`) is deliberately forgiving about case and whitespace —
+a saved row and a freshly typed one differ that way constantly — and strict
+about everything that changes **where the parcel goes**: name, phone, line 1,
+city, state and PIN. A different PIN is a different destination, and `[fe-40]`
+asserts each of those individually.
+
+When it does fail, the checkout now dismisses the processing pane, brings back
+the form, shows the server's actual message, and **never reaches
+`create-order`**. The server-side guard is untouched: an order with nowhere to
+ship is still refused.
+
+### 4l. The row is two targets, and the phone's Shop menu is derived
+
+Two separate complaints, one underlying cause: **the thing you can see is not
+the thing you can hit.**
+
+**The filter row.** A category row drew a name, a 16px radio and a count across
+roughly 280px, and only the radio and the name selected anything. The count sat
+in dead space at the widest part of the row, and on touch the label was 28px
+tall inside a 44px row — so the top and bottom of every row looked tappable and
+were not.
+
+The row is now exactly two targets that between them cover all of it:
+
+```
+[ radio + name .......... stretches ][ chevron ....... count ]
+  ^ selects the category              ^ opens / closes the list
+```
+
+The chevron and the count share **one button**. That is what lets the
+disclosure target reach the right-hand edge while the chevron itself stays
+against the name — only the button's *reach* extends, the icon does not travel.
+On a row with no subcategories there is no button, so the count goes inside the
+**label** instead and the whole row selects.
+
+Two details that are easy to get wrong:
+
+- Only the **chevron** rotates when open, never the button. The button now
+  carries the count, and rotating it would turn the number upside-down.
+- The count's `padding-right` and the button's `padding-right` are kept equal,
+  so the number lands on the same pixel whether or not its row has a button.
+  Measured after the change: every count glyph at x=270, spread **0**.
+
+Measured at 320 / 375 / 768 / 1440: both targets ≥44px on touch, both reach the
+row's right edge, no horizontal overflow at any width.
+
+**The phone's Shop menu.** The mega-menu is a *hover* surface — it does not
+exist on a phone. The navigation drawer was therefore the only route a mobile
+visitor had into a category, and it was still seven links written by hand in the
+markup, advertising Bracelets, Spiritual Books and Puja Samagri Kits: three
+categories that hold nothing and open an empty grid. That is the same defect
+already fixed in the shop sidebar, still live in the drawer because nobody had
+looked at it since.
+
+`renderMobileNavCategories()` now builds it from `categoryTree()` — the same
+source, and the same law, as the mega-menu and the sidebar. Categories and their
+subcategories, each with a count, and **All Products last**, because it is the
+escape hatch from a list of narrowings rather than one of the narrowings. It
+runs at the cold first paint too (from the snapshot, no API), so a phone gets a
+full menu during the whole 30–60s wake rather than an empty one.
+
+**And the row is the shop filter's row, pair for pair.** The first version
+listed every subcategory permanently, indented, as plain links — the list grew
+without bound as the catalog does, nothing signalled *which* categories hold
+refinements, and there was no way to see which category you were currently
+looking at. It is now built by `mnavRow()`, which is deliberately the same shape
+as the sidebar's `row()`:
+
+```
+[ (o) name ............ ][ chevron ...... count ]
+  ^ selection pair        ^ disclosure pair
+```
+
+Same rules, deliberately, so the two surfaces cannot drift apart the way the
+hardcoded lists once did:
+
+- A real `<input type="radio">` inside a `<label>`, so the **name selects too** —
+  an 18px circle is not a thumb target. Categories are group `mnavCat`,
+  subcategories `mnavSub`, exactly as the sidebar splits them.
+- The checked row tracks the **current filter**. The drawer is re-rendered on
+  open (not only when the catalog changes), because what you are viewing changes
+  as you browse while the drawer sits closed. A list of plain links could not
+  show this at all.
+- Chevron **only** where `node.subs.length > 0`. No placeholder, no dead icon.
+- Chevron first, count second, both inside the button — the icon stays against
+  the name while the target reaches the right-hand edge.
+- Only the **chevron** rotates. The button carries the count, and rotating it
+  would turn the number upside-down.
+- No button means no dead space: the count goes back inside the label.
+- Collapsed by default, and it **closes again** — the defect the shop sidebar
+  originally had, not repeated here.
+- An active subcategory **reveals its group**, mirroring the sidebar's law.
+  Without it the drawer opened with a checked radio inside a collapsed group:
+  the one row that mattered would have been the one row hidden.
+
+The drawer's other entries — Home, Puja Booking, Astrology, Journal, Wishlist,
+About, Contact — are untouched page links. Only the Shop category list uses this
+row.
+
+Two things worth knowing:
+
+`mnavOpenCats` is its own Set, **not** the sidebar's `expandedCats`. They are
+different surfaces used at different moments, and opening a category in the nav
+should not silently rearrange the filter panel behind it. `toggleMnavCat()` also
+flips the class **in place** rather than re-rendering: a rebuilt element starts
+at its final size, so the expand would jump instead of animating.
+
+Both count homes keep the drawer's own 22px gutter. An earlier version tightened
+every row's right edge for a button that is only sometimes there, which put the
+counts on chevron-less rows **16px out of line**. Measured spread is now **0**.
+
+Measured with transitions disabled at 320, 375 and 768: nine rows, every one
+carrying a radio, every target ≥44px and reaching the row's right edge, count
+spread 0, no horizontal overflow. The list goes 357 → 401 → 357px as a group
+opens and closes, `aria-expanded` false → true → false. Clicking the chevron
+expands without changing the filter or closing the drawer; clicking the name or
+the radio selects, navigates and closes it.
+
+### 4m. Derived lists in containers that assumed they would stay small
+
+Two defects found by running the **real** renderer against catalogs it had never
+seen — `test/frontend.test.js` `[fe-42]` pins both. They are the same mistake in
+opposite directions: a list derived from the catalog, living in a container with
+a hardcoded idea of how big it would get.
+
+**The mega-menu had no ceiling.** `.mega` is `position:absolute` with no
+`max-height` and no `overflow`. Measured at 1440×900 with 30 categories × 8
+subcategories, its natural height is **4163px** — so the lower **3263px** hung
+off the bottom of the screen with no way to scroll to it. It is now capped to
+`calc(100dvh - var(--header-h) - 24px)` with `overflow-y:auto` and
+`overscroll-behavior:contain`, using the same header variable the rest of the
+layout uses so it cannot drift. Re-measured: `clientHeight` 774 against a 900px
+viewport, and it scrolls.
+
+**The drawer bailed on an empty tree.** `renderMobileNavCategories()` returned
+early the moment `categoryTree()` was empty — which took *All Products* out with
+it, so a cold start where even the snapshot failed expanded into a completely
+empty box. The category loop needs a tree; All Products does not. There is now
+exactly **one** `host.innerHTML =` in the function, so the empty case cannot
+drift from the normal one.
+
+**And the drawer opens before it renders.** The menu also carries Home, Puja
+Booking, Astrology and Contact, which have nothing to do with the catalog.
+Rendering first would have let one bad category row stop the whole site's
+navigation from opening. Ordered `openMobileDrawer()` then a guarded
+`renderMobileNavCategories()`, the worst case is a stale list inside a menu that
+still works.
+
+**How this was checked.** `scripts/drawer-fuzz.js` (`npm run test:drawer`) lifts `categoryTree`,
+`catLabel`, `jsAttr`, `escapeHtml` and the renderer straight out of `index.html`
+by brace-matching — nothing is reimplemented — and runs them over 20 catalogs:
+empty, single-product, and category names an admin could really type
+(`rudraksha's mala`, `sacred "gems"`, `back\slash`,
+`</script><script>alert(1)</script>`, `ampersand & co`, Devanagari, emoji, 200
+characters, tabs, newlines), plus 40 categories × 12 subcategories and every
+selection state including *filtered to a category that no longer exists*. It
+asserts one wrapper, All Products always present and always last, every
+`onchange` parsing as valid JS with the slug intact, no attribute breaking out
+of its quotes, a toggle only where subcategories exist, one radio per row, at
+most one checked per group, and counts matching the tree. **1047 checks, 0
+failed.**
+
+Escaping is two layers and both are load-bearing: `jsAttr` is
+`escapeHtml(JSON.stringify(...))` — `JSON.stringify` makes a valid JS string
+literal out of quotes and backslashes, `escapeHtml` keeps it inside an HTML
+attribute. `toggleMnavCat()` matches `data-cat` by **value in JS** rather than
+building a CSS selector, so a slug containing a quote or a bracket needs no
+selector escaping at all.
+
+Server side, new categories arrive in one canonical form: `normaliseTerm()`
+(`src/utils/text.js`) collapses whitespace, trims, lowercases and maps empty to
+`NULL`, it is applied on insert, update *and* query, and
+`migrations/016_product_subcategory.sql` enforces the same shape as a `CHECK`.
+
+### 4n. Service Booking, and a drawer that lists best sellers instead of everything
+
+**Service Booking** (`#mServiceToggle`, above Shop). Puja Booking and Astrology
+used to be two loose rows further down the drawer. They are one thing a customer
+comes for, so they are one menu — and the originals are **removed**, because the
+same destination twice in one drawer is a defect, not a convenience. The whole
+row is the toggle, unlike Shop's split row: Shop's label has somewhere to go
+(all products) and there is no "all services" page, so a label that navigated
+nowhere would be a lie. Both sections share **one** `wireDrawerSection()` rather
+than a hand-written copy each — two copies is exactly how they stop behaving
+identically.
+
+**The Shop section lists the top 15 by units sold.** A phone menu that lists
+forty categories is a wall, not a menu. `MNAV_TOP_CATEGORIES` is the cut-off;
+`rankedCategories()` produces the order.
+
+#### The ranking, and the server bug behind it
+
+The order is **total**, so "the top 15" is the same 15 on every page load:
+
+| key | direction | why |
+|---|---|---|
+| units sold | desc | what "most sold" means |
+| product count | desc | tie-break: the deeper category is the more useful one |
+| category name | asc | final tie-break — without it, equal rows reshuffle between loads |
+
+Those are the same three keys `ORDER BY units_sold DESC, product_count DESC,
+p.category ASC` uses on the server, so client and server cannot disagree about
+which category sits at position 15.
+
+**`/meta/top-categories` was counting orders that were never paid.** The status
+filter correctly sat in the `JOIN ... ON` rather than a `WHERE` — a `WHERE`
+would have silently dropped every category that has never sold — but the sum was
+`SUM(oi.quantity)`, unconditioned. A `LEFT JOIN` keeps the `order_items` row when
+no `orders` row survives the filter, so **pending, cancelled, refunded and
+payment_failed orders counted exactly as much toward "most sold" as delivered
+ones**. One large abandoned cart could rank a category above one that genuinely
+outsold it. Now:
+
+```sql
+COALESCE(SUM(CASE WHEN o.id IS NOT NULL THEN oi.quantity ELSE 0 END), 0)::int AS units_sold
+```
+
+Proven against a real Postgres in `test/db-integration.test.js` `[db-12]`: 200
+units spread across pending/cancelled/refunded/payment_failed leave the count at
+**2**, every money-bearing status still counts, a never-sold category still
+appears at **0** rather than vanishing, and repeated identical queries return an
+identical order.
+
+**Cold start.** `categorySalesRank` is `null` until the API answers — a real
+state, distinct from "all zero". While it is null the drawer ranks by catalogue
+depth (`categoryTree()` is already totally ordered), so a cold start gets a full,
+sensibly ordered top 15 from the snapshot with no API call at all. One request
+serves both this and the home rail: it asks for 20 (the server's ceiling) and the
+rail takes the first 7.
+
+A category **absent** from that window sorts below every ranked one. That is
+correct rather than merely convenient: the server returned its top 20, so an
+absent category's unit count is at most the twentieth's and it cannot belong in a
+top *fifteen*.
+
+#### All Categories
+
+Sits **above** All Products and is an **action, not a filter** — it opens a
+browser rather than selecting anything, so it carries no radio, while reusing
+`.mnav-check`'s metrics so the label, count and 44px floor line up exactly with
+the rows above. It is shown even when every category already fits, because the
+panel it opens can be **searched** and a list of drawer rows cannot.
+
+The panel (`#allCatsModal`) is built from `categoryTree()` like every other
+category surface, so it is complete during a cold start from the snapshot alone.
+Search matches the **label** as well as the slug — a customer types the word they
+can see, and has never seen the slug. A category matched by name keeps all its
+subcategories; one matched only through a subcategory shows just the matches.
+Categories are cards, subcategories are chips, both navigate and close.
+
+Two fixes found while building it:
+
+- **Chips were 34px.** Fine under a mouse, a miss under a thumb — raised to 44px
+  on touch.
+- **The panel rendered 715px instead of a full-height sheet.** `.allcats-box` and
+  `.modal-box` have equal specificity, and the modal rules are defined *later* in
+  the stylesheet than the drawer rules this block lives with — so
+  `.modal-box{max-height:88vh}` beat both the base rule and the phone media
+  query. Scoped to `#allCatsModal .allcats-box`, so it wins on specificity rather
+  than on position in the file. Re-measured at 375×812: **715 → 812**.
+
+Also fixed in passing: the **home page category rail** built its `onclick` with
+`escapeHtml` instead of `jsAttr`. `escapeHtml` turns `'` into `&#39;`, which the
+browser decodes back to a real quote when it parses the attribute — so a category
+named `rudraksha's mala` closed the JS string and broke every card in the rail.
+
+**Measured** at 375 / 768 / 1440 with transitions disabled: Service Booking
+expands 0 → 89px with both links at 45px; the panel is a full-height sheet at
+375 (1 column), fits at 768 (2 columns) and 1440 (3 columns); every card top and
+chip ≥44px; Escape closes it; category and chip clicks both navigate and close.
+Injecting sales data live reordered the drawer from `book, dhoti, idols` to
+`yantra, malas, book`. `npm run test:drawer` covers the ranking itself over 40
+categories with deliberate ties: **847 checks, 0 failed.**
+
+#### The ranking survives a cold start too
+
+`catalog.json` already carried `units_sold` — it was simply never read. The
+snapshot now seeds `categorySalesRank` on the first paint, so the drawer's top 15
+is ranked by **real sales through the entire 30–60s wake** instead of falling
+back to catalogue depth. `loadTopCategories()` replaces it with live figures the
+moment the API answers.
+
+The snapshot captures 20 categories (was 7) so the ranking has enough to work
+with, and **both** rail paths now slice to 7 — the live path already did, the
+snapshot path handed the rail everything it had, which with 20 would have drawn
+twenty tiles that shrink to seven a moment later.
+
+Verified on the true cold path (every API call CORS-blocked, `catalogSource:
+snapshot`): ranked `book 59, malas 25, sphatik 25, idols 22, yantra 21`, with the
+malas/sphatik tie — equal units, equal depth — broken alphabetically exactly as
+specified. Rail still 7 cards.
+
+### 4o. Two ways the gate could lie, both closed
+
+**A dropped database connection was reported as twelve broken behaviours.** When
+the Neon pooler stopped resolving mid-run, every remaining test threw the same
+transport error and `test:db-integration` counted each as a failure — one
+infrastructure event read as a dozen bugs, with the real cause buried in the
+first line of a long log. The suite now classifies the error: on a genuine
+connection loss it **stops**, prints an unmistakable banner saying this is not a
+code failure, names the test it died on, and still exits non-zero (a gate that
+verified less than it was asked to must never read as green).
+
+The classifier matches error *codes* first and message text only as a fallback,
+and an `AssertionError` is never treated as a transport failure — proven over
+eight cases including a real `23502` constraint violation and a plain logic
+error, both correctly classified as genuine failures. **A real bug can never be
+excused as "the database went away."**
+
+**A whole suite was never run by CI.** `test:drawer` was added to `verify:full`
+only. CI does not run `verify:full` — it invokes the suites one by one — so the
+harness would have shipped having never run in the gate once. This is the second
+time: the comment above the *Frontend tests* step in `.github/workflows/ci.yml`
+is the record of the first.
+
+Fixed by moving `test:drawer` into `npm test` (it needs no external services,
+which is what that chain is for), removing the now-duplicate append from
+`verify:full`, and adding the CI step. Then closed structurally, in
+`[fe-44]`: every `test:*` script must either appear in `ci.yml` or be listed as
+exempt **with a stated reason**, every suite needing no external service must be
+in `npm test`, and no suite may be run twice by one command. Verified by
+reintroducing both gaps and confirming the guard fails and names the offending
+suite.
+
+One CSS trap worth writing down. The list expands with
+`grid-template-rows: 0fr → 1fr`, not `max-height`. `max-height` animation needs a
+guessed ceiling, and the guess was `600px`: now that the list is *derived*, a
+catalog with enough categories would have been silently clipped with no way to
+reach the rest. The grid technique animates to the content's real height —
+**but it sizes only the first explicit row**, so sibling links would fall into
+implicit auto rows and stay on screen with the menu "closed". The renderer
+therefore emits exactly one wrapper element, including in the empty case.
+`[fe-41]` locks that down, because it is invisible until the day it isn't.
+
+*Verification note:* the drawer's open transition never settles in a hidden
+browser pane — animations are throttled there, and `getComputedStyle` keeps
+reporting the closed transform. The committed build does the same, so it is a
+measurement artifact, not a defect. Measure layout with transitions disabled.
+
 ### 5. Where the tests are
 
 `test/frontend.test.js`, by section — each one names the defect it locks shut:
@@ -624,8 +991,13 @@ login still returns 401 rather than 429.
 | `[fe-36]` | **the orphan class** — a function built but never reached is a feature that does not exist |
 | `[fe-37]` | **warm-path latency and context-aware waiting copy** |
 | `[fe-38]` | **partial outage** — failure classification, the bulkhead, the money message, small-phone layout |
-| `[fe-39]` | **the category filter** — disclosure, chevron placement, no dead categories, the mobile drawer |
-| `[fe-39]` | **the disclosure chevron** — conditional affordance, column alignment, accessibility |
+| `[fe-39]` | **the category filter** — disclosure, chevron placement, the two hit areas, no dead categories, touch |
+| `[fe-40]` | **the shipping address** — reuse, recycle at the cap, and never mis-report the reason |
+| `[fe-41]` | **the mobile drawer** — derived categories, the radio/name + chevron/count pairs, per-category disclosure, All Products last |
+| `[fe-42]` | **derived lists at scale** — the mega-menu height cap, the empty-catalog drawer, escaping a name an admin typed |
+| `[fe-43]` | **Service Booking and All Categories** — one shared disclosure, the searchable browser, the specificity fix |
+| `[db-12]` | **"most sold" arithmetic** — unpaid orders excluded, money-bearing statuses kept, a total order |
+| `[fe-44]` | **the gate itself** — every suite runs in CI, or is exempt on purpose and says why |
 
 ```bash
 npm test
