@@ -317,6 +317,201 @@ and behaves exactly as it did: `mapApiProduct` normalises absent to `''` so
 there is one representation of "none", `catPath` emits no extra segment, and
 `[fe-35]` asserts all of it.
 
+### 4f. A warm backend has to FEEL warm — and the copy has to fit the moment
+
+Two problems, both reported from real use of the live site.
+
+**The warm-period delay at checkout.** Measured against the live API,
+`/api/ready` takes **0.65–2.1 seconds** on a fully warm backend, and
+`runWithBackendReady` probed it before every money action whose readiness had
+gone stale. It had *always* gone stale on a real checkout:
+`markBackendAwake()` refreshes on each successful request, `BACKEND_READY_TTL_MS`
+is 45s, and **filling in a delivery address makes no requests at all**. So a
+customer who spent a minute typing their address tapped *Place Order* and got up
+to two seconds of nothing before the order even began.
+
+The fix is to stop asking at the moment of the tap and keep the answer fresh
+while the customer is on a page that leads to one — `keepBackendWarm()`, started
+by `navigateTo` for **checkout, cart, puja and astrology**. Deliberately narrow:
+
+- nothing runs while `document.hidden`, so a phone in a pocket costs nothing;
+- nothing runs while the cache is still fresh;
+- it shares `probeBackend()`'s in-flight promise, so a heartbeat landing beside
+  a real action is one request, not two;
+- `visibilitychange` prewarms the instant the tab is returned to — the exact
+  moment the cache is stalest and the customer is about to pay;
+- **a failure changes nothing.** If the backend is cold the probe returns false,
+  the cache stays stale, and the waiting screen appears on tap exactly as
+  before. This can make the warm path faster; it cannot make the cold path
+  worse, and `[fe-37]` asserts the gate does not depend on it.
+
+Verified: a warm tap now makes **zero probes and adds zero milliseconds**; the
+cold path still waits and still completes.
+
+**The waiting copy said the same thing everywhere.** `beginApiWait()` fires from
+`apiFetch` for *every* foreground request and showed one line for all of them:
+*"Just a moment — bringing you the latest prices."* That is true while a catalog
+loads and wrong everywhere else — it was shown to somebody signing in, applying
+a coupon, sending a contact message, saving an address and confirming a puja
+booking. Copy that does not match what the customer just did reads as a page
+talking to itself.
+
+`API_WAIT_COPY` now maps the request path to what is actually happening, longest
+prefix wins:
+
+| Path | Shown |
+|---|---|
+| `/api/payments/verify` | Confirming your payment… |
+| `/api/payments/` | Securing your payment… |
+| `/api/bookings/` | Confirming your booking… |
+| `/api/addresses` | Saving your delivery address… |
+| `/api/coupons/` | Checking your coupon… |
+| `/api/auth/login` | Signing you in… |
+| `/api/products` | Bringing you the latest prices… *(the original line — it was never wrong here)* |
+| anything unmapped | One moment… *(neutral and true, never a guess)* |
+
+The 15-second escalation is context-aware too, and for the two payment
+verification paths it says **"Please do not close this page"** — a customer who
+closes the tab mid-verification can be charged with no order recorded.
+
+### 4g. Disaster handling — one dead endpoint must not close the shop
+
+The backend is not one thing that is either up or down. Any single route can
+fail while the rest serve perfectly: a bad deploy of one router, an exhausted
+pool on one query, a third party that one endpoint depends on.
+
+**The failure this found, measured.** With `/api/ready` returning 500 and
+payments, catalog and auth all completely healthy, the checkout was **refused
+outright** and the customer was shown a service-interruption panel. One broken
+route took the whole shop's revenue with it — and it was the cold-start
+readiness gate that did it.
+
+#### The methodology: who failed decides what we may do about it
+
+`classifyFailure()` (`index.html`) sorts every failure into three kinds, because
+they call for opposite responses:
+
+| Kind | What happened | What we are allowed to do |
+|---|---|---|
+| **TRANSPORT** | nothing answered | We know nothing. **Change nothing**, keep what we have, let the retry paths work. |
+| **SERVER** | it answered, and it is broken (5xx) | **Our fault.** The customer must never be charged, downgraded or stripped of a discount for it. |
+| **JUDGEMENT** | it answered with a decision (4xx) | The server is working and has told us something true. **Honour it.** |
+
+The SERVER/JUDGEMENT split is the one that matters most and is easiest to miss —
+both arrive as a rejected promise carrying a status. Treating a 500 like a 400
+is how our own outage silently took a customer's discount away, which is exactly
+what it did before this existed.
+
+#### The bulkhead
+
+`noteBackendResponded()` records **every** HTTP response, whatever its status —
+a 500 is a terrible answer but it is still proof that something is listening.
+`isBackendServing()` then answers "is the process up?" from *any* endpoint
+rather than one.
+
+`runWithBackendReady` now reads:
+
+```
+1. isBackendKnownAwake()  → go            (warm, nothing added)
+2. await probeBackend()   → go            (a quick, honest check)
+3. isBackendServing()     → go            ← THE BULKHEAD
+4. otherwise              → show the wait (genuinely cold)
+```
+
+Step 3 is the fix. The gate exists to spare somebody a 60-second hang on a cold
+boot; it is **not** an authorisation check and must not behave like one. The
+order request itself is the authoritative test and has its own error handling
+for every way it can fail. So when the evidence is ambiguous, **it opens**.
+
+`ensureBackendAwake` also stops waiting the moment evidence arrives from
+anywhere — a catalog refresh or an outbox flush is proof enough.
+
+**A genuine cold start is untouched:** nothing has answered, `isBackendServing()`
+is false, and the waiting screen appears exactly as before. `[fe-38]` asserts
+this. It can make a partial outage survivable; it cannot make a cold start
+worse.
+
+#### The most important message on the site
+
+Razorpay has **already taken the money** by the time the payment handler runs —
+the handler only fires on success. What can fail afterwards is *our*
+confirmation of it, after three retries.
+
+The old message was *"Payment verification failed"*. A customer reads that as
+"my payment failed": it is untrue, it invites a second attempt at paying, and it
+invites a chargeback. It now says the money went through, that the order is
+recorded and will be confirmed by email, and gives the Razorpay payment
+reference to quote to support. The webhook and the reconciliation sweep complete
+the order server-side without the browser. A genuine signature or ownership
+refusal still shows the server's own words — that is a real refusal, not a
+delivery problem.
+
+#### The waiting screen on a small phone
+
+Measured at 360×640: the suggestion phase pushed **Cancel below the fold**, so
+the customer saw product cards and no visible way out of a screen that cannot be
+dismissed any other way. Fixed structurally rather than by tuning copy per
+phase — the box is a flex column with a bounded height, the **body** scrolls,
+and the head and foot stay put, so any phase added later inherits it.
+
+Tap targets were **39px** and are now **44px**, the floor both the Apple HIG and
+WCAG 2.5.8 settle on. Verified at 320×568, 390×844 and 1440×900: every phase
+fits, no horizontal scroll, footer reachable throughout.
+
+> A measurement note worth keeping: `getBoundingClientRect()` is distorted by the
+> browser pane's viewport-emulation scale — it reported those 44px buttons as
+> 41px. Heights were re-checked through `getComputedStyle`.
+
+### 4h. The disclosure chevron — which categories expand
+
+In the shop filter sidebar (which is also the **mobile filter drawer**),
+subcategories are revealed by *selecting* a category. Without an indicator the
+customer has to commit to a filter — changing what the grid shows — just to
+discover whether there was anything to discover.
+
+A chevron now marks the categories that have subcategories:
+
+| State | Shown |
+|---|---|
+| has subcategories, collapsed | chevron **down** |
+| has subcategories, selected | chevron **up** (rotated 180°) |
+| no subcategories | nothing visible |
+| a sub-row | nothing — there is no third level |
+
+**It is conditional, not decorative.** A chevron on a category with nothing
+under it would be a promise the interface cannot keep, so it is driven by real
+`subCounts`, never rendered blindly.
+
+**Where it deliberately does NOT appear: the mega-menu.** There the
+subcategories are *already listed* under their parent. A chevron implies "click
+to expand", and clicking a mega-menu category navigates to it instead — the icon
+would be advertising an interaction that does not exist. The indent and hairline
+already carry the hierarchy.
+
+#### The alignment trap, and why the fix is a placeholder
+
+Omitting the icon on plain rows pushed their counts **24px** to the right of the
+rest — the flex row lost both the 14px icon and the 10px gap. Compensating with
+a margin would hard-code *two* constants in a second place, to be kept in step
+forever for a purely visual result.
+
+Instead every row renders the same icon and plain rows mark theirs
+`is-placeholder`, hidden with `visibility` (**not** `display:none`, which would
+stop reserving the space). Every row is the same shape by construction, so the
+columns cannot drift apart again.
+
+The one row that skipped this was **"All Products"** — it is built above the
+loop, so it missed the placeholder and its count sat 24px out on its own. It now
+gets the spacer explicitly, and `[fe-39]` asserts it.
+
+`aria-hidden="true"` and `focusable="false"` on both: the radio carries the
+semantics and the label carries the name, so announcing a decorative triangle
+would only add noise for a screen-reader user. The rotation is disabled under
+`prefers-reduced-motion`.
+
+**Where to look:** `renderShopFilterSidebar()` in `index.html`, and the
+`.filter-chev` rules beside `.filter-subs`.
+
 ### 5. Where the tests are
 
 `test/frontend.test.js`, by section — each one names the defect it locks shut:
@@ -334,6 +529,10 @@ there is one representation of "none", `catPath` emits no extra segment, and
 | `[fe-33]` | **variants** — priced and stocked separately from the base product |
 | `[fe-34]` | **future shapes** — hierarchical categories, new products, new stock |
 | `[fe-35]` | **subcategories** — schema, server, admin, dropdown, filtering, backward compatibility |
+| `[fe-36]` | **the orphan class** — a function built but never reached is a feature that does not exist |
+| `[fe-37]` | **warm-path latency and context-aware waiting copy** |
+| `[fe-38]` | **partial outage** — failure classification, the bulkhead, the money message, small-phone layout |
+| `[fe-39]` | **the disclosure chevron** — conditional affordance, column alignment, accessibility |
 
 ```bash
 npm test

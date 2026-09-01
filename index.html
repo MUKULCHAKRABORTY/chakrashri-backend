@@ -518,6 +518,28 @@ p{ color: var(--text-soft); }
    weight are the whole hierarchy cue — no disclosure arrows, because the list
    is short and a menu that needs opening twice is a menu people stop using. */
 .mega .mega-cat{ margin-bottom:9px; }
+/* The sidebar's nested subcategory list. Indented and hairlined exactly like
+   the dropdown, so the two read as the same hierarchy in two places. */
+.filter-subs{ padding-left:13px; border-left:1px solid var(--line); margin:2px 0 6px; }
+.filter-subs .filter-check{ font-size:.82rem; }
+
+/* The disclosure chevron, on categories that have subcategories.
+
+   Sized in em so it tracks the row's own text, and given a fixed 14px box so a
+   row WITH a chevron and one without still align their counts. It points down
+   when collapsed and up when the category is selected — the direction says
+   which way the list is about to move, which is the only thing a chevron is
+   actually good at communicating.
+
+   A sub-row never gets one: there is no third level to disclose, and an icon
+   that expands nothing is worse than no icon. */
+.filter-check .filter-chev{ width:14px; height:14px; flex-shrink:0; color:var(--text-mute); transition:transform var(--dur) var(--ease), color var(--dur); }
+.filter-check:hover .filter-chev{ color:var(--ink); }
+.filter-check.active .filter-chev{ transform:rotate(180deg); color:var(--oxblood); }
+.filter-subs .filter-check .filter-chev{ display:none; }
+/* Reserves its space without being seen — see the note in renderShopFilterSidebar. */
+.filter-check .filter-chev.is-placeholder{ visibility:hidden; }
+@media (prefers-reduced-motion:reduce){ .filter-check .filter-chev{ transition:none; } }
 .mega a.mega-link.is-parent{ font-weight:600; color:var(--ink); padding-bottom:3px; }
 .mega .mega-subs{ display:flex; flex-direction:column; padding-left:12px; border-left:1px solid var(--line); margin:2px 0 4px; }
 .mega a.mega-sublink{ display:block; padding:4px 0; font-size:.79rem; color:var(--text-mute); transition:color var(--dur), transform var(--dur); }
@@ -1589,6 +1611,25 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
   .wait-step-spin{ animation:none; border-top-color:var(--oxblood); }
 }
 .wait-body{ margin-top:14px; min-height:150px; }
+
+/* THE FOOTER MUST ALWAYS BE REACHABLE.
+
+   Measured at 360x640 — an ordinary Android phone — the suggestion phase pushed
+   the Cancel button below the fold. The customer was shown product cards and no
+   visible way out of a screen they cannot dismiss any other way.
+
+   Structural rather than per-phase: the box is a column, the BODY scrolls, and
+   the head and foot stay put. That holds for every phase, including any added
+   later, instead of being re-tuned each time the copy changes length. */
+#waitModal .modal-box{ display:flex; flex-direction:column; max-height:92vh; }
+#waitModal .wait-body{ overflow-y:auto; min-height:0; flex:1 1 auto; }
+#waitModal .wait-head, #waitModal .wait-progress, #waitModal .wait-foot{ flex:0 0 auto; }
+
+/* 44px is the floor Apple's HIG and WCAG 2.5.8 both settle on, and these were
+   39. On the one screen where a mistap means abandoning a payment, the targets
+   should be comfortable rather than merely legal. */
+#waitModal .btn{ min-height:44px; }
+#waitModal .wait-actions .btn{ min-height:44px; }
 .wait-suggest-title{ font-size:.79rem; text-transform:uppercase; letter-spacing:.09em; color:var(--oxblood); font-weight:700; margin:0 0 4px; }
 .wait-suggest-sub{ font-size:.85rem; color:var(--text); margin:0 0 14px; line-height:1.5; }
 .wait-items{ display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:12px; }
@@ -3872,7 +3913,7 @@ async function apiFetch(path, opts){
   const background = opts.background === true;
   const timeoutMs = background ? 75000 : 30000;
 
-  if(!background) beginApiWait();
+  if(!background) beginApiWait(path);
   try{
     let res = null, networkError = null;
     for(let i = 0; i < attempts; i++){
@@ -3882,6 +3923,9 @@ async function apiFetch(path, opts){
         const timer = setTimeout(function(){ controller.abort(); }, timeoutMs);
         try{
           res = await fetch(API_BASE + path, Object.assign({}, opts, { headers, credentials: 'include', signal: controller.signal }));
+        // Any response at all — including a 500 — proves the process is awake
+        // and serving. See noteBackendResponded.
+        noteBackendResponded();
         } finally { clearTimeout(timer); }
         break;
       }catch(e){
@@ -5103,7 +5147,7 @@ function injectProductJsonLd(product, detail){
     name: product.name,
     description: shortDesc.slice(0, 500),
     sku: product.sku || undefined,
-    category: product.cat ? catLabel(product.cat) : undefined,
+    category: product.cat ? catPath(product) : undefined,
     image: images.filter(function(u){ return typeof u === 'string' && /^https?:\/\//.test(u); }),
     offers: {
       '@type': 'Offer',
@@ -5241,6 +5285,16 @@ function navigateTo(pageId, opts){
   if(pageId === 'checkout') renderCheckoutPage();
   if(pageId === 'puja') renderPujaPage();
   if(pageId === 'astrology') renderAstroPage();
+
+  /* Start (or stop) keeping the backend known-awake.
+
+     These four pages are the ones that END in a payment, and they are also the
+     ones where the customer spends a minute or more typing without making a
+     single request — which is exactly how the readiness cache goes stale and
+     buys them a 0.65-2.1s probe at the moment they tap Pay. Keeping it fresh
+     here moves that cost off the tap entirely. Every other page stops the
+     heartbeat, so it never runs where it is not needed. */
+  keepBackendWarm(pageId === 'checkout' || pageId === 'cart' || pageId === 'puja' || pageId === 'astrology');
   if(pageId === 'blog') renderBlogGrid();
   if(pageId === 'orders') renderOrdersPage();
   if(pageId === 'product'){
@@ -5562,7 +5616,7 @@ function productCardHTML(p, idx){
       quickAddHTML(p) +
     '</a>' +
     '<div class="p-body">' +
-      '<div class="p-cat">' + catLabel(p.cat) + '</div>' +
+      '<div class="p-cat">' + escapeHtml(catPath(p)) + '</div>' +
       '<a class="p-name" href="' + productHref(p) + '" onclick="openProduct(\'' + p.id + '\'); return false;">' + escapeHtml(p.name) + '</a>' +
       '<div class="p-rating">' + ratingBlockHTML(p.rating, p.reviews) + '</div>' +
       // Material instead of shortDesc here: shortDesc falls back to the
@@ -6370,7 +6424,7 @@ function openQuickView(id){
   const html =
     '<div class="qv-media" style="' + mediaStyle(p.cat,0) + '">' + productThumbInnerHTML(p) + '</div>' +
     '<div class="qv-info">' +
-      '<div class="p-cat">' + catLabel(p.cat) + '</div>' +
+      '<div class="p-cat">' + escapeHtml(catPath(p)) + '</div>' +
       '<h3 style="margin-bottom:10px;">' + escapeHtml(p.name) + '</h3>' +
       '<div class="p-rating" style="margin-bottom:14px;">' + ratingBlockHTML(p.rating, p.reviews) + '</div>' +
       '<div class="pd-price" style="margin-bottom:14px;"><span class="now" style="font-size:1.5rem;">' + formatINR(p.price) + '</span>' + wasHTML + '</div>' +
@@ -6479,15 +6533,71 @@ async function handleDemoAuth(e){
 function renderShopFilterSidebar(){
   const catCounts = {};
   PRODUCTS.forEach(function(p){ catCounts[p.cat] = (catCounts[p.cat]||0)+1; });
-  let catHTML = '<label class="filter-check ' + (shopFilters.cat==='all'?'active':'') + '"><input aria-label="catf" type="radio" name="catf" ' + (shopFilters.cat==='all'?'checked':'') + ' onchange="setCategoryFilter(\'all\')"><span class="n">All Products</span><span class="c">' + PRODUCTS.length + '</span></label>';
+  /* "All Products" is built here rather than in the loop below, so it needs the
+     placeholder chevron explicitly. Without it this one row's count sat 24px to
+     the right of every other row — the exact misalignment the placeholder was
+     added to prevent, reintroduced by the single row that skips the loop. */
+  const chevSpacer = '<svg class="filter-chev is-placeholder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true" focusable="false"><path d="M6 9l6 6 6-6"/></svg>';
+  let catHTML = '<label class="filter-check ' + (shopFilters.cat==='all'?'active':'') + '"><input aria-label="catf" type="radio" name="catf" ' + (shopFilters.cat==='all'?'checked':'') + ' onchange="setCategoryFilter(\'all\')"><span class="n">All Products</span><span class="c">' + PRODUCTS.length + '</span>' + chevSpacer + '</label>';
   // Union of the known starter categories (shown even at zero count, for
   // merchandising) and any category actually present in the real catalog —
   // previously this only ever iterated the fixed CAT_LABELS keys, so a new
   // category typed into the admin product form could never be filtered by by customers.
   const allCatKeys = Object.keys(Object.assign({}, CAT_LABELS, catCounts));
   allCatKeys.sort(function(a,b){ return catLabel(a).localeCompare(catLabel(b)); });
+  /* Counted before the category loop runs, because the loop now needs to know
+     whether a category has children in order to decide on its chevron.
+
+     Subcategories are nested under their parent here as well as in the
+     dropdown. The mega-menu is a HOVER surface and does not exist on a phone,
+     so the sidebar is the only way a mobile customer can reach a subcategory at
+     all — shipping the menu alone left the feature unreachable for them.
+
+     Counted from the real catalog, and only rendered under the category the
+     customer has actually selected: listing every subcategory of every category
+     at once would be a wall of checkboxes on a catalog of any size. */
+  const subCounts = {};
+  PRODUCTS.forEach(function(p){
+    if(!p.cat || !p.subcat) return;
+    if(!subCounts[p.cat]) subCounts[p.cat] = {};
+    subCounts[p.cat][p.subcat] = (subCounts[p.cat][p.subcat] || 0) + 1;
+  });
   allCatKeys.forEach(function(key){
-    catHTML += '<label class="filter-check ' + (shopFilters.cat===key?'active':'') + '"><input aria-label="catf" type="radio" name="catf" ' + (shopFilters.cat===key?'checked':'') + ' onchange="setCategoryFilter(\'' + key + '\')"><span class="n">' + catLabel(key) + '</span><span class="c">' + (catCounts[key]||0) + '</span></label>';
+    /* A chevron ONLY on a category that actually has subcategories.
+
+       Without it there is no way to tell a category that expands from one that
+       does not until you have already clicked it and changed what the grid is
+       showing — the customer has to commit to a filter just to find out whether
+       there was anything to find. That is the whole reason this affordance
+       exists, and it is why the icon is conditional rather than decorative: a
+       chevron on a category with nothing under it would be a promise the UI
+       cannot keep.
+
+       It rotates when the category is selected, because selecting it is what
+       reveals the list. aria-hidden: the radio already carries the semantics
+       and the label already carries the name, so announcing a decorative
+       triangle would only add noise for a screen-reader user. */
+    const hasSubs = Object.keys(subCounts[key] || {}).length > 0;
+    /* A row WITHOUT subcategories still renders the same icon, hidden with
+       visibility rather than omitted. Omitting it made the counts on plain rows
+       sit 24px further right than the counts on rows with a chevron, and
+       compensating with a margin would have hard-coded the icon width and the
+       flex gap in a second place — two constants to keep in step for a purely
+       visual result. An invisible placeholder keeps every row the same shape by
+       construction, so the columns cannot drift apart again. */
+    const chevron = '<svg class="filter-chev' + (hasSubs ? '' : ' is-placeholder') +
+      '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 9l6 6 6-6"/></svg>';
+    catHTML += '<label class="filter-check ' + (shopFilters.cat===key?'active':'') + (hasSubs?' has-subs':'') + '"><input aria-label="catf" type="radio" name="catf" ' + (shopFilters.cat===key?'checked':'') + ' onchange="setCategoryFilter(' + jsAttr(key) + ')"><span class="n">' + escapeHtml(catLabel(key)) + '</span><span class="c">' + (catCounts[key]||0) + '</span>' + chevron + '</label>';
+    if(shopFilters.cat !== key) return;
+    const subs = Object.keys(subCounts[key] || {}).sort(function(a,b){ return catLabel(a).localeCompare(catLabel(b)); });
+    if(!subs.length) return;
+    catHTML += '<div class="filter-subs">';
+    // "All <category>" clears the refinement without leaving the category.
+    catHTML += '<label class="filter-check ' + (!shopFilters.subcat?'active':'') + '"><input aria-label="subcatf" type="radio" name="subcatf" ' + (!shopFilters.subcat?'checked':'') + ' onchange="setSubcategoryFilter(' + jsAttr(key) + ', \'\')"><span class="n">All ' + escapeHtml(catLabel(key)) + '</span><span class="c">' + (catCounts[key]||0) + '</span></label>';
+    subs.forEach(function(sk){
+      catHTML += '<label class="filter-check ' + (shopFilters.subcat===sk?'active':'') + '"><input aria-label="subcatf" type="radio" name="subcatf" ' + (shopFilters.subcat===sk?'checked':'') + ' onchange="setSubcategoryFilter(' + jsAttr(key) + ', ' + jsAttr(sk) + ')"><span class="n">' + escapeHtml(catLabel(sk)) + '</span><span class="c">' + subCounts[key][sk] + '</span></label>';
+    });
+    catHTML += '</div>';
   });
   qs('#filterCategoryList').innerHTML = catHTML;
 
@@ -6510,13 +6620,20 @@ function setCategoryFilter(cat){
   // filter ("books" + "rudraksha") and an empty grid with nothing on screen to
   // explain it.
   if(cat !== shopFilters.cat) shopFilters.subcat = '';
-  shopFilters.cat = cat; shopFilters.page = 1; renderShopGrid();
+  shopFilters.cat = cat; shopFilters.page = 1;
+  // Selecting a category reveals (or hides) its subcategory list.
+  renderShopFilterSidebar();
+  renderShopGrid();
 }
 
 function setSubcategoryFilter(cat, subcat){
   shopFilters.cat = cat || 'all';
   shopFilters.subcat = subcat || '';
   shopFilters.page = 1;
+  // The sidebar itself changes shape here — the subcategory list only exists
+  // under the SELECTED category — so re-rendering the grid alone would leave
+  // the radio the customer just clicked showing the wrong state.
+  renderShopFilterSidebar();
   renderShopGrid();
 }
 function setRatingFilter(r){ shopFilters.minRating = r; shopFilters.page = 1; renderShopGrid(); }
@@ -6548,7 +6665,9 @@ function getFilteredSortedProducts(){
     if(shopFilters.inStockOnly && !p.stock) return false;
     if(shopFilters.search){
       const s = shopFilters.search.toLowerCase();
-      if(p.name.toLowerCase().indexOf(s) === -1 && p.shortDesc.toLowerCase().indexOf(s) === -1 && catLabel(p.cat).toLowerCase().indexOf(s) === -1) return false;
+      // catPath, not catLabel: a customer typing "scripture" should find the
+      // products in books/scripture, and the subcategory was invisible to search.
+      if(p.name.toLowerCase().indexOf(s) === -1 && p.shortDesc.toLowerCase().indexOf(s) === -1 && catPath(p).toLowerCase().indexOf(s) === -1) return false;
     }
     return true;
   });
@@ -7503,9 +7622,15 @@ async function revalidateCouponNow(){
     appliedCoupon = { code: res.code, discountPaise: res.discountPaise, description: res.description };
     refreshCartAndCheckoutViews();
   }catch(err){
-    // Asleep, offline, or any other transport problem: keep exactly what we
-    // have. Never punish the customer for our server being cold.
-    if(isTransportFailure(err)) return;
+    /* Only a JUDGEMENT may remove a coupon.
+
+       TRANSPORT — asleep or offline. We know nothing; keep what we have.
+       SERVER    — our 500. Measured: this used to clear a perfectly valid
+                   coupon, so our own outage silently took the customer's
+                   discount away. Their money, our bug: keep what we have.
+       JUDGEMENT — a 4xx. The server is working and has told us the coupon no
+                   longer applies to this cart. Honour it, and say why. */
+    if(classifyFailure(err) !== FAILURE_JUDGEMENT) return;
     if(!appliedCoupon || appliedCoupon.code !== code) return;
     appliedCoupon = null;
     refreshCartAndCheckoutViews();
@@ -7887,8 +8012,35 @@ async function placeOrderNow(){
           updateCartUI();
           window.scrollTo({ top:0 });
         }catch(err){
-          console.error('Payment verification failed', err);
-          toast((err && err.error) ? err.error : 'Payment verification failed', 'err');
+          /* THE MOST IMPORTANT MESSAGE ON THE SITE.
+
+             Razorpay has ALREADY taken the money by the time this runs — the
+             handler only fires on a successful payment. What failed is our
+             confirmation of it, after three retries.
+
+             The old line was "Payment verification failed", which a customer
+             reads as "my payment failed". It is false, it invites a second
+             attempt at paying, and it invites a chargeback. The order is not
+             lost: the Razorpay webhook and the reconciliation sweep both
+             confirm it server-side without us.
+
+             A signature or ownership rejection is different — that is a real
+             refusal, not a delivery problem — so it keeps the server's own
+             wording. */
+          console.error('Payment confirmation could not be completed in the browser', err);
+          const refused = err && err.error && /signature|does not belong/i.test(err.error);
+          if(refused){
+            toast(err.error, 'err');
+          } else {
+            const ref = (response && response.razorpay_payment_id) ? (' Reference: ' + response.razorpay_payment_id + '.') : '';
+            showCheckoutSuccess(body.orderNumber, { pending: true });
+            toast('Your payment went through. We could not confirm it on this screen, but it is recorded and your order will be confirmed by email shortly.' + ref, 'ok');
+            cart = [];
+            appliedCoupon = null;
+            saveCart();
+            updateCartUI();
+            window.scrollTo({ top:0 });
+          }
         }
       },
       modal: { ondismiss: function(){ qs('#checkoutProcessing').style.display = 'none'; qs('#checkoutLayout').style.display = ''; } }
@@ -8815,6 +8967,9 @@ function probeBackend(){
       const timer = setTimeout(function(){ controller.abort(); }, BACKEND_PROBE_TIMEOUT_MS);
       try{
         const res = await fetch(API_BASE + '/api/ready', { cache:'no-store', signal: controller.signal });
+        // Even a 500 from this route means the process answered. Recording it
+        // is what stops one unhealthy endpoint from looking like a cold boot.
+        noteBackendResponded();
         // 503 means the process answered but the database has not resumed yet.
         // That is NOT ready — an order written now would fail — but it does
         // mean the knock landed and Neon is waking.
@@ -8826,6 +8981,64 @@ function probeBackend(){
   })();
   return backendReady.inFlight;
 }
+
+/* KEEPING THE BACKEND KNOWN-AWAKE WHILE THE CUSTOMER IS ABOUT TO PAY.
+
+   THE DELAY THIS REMOVES, measured against the live API: /api/ready takes
+   0.65-2.1 seconds on a fully warm backend. runWithBackendReady probes it
+   before every money action whose readiness has gone stale, so the customer
+   tapped "Place Order" and got up to two seconds of nothing before the order
+   even began.
+
+   And it went stale on essentially every real checkout. markBackendAwake()
+   refreshes on each successful request, the TTL is 45 seconds, and filling in a
+   delivery address makes NO requests at all — so a customer typing their
+   address for a minute always paid for that probe.
+
+   The fix is to stop probing at the moment of the tap and start keeping the
+   answer fresh while they are on a page that leads to one. The probe still runs
+   — it is simply no longer in front of the customer.
+
+   Deliberately narrow:
+     - only while a checkout or booking page is actually on screen;
+     - never while the tab is hidden, so it costs a backgrounded phone nothing;
+     - it shares probeBackend()'s in-flight promise, so a heartbeat landing at
+       the same moment as a real action is one request, not two;
+     - a failure changes nothing. If the backend is cold this returns false, the
+       readiness cache stays stale, and the waiting screen appears on tap
+       exactly as it does today. This can make the warm path faster; it cannot
+       make the cold path worse. */
+const BACKEND_WARM_PING_MS = 30000;   // comfortably inside BACKEND_READY_TTL_MS
+let backendWarmTimer = null;
+let backendWarmWanted = false;
+
+function warmBackendNow(){
+  if(!backendWarmWanted) return;
+  if(document.hidden) return;
+  if(isBackendKnownAwake()) return;   // still fresh; nothing to do
+  probeBackend();
+}
+
+function keepBackendWarm(on){
+  backendWarmWanted = !!on;
+  if(backendWarmTimer){ clearInterval(backendWarmTimer); backendWarmTimer = null; }
+  if(!on) return;
+  warmBackendNow();                                   // cover a fast form-filler
+  backendWarmTimer = setInterval(warmBackendNow, BACKEND_WARM_PING_MS);
+}
+
+/* Returning to the tab is the moment that matters most.
+
+   The heartbeat deliberately does nothing while the tab is hidden — a phone in
+   a pocket should not be pinging a server. But a customer who leaves checkout
+   open in a background tab, comes back, and taps Pay would then hit a stale
+   readiness cache and the very probe this exists to remove, because the next
+   tick could be up to 30 seconds away. Prewarming the instant the tab becomes
+   visible closes that window, and costs nothing on any other page: the guard
+   inside warmBackendNow returns immediately unless a money page asked for it. */
+document.addEventListener('visibilitychange', function(){
+  if(!document.hidden) warmBackendNow();
+});
 
 /* Resolves true once the backend AND database are confirmed up, or false if
    they are still not up after maxMs. onTick reports each attempt so a waiting
@@ -8842,6 +9055,10 @@ async function ensureBackendAwake(opts){
     attempt++;
     if(typeof opts.onTick === 'function') opts.onTick(attempt, Date.now() - (deadline - maxMs));
     if(await probeBackend()) return true;
+    // Something else may have answered while we polled — a catalog refresh, an
+    // outbox flush. That is proof enough; do not keep the customer waiting on
+    // one unhealthy endpoint.
+    if(isBackendServing()) return true;
     if(opts.cancelled && opts.cancelled()) return false;
     // Steady 2s. Not exponential: a cold Render boot is 30-60s of nothing
     // followed by a sudden yes, so backing off only delays noticing the yes.
@@ -8969,6 +9186,58 @@ async function queuedPost(path, payload, opts){
 /* apiFetch throws a plain { error } object for a transport failure and the
    server's own JSON body for anything it actually answered. That difference is
    what separates "try again later" from "this was refused". */
+/* ---------------------------------------------------------------------------
+   PARTIAL OUTAGE HANDLING — WHO FAILED DECIDES WHAT WE MAY DO ABOUT IT
+   ---------------------------------------------------------------------------
+   The backend is not one thing that is either up or down. Any single route can
+   fail while the rest serve perfectly: a bad deploy of one router, an exhausted
+   pool on one query, a third party one endpoint depends on. Treating every
+   failure identically is what turns one broken route into a shop that cannot
+   sell.
+
+   Three genuinely different situations, and they call for opposite responses:
+
+     TRANSPORT   nothing answered. We know nothing. Change nothing, keep what we
+                 have, and let the retry paths do their work.
+     SERVER      it answered, and it is broken (5xx). That is OUR fault, and the
+                 customer must never be charged, downgraded or stripped of a
+                 discount because of it. Keep the status quo, say so honestly.
+     JUDGEMENT   it answered with a decision (4xx). "This coupon is expired",
+                 "that address is not yours". The server is working and has told
+                 us something true. Honour it.
+
+   The distinction between SERVER and JUDGEMENT is the one that matters most and
+   is easiest to miss: both arrive as a rejected promise with a status. Treating
+   a 500 like a 400 is how our own outage silently takes a customer's discount
+   away — which is exactly what it did before this existed. */
+const FAILURE_TRANSPORT = 'transport';
+const FAILURE_SERVER    = 'server';
+const FAILURE_JUDGEMENT = 'judgement';
+
+function classifyFailure(err){
+  if(isTransportFailure(err)) return FAILURE_TRANSPORT;
+  const status = Number((err && (err.status || err.statusCode)) || 0);
+  if(status >= 500) return FAILURE_SERVER;
+  if(status >= 400) return FAILURE_JUDGEMENT;
+  // A rejection with no status that is not a transport failure is a client-side
+  // bug. Treat it as SERVER: the safe direction is to change nothing.
+  return FAILURE_SERVER;
+}
+
+/* EVIDENCE THAT THE PROCESS IS SERVING, from any source at all.
+
+   Recorded on every HTTP response we receive, whatever its status — a 500 is a
+   terrible answer but it is still proof that something is listening and awake.
+   This is the bulkhead: it lets a feature that depends on the backend BEING UP
+   stop depending on one particular endpoint being healthy. */
+let backendEvidence = { lastResponseAt: 0 };
+const BACKEND_SERVING_TTL_MS = 60000;
+
+function noteBackendResponded(){ backendEvidence.lastResponseAt = Date.now(); }
+function isBackendServing(){
+  return (Date.now() - backendEvidence.lastResponseAt) < BACKEND_SERVING_TTL_MS;
+}
+
 function isTransportFailure(err){
   if(!err) return true;
   // The explicit flag set by apiFetch. Authoritative, and immune to copy edits.
@@ -9999,6 +10268,26 @@ async function runWithBackendReady(intent, context){
   // someone who never needed to wait is its own kind of broken.
   if(await probeBackend()) return intent();
 
+  /* THE BULKHEAD.
+
+     The probe said no. That is not the same as "the backend is down": it is one
+     endpoint's opinion. If something else answered in the last minute, the
+     process is demonstrably serving and only /api/ready is unhealthy.
+
+     Measured before this existed: with /api/ready failing and payments, catalog
+     and auth all perfectly healthy, the checkout was refused outright and the
+     customer was shown a service-interruption panel. One broken route took the
+     whole shop's revenue with it.
+
+     This gate exists to spare somebody a 60-second hang on a cold boot. It is
+     NOT an authorisation check, and it must not behave like one — the order
+     request itself is the authoritative test, and it has its own error handling
+     for every way it can fail. So when the evidence is ambiguous, it opens.
+
+     A genuine cold start is unaffected: nothing has answered, isBackendServing()
+     is false, and the waiting screen appears exactly as before. */
+  if(isBackendServing()) return intent();
+
   openWaitingExperience(context);
   /* What the failure panel's "Try again" runs. It re-enters withBackendReady
      rather than calling intent() directly, so the in-flight guard, the warm
@@ -10290,12 +10579,59 @@ function hideWakingNotice(){
   if(el && el.parentNode) el.parentNode.removeChild(el);
 }
 
-function beginApiWait(){
+/* WHAT THE WAIT IS FOR.
+
+   beginApiWait() fires from apiFetch for EVERY foreground request, and it used
+   to show one line for all of them: "Just a moment — bringing you the latest
+   prices." That is true while a catalog loads and wrong everywhere else — it
+   was shown to someone signing in, applying a coupon, sending a contact
+   message, posting a review and confirming a puja booking. Copy that does not
+   match what the customer just did reads as a page talking to itself.
+
+   Longest prefix wins, so a specific path beats a general one. The second line
+   is the escalation shown if it is still going at 15s; it stays reassuring
+   rather than describing the work again, because by then the customer knows
+   what they asked for and wants to know they have not been forgotten. */
+const API_WAIT_COPY = [
+  ['/api/payments/verify',        'Confirming your payment…',            'Please do not close this page — we are confirming your payment.'],
+  ['/api/payments/',              'Securing your payment…',              'Almost there — setting up your secure checkout.'],
+  ['/api/bookings/verify-payment','Confirming your booking payment…',    'Please do not close this page — we are confirming your payment.'],
+  ['/api/bookings/',              'Confirming your booking…',            'Almost there — holding your slot.'],
+  ['/api/addresses',              'Saving your delivery address…',       'Almost there — thank you for your patience.'],
+  ['/api/coupons/',               'Checking your coupon…',               'Still checking that coupon — one moment.'],
+  ['/api/auth/login',             'Signing you in…',                     'Almost there — thank you for your patience.'],
+  ['/api/auth/register',          'Creating your account…',              'Almost there — thank you for your patience.'],
+  ['/api/auth/reset-password',    'Setting your new password…',          'Almost there — thank you for your patience.'],
+  ['/api/auth/forgot-password',   'Sending your reset link…',            'Almost there — thank you for your patience.'],
+  ['/api/auth/',                  'One moment…',                         'Almost there — thank you for your patience.'],
+  ['/api/customer/me/data-export','Gathering your data…',                'Still gathering everything we hold — this can take a moment.'],
+  ['/api/customer/orders',        'Fetching your orders…',               'Almost there — thank you for your patience.'],
+  ['/api/customer/bookings',      'Fetching your bookings…',             'Almost there — thank you for your patience.'],
+  ['/api/engage/',                'Sending…',                            'Almost there — thank you for your patience.'],
+  ['/api/products',               'Bringing you the latest prices…',     'Almost there — thank you for your patience.'],
+  ['/api/booking-services',       'Loading available services…',         'Almost there — thank you for your patience.']
+];
+
+function apiWaitCopy(path){
+  const p = String(path || '');
+  let best = null;
+  for(let i = 0; i < API_WAIT_COPY.length; i++){
+    const row = API_WAIT_COPY[i];
+    if(p.indexOf(row[0]) === 0 && (!best || row[0].length > best[0].length)) best = row;
+  }
+  // A path with no entry gets something true and neutral rather than a guess.
+  return best || ['One moment…', 'Almost there — thank you for your patience.'];
+}
+
+function beginApiWait(path){
   apiWaitDepth++;
   if(wakingTimers.length) return;
+  const copy = apiWaitCopy(path);
+  const first = copy.length === 3 ? copy[1] : copy[0];
+  const second = copy.length === 3 ? copy[2] : copy[1];
   wakingTimers.push(
-    setTimeout(function(){ showWakingNotice('Just a moment — bringing you the latest prices.'); }, 4000),
-    setTimeout(function(){ showWakingNotice('Almost there — thank you for your patience.'); }, 15000)
+    setTimeout(function(){ showWakingNotice(first); }, 4000),
+    setTimeout(function(){ showWakingNotice(second); }, 15000)
   );
 }
 

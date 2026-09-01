@@ -91,6 +91,10 @@ const harness = `<!doctype html><html><body><div id="grid"></div><script>
   function badgeInfo(b){ return { cssClass:'badge-x', text:String(b) }; }
   function discountTagHTML(){ return ''; }
   function catLabel(c){ return c; }
+  // Added when productCardHTML started showing the full category path. A card
+  // that throws renders nothing, and the symptom was a 30-second timeout on a
+  // button that never existed — see the render guard below.
+  function catPath(p){ return p && p.subcat ? (catLabel(p.cat)+'/'+catLabel(p.subcat)) : catLabel(p && p.cat); }
   function starsHTML(){ return '<span class="stars"></span>'; }
   function formatINR(n){ return '\\u20b9'+n; }
   function cartQtyForProduct(){ return 0; }
@@ -114,7 +118,18 @@ const harness = `<!doctype html><html><body><div id="grid"></div><script>
 
   const product = { id:'p1', slug:'sphatik-shivling', name:'Sphatik Shivling', cat:'lingam',
                     price:1299, mrp:1799, badge:null, stock:true, rating:4.5, reviews:12, material:'Quartz' };
-  document.getElementById('grid').innerHTML = productCardHTML(product, 0);
+  /* Render inside a try so a missing dependency reports ITSELF.
+
+     productCardHTML is extracted from index.html and run against the stubs
+     above. When it gains a new dependency that is not stubbed here, it throws,
+     the grid stays empty, and every locator below times out after 30 seconds
+     with no hint as to why — which is exactly what happened when the card
+     started calling catPath(). One line turns that into the function name. */
+  try {
+    document.getElementById('grid').innerHTML = productCardHTML(product, 0);
+  } catch (err) {
+    document.getElementById('grid').setAttribute('data-render-error', String(err && err.message || err));
+  }
 </script></body></html>`;
 
 (async () => {
@@ -139,6 +154,16 @@ const harness = `<!doctype html><html><body><div id="grid"></div><script>
   const page = await browser.newPage();
   await page.route('**/*', (r) => r.fulfill({ contentType: 'text/html', body: harness }));
   await page.goto('https://shop.test/');
+
+  // Fail on a render error immediately, with the missing name, rather than
+  // letting three click locators time out one after another.
+  const renderError = await page.getAttribute('#grid', 'data-render-error');
+  if (renderError) {
+    console.error('\n[browser-cards] FAILED: the card could not render — ' + renderError);
+    console.error('  productCardHTML has a dependency that this harness does not stub.\n');
+    await browser.close();
+    process.exit(1);
+  }
 
   const results = [];
   for (const [label, sel] of [

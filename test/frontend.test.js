@@ -1035,12 +1035,23 @@ section('[fe-18] The wait before a payment is spent well, and never loses the in
   test('an already-awake backend adds no delay at all', () => {
     // The fast path lives in runWithBackendReady; withBackendReady is now the
     // re-entrancy guard that wraps it.
-    const fn = html.slice(html.indexOf('async function runWithBackendReady'), html.indexOf('async function runWithBackendReady') + 900);
+    // Brace-matched, not a fixed 900-character window: that window stopped
+    // reaching openWaitingExperience the moment a comment was added between
+    // them, and the test failed for a reason that had nothing to do with the
+    // behaviour it guards.
+    const start = html.indexOf('async function runWithBackendReady');
+    let depth = 0, end = start;
+    for (let k = html.indexOf('{', start); k < html.length; k++) {
+      if (html[k] === '{') depth++;
+      else if (html[k] === '}') { depth--; if (!depth) { end = k + 1; break; } }
+    }
+    const fn = html.slice(start, end);
     assert.match(fn, /if\(isBackendKnownAwake\(\)\) return intent\(\);/,
       'the fast path must return before anything is rendered');
     const openAt = fn.indexOf('openWaitingExperience');
     const fastAt = fn.indexOf('isBackendKnownAwake');
-    assert.ok(fastAt > -1 && fastAt < openAt, 'the waiting screen must not be reachable when the backend is already up');
+    assert.ok(fastAt > -1 && openAt > -1 && fastAt < openAt,
+      'the waiting screen must not be reachable when the backend is already up');
   });
 
   test('THE RULE THAT MATTERS: the cart is read when the order runs, not when it was requested', () => {
@@ -2128,13 +2139,17 @@ section('[fe-29] The screen a customer is reading cannot go stale under them');
     // Re-asking is right; clearing a valid coupon because the API was cold
     // would be a far worse bug than a briefly stale discount.
     const fn = strip(grab('revalidateCouponNow'));
-    assert.match(fn, /if\(isTransportFailure\(err\)\) return;/,
-      'a transport failure must change nothing at all');
+    // This guard got STRONGER. It used to keep the coupon only on a transport
+    // failure, which meant our own 500 still took the customer's discount away.
+    // Now only a JUDGEMENT — a 4xx, a real decision about the coupon — may
+    // remove it; transport and server faults both change nothing. See [fe-38].
+    assert.match(fn, /if\(classifyFailure\(err\) !== FAILURE_JUDGEMENT\) return;/,
+      'a transport failure, and our own 5xx, must both change nothing at all');
     const catchBlock = fn.slice(fn.indexOf('catch'));
-    const transportAt = catchBlock.indexOf('isTransportFailure');
+    const guardAt = catchBlock.indexOf('classifyFailure');
     const clearAt = catchBlock.indexOf('appliedCoupon = null');
-    assert.ok(transportAt > -1 && clearAt > transportAt,
-      'the transport check must come BEFORE the clear, or a cold start drops a valid coupon');
+    assert.ok(guardAt > -1 && clearAt > guardAt,
+      'the classification must come BEFORE the clear, or a cold start or our own outage drops a valid coupon');
     // The customer can remove or swap the coupon while the request is in flight.
     assert.ok((fn.match(/appliedCoupon\.code !== code/g) || []).length >= 2,
       'both the success and failure paths must re-check the code before acting on a stale reply');
@@ -2968,6 +2983,352 @@ section('[fe-35] Subcategories, end to end');
     assert.strictEqual(path({ cat: 'books', subcat: '' }), 'BOOKS', "and '' is the same as absent");
     assert.strictEqual(path({ cat: 'books', subcat: 'scripture' }), 'BOOKS/SCRIPTURE');
     assert.strictEqual(path(null), 'Uncategorized', 'and nothing at all still reads as a word');
+  });
+}
+
+// ============================================================
+section('[fe-36] A feature that is built but never reached does not exist');
+// ============================================================
+{
+  test('THE ORPHAN CLASS: no function is defined and then never mentioned again', () => {
+    // catPath() was written, tested, documented — and called from NOWHERE. The
+    // subcategory therefore reached the mega-menu and no other surface: not the
+    // product card, not the shop sidebar, not search, not the storefront
+    // JSON-LD. Every test passed, because every test checked the function
+    // rather than its reach.
+    //
+    // Counts EVERY mention, not just `name(`: a function passed by reference
+    // (withBackendReady(confirmPujaBookingNow, …), .map(waitItemHTML)) is used,
+    // and counting only call syntax reports a dozen live functions as dead.
+    const KNOWN_DEAD = {
+      // Pre-existing, deliberately kept, and NOT what this test is hunting.
+      saveOrders: 'orders come from the API now; the writer is vestigial',
+      setCartQty: 'no UI calls it today, but it is a public quantity entry point and is hardened like the others',
+      seededPick: 'vestigial helper from the demo-catalog era'
+    };
+    for (const file of ['index.html', 'admin.html']) {
+      const code = read(file).replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+      const defs = [...code.matchAll(/^(?:async )?function ([A-Za-z_$][\w$]*)\s*\(/gm)].map(m => m[1]);
+      assert.ok(defs.length > 50, file + ': the scan found only ' + defs.length + ' functions — the pattern has stopped matching');
+      // '\\b' — a word boundary. A single backslash here is a literal
+      // backspace character, which matches nothing and reports every function
+      // in the file as dead.
+      const orphans = defs.filter((n) => (code.match(new RegExp('\\b' + n + '\\b', 'g')) || []).length <= 1);
+      const unexpected = orphans.filter((n) => !KNOWN_DEAD[n]);
+      assert.deepStrictEqual(unexpected, [],
+        file + ': built but unreachable — ' + unexpected.join(', ') +
+        '. Either call it, or delete it. A function nothing reaches is a feature that silently does not exist.');
+    }
+  });
+
+  test('a subcategory reaches every surface a category reaches', () => {
+    // The specific instance of the above. These are all the places a category
+    // is shown to a customer; a subcategory has to appear in each or the
+    // feature is invisible wherever it was missed.
+    const html = read('index.html');
+    const code = html.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    const uses = (code.match(/catPath\(/g) || []).length;
+    assert.ok(uses >= 5, 'catPath is called ' + (uses - 1) + ' times outside its definition — it was ZERO, which is how the feature shipped invisible');
+    assert.match(code, /class="p-cat">' \+ escapeHtml\(catPath\(p\)\)/,
+      'the product card must show the full path');
+    assert.match(code, /category: product\.cat \? catPath\(product\)/,
+      'storefront JSON-LD must match the prerendered page, which already emits the path');
+    assert.match(code, /catPath\(p\)\.toLowerCase\(\)/,
+      'search must match on the subcategory too, or "scripture" finds nothing');
+    assert.match(code, /filter-subs/, 'the shop sidebar must offer subcategories');
+    assert.match(code, /setSubcategoryFilter\(' \+ jsAttr\(key\)/,
+      'and its options must be escaped like the menu\'s');
+  });
+
+  test('the sidebar re-renders when the selection changes shape', () => {
+    // The subcategory list only exists UNDER the selected category, so changing
+    // either filter changes the sidebar's shape. Re-rendering only the grid
+    // leaves the radio the customer just clicked showing the wrong state.
+    const html = read('index.html');
+    function grab(name) {
+      const i = html.indexOf('function ' + name + '(');
+      let d = 0; const s = html.indexOf('{', i);
+      for (let k = s; k < html.length; k++) {
+        if (html[k] === '{') d++;
+        else if (html[k] === '}') { d--; if (!d) return html.slice(i, k + 1); }
+      }
+    }
+    for (const fn of ['setCategoryFilter', 'setSubcategoryFilter']) {
+      assert.match(grab(fn), /renderShopFilterSidebar\(\)/, fn + ' must rebuild the sidebar, not only the grid');
+      assert.match(grab(fn), /renderShopGrid\(\)/, fn + ' must still rebuild the grid');
+    }
+  });
+}
+
+// ============================================================
+section('[fe-37] A warm backend must feel warm, and the copy must fit the moment');
+// ============================================================
+{
+  const html = read('index.html');
+  function grab(name) {
+    // '\\(' — an escaped literal paren. A single backslash makes it an
+    // unterminated group and every lookup throws.
+    const i = html.search(new RegExp('(async )?function ' + name + '\\('));
+    if (i < 0) throw new Error('missing ' + name);
+    let d = 0; const s = html.indexOf('{', i);
+    for (let k = s; k < html.length; k++) {
+      if (html[k] === '{') d++;
+      else if (html[k] === '}') { d--; if (!d) return html.slice(i, k + 1); }
+    }
+  }
+
+  test('THE DELAY: a warm tap never pays for a readiness probe', () => {
+    // Measured against the live API: /api/ready takes 0.65-2.1s on a fully warm
+    // backend, and runWithBackendReady probed it before every money action
+    // whose readiness had gone stale. It had ALWAYS gone stale on a real
+    // checkout: markBackendAwake refreshes per request, the TTL is 45s, and
+    // filling in a delivery address makes no requests at all. So the customer
+    // tapped Place Order and got up to two seconds of nothing.
+    assert.match(html, /function keepBackendWarm\(on\)/, 'the readiness must be kept fresh, not fetched on the tap');
+    assert.match(html, /keepBackendWarm\(pageId === 'checkout'/,
+      'it must start on the pages that end in a payment');
+    const warm = grab('warmBackendNow');
+    assert.match(warm, /if\(document\.hidden\) return;/,
+      'a phone in a pocket must not ping the server');
+    assert.match(warm, /if\(isBackendKnownAwake\(\)\) return;/,
+      'a fresh cache needs no probe — this must not become a timer that pings regardless');
+    assert.match(html, /addEventListener\('visibilitychange'/,
+      'returning to a backgrounded checkout tab is exactly when the cache is stale and the customer is about to pay');
+    // The interval has to stay inside the TTL or the cache lapses between ticks.
+    const ping = Number((html.match(/const BACKEND_WARM_PING_MS = (\d+);/) || [])[1]);
+    const ttl = Number((html.match(/const BACKEND_READY_TTL_MS = (\d+);/) || [])[1]);
+    assert.ok(ping > 0 && ping < ttl,
+      'the heartbeat is ' + ping + 'ms against a ' + ttl + 'ms TTL — it must tick before the cache expires');
+  });
+
+  test('the cold path is untouched by the warm-up', () => {
+    // This may make the warm path faster; it must not be able to make the cold
+    // path worse. A failed probe simply leaves the cache stale.
+    const run = grab('runWithBackendReady');
+    assert.match(run, /if\(isBackendKnownAwake\(\)\) return intent\(\);/,
+      'the known-awake shortcut must still be the first thing checked');
+    assert.match(run, /if\(await probeBackend\(\)\) return intent\(\);/,
+      'and the probe must still be there for a cache that IS stale');
+    assert.match(run, /openWaitingExperience\(context\)/, 'and the wait must still appear when it is genuinely cold');
+    assert.ok(!/keepBackendWarm/.test(run),
+      'the gate must not depend on the heartbeat — the heartbeat is an optimisation, not a prerequisite');
+  });
+
+  test('THE COPY: the waiting notice says what the customer actually asked for', () => {
+    // beginApiWait fires from apiFetch for EVERY foreground request and used to
+    // show one line for all of them: "bringing you the latest prices". That was
+    // shown to somebody signing in, applying a coupon, sending a contact
+    // message and confirming a puja booking.
+    const pick = new Function(
+      html.match(/const API_WAIT_COPY = \[[\s\S]*?\n\];/)[0] + '\n' +
+      grab('apiWaitCopy') + '; return apiWaitCopy;')();
+    const first = p => { const c = pick(p); return c.length === 3 ? c[1] : c[0]; };
+
+    assert.strictEqual(first('/api/payments/create-order'), 'Securing your payment…');
+    assert.strictEqual(first('/api/payments/verify'), 'Confirming your payment…',
+      'the longest matching prefix must win, or /api/payments/ swallows verify');
+    assert.strictEqual(first('/api/bookings/puja'), 'Confirming your booking…');
+    assert.strictEqual(first('/api/auth/login'), 'Signing you in…');
+    assert.strictEqual(first('/api/coupons/validate'), 'Checking your coupon…');
+    assert.strictEqual(first('/api/addresses'), 'Saving your delivery address…');
+    assert.strictEqual(first('/api/products?limit=100'), 'Bringing you the latest prices…',
+      'the original line was not wrong — it was wrong EVERYWHERE ELSE');
+    assert.strictEqual(first('/api/an/unmapped/path'), 'One moment…',
+      'an unmapped path must be neutral and true, never a guess about what is happening');
+
+    // The path has to actually reach it.
+    assert.match(html, /if\(!background\) beginApiWait\(path\);/,
+      'apiFetch must tell the notice which request it is waiting on');
+    assert.match(grab('beginApiWait'), /apiWaitCopy\(path\)/);
+
+    // Nothing may claim prices while money is moving.
+    for (const p of ['/api/payments/create-order', '/api/payments/verify', '/api/bookings/puja', '/api/auth/login']) {
+      assert.ok(!/prices/i.test(first(p)), p + ' still talks about prices');
+    }
+  });
+
+  test('a payment in flight tells the customer not to close the page', () => {
+    // The 15s escalation is the one place it matters most: a customer who
+    // closes the tab mid-verification can be charged with no order recorded.
+    const pick = new Function(
+      html.match(/const API_WAIT_COPY = \[[\s\S]*?\n\];/)[0] + '\n' +
+      grab('apiWaitCopy') + '; return apiWaitCopy;')();
+    for (const p of ['/api/payments/verify', '/api/bookings/verify-payment']) {
+      const c = pick(p);
+      assert.match(c[2], /do not close/i, p + ' must warn against closing the page');
+    }
+  });
+}
+
+// ============================================================
+section('[fe-38] Partial outage: one dead endpoint must not close the shop');
+// ============================================================
+// The backend is not one thing that is either up or down. Any single route can
+// fail while the rest serve perfectly: a bad deploy of one router, an exhausted
+// pool on one query, a third party one endpoint depends on. Treating every
+// failure identically is what turns one broken route into a shop that cannot
+// sell.
+{
+  const html = read('index.html');
+  function grab(name) {
+    const i = html.search(new RegExp('(async )?function ' + name + '\\('));
+    if (i < 0) throw new Error('missing ' + name);
+    let d = 0; const s = html.indexOf('{', i);
+    for (let k = s; k < html.length; k++) {
+      if (html[k] === '{') d++;
+      else if (html[k] === '}') { d--; if (!d) return html.slice(i, k + 1); }
+    }
+  }
+  const classify = new Function('isTransportFailure',
+    html.match(/const FAILURE_TRANSPORT[\s\S]*?const FAILURE_JUDGEMENT\s*=\s*'judgement';/)[0] + '\n' +
+    grab('classifyFailure') + '; return classifyFailure;')(
+      (e) => !!(e && e.transport === true));
+
+  test('THE CLASSIFIER: a 500 is our fault, a 4xx is a decision, silence is unknown', () => {
+    // Both a 500 and a 400 arrive as a rejected promise carrying a status.
+    // Treating them alike is how our own outage silently took a customer's
+    // discount away.
+    assert.strictEqual(classify({ transport: true }), 'transport');
+    assert.strictEqual(classify({ status: 500 }), 'server');
+    assert.strictEqual(classify({ status: 503 }), 'server');
+    assert.strictEqual(classify({ status: 400 }), 'judgement');
+    assert.strictEqual(classify({ status: 404 }), 'judgement');
+    assert.strictEqual(classify({ status: 409 }), 'judgement');
+    assert.strictEqual(classify({}), 'server',
+      'an unclassifiable rejection must default to the SAFE side, which is to change nothing');
+  });
+
+  test('THE BULKHEAD: one unhealthy endpoint cannot block the checkout', () => {
+    // Measured before this existed: with /api/ready failing and payments,
+    // catalog and auth all healthy, the checkout was refused outright and the
+    // customer got a service-interruption panel. One broken route took the
+    // whole shop's revenue with it.
+    const run = grab('runWithBackendReady');
+    const probeAt = run.indexOf('if(await probeBackend()) return intent();');
+    const servingAt = run.indexOf('if(isBackendServing()) return intent();');
+    const waitAt = run.indexOf('openWaitingExperience(context)');
+    assert.ok(probeAt > -1 && servingAt > probeAt && waitAt > servingAt,
+      'the serving check must sit BETWEEN the probe and the waiting screen — it is the fallback for when the probe alone says no');
+    assert.match(grab('apiFetch'), /noteBackendResponded\(\)/,
+      'ANY response, including a 500, proves the process is awake and must be recorded');
+    assert.match(grab('probeBackend'), /noteBackendResponded\(\)/,
+      'even a 500 from /api/ready means the process answered');
+    assert.match(grab('ensureBackendAwake'), /if\(isBackendServing\(\)\) return true;/,
+      'a customer must not keep waiting on one unhealthy endpoint once something else has answered');
+  });
+
+  test('a genuine cold start is completely unaffected by the bulkhead', () => {
+    // This makes a partial outage survivable; it must not weaken the cold path.
+    // With nothing having answered, isBackendServing() is false and the wait
+    // appears exactly as before.
+    assert.match(grab('isBackendServing'), /lastResponseAt/, 'it must be evidence-based, not a constant');
+    const ttl = Number((html.match(/const BACKEND_SERVING_TTL_MS = (\d+);/) || [])[1]);
+    assert.ok(ttl > 0 && ttl <= 120000,
+      'the evidence window is ' + ttl + 'ms — stale evidence must expire, or a long-dead backend looks alive forever');
+    const run = grab('runWithBackendReady');
+    assert.match(run, /if\(isBackendKnownAwake\(\)\) return intent\(\);/, 'the warm shortcut must still come first');
+    assert.match(run, /openWaitingExperience\(context\)/, 'and the wait must still exist for a real cold boot');
+  });
+
+  test('OUR outage must never cost the customer their discount', () => {
+    const fn = grab('revalidateCouponNow');
+    assert.match(fn, /if\(classifyFailure\(err\) !== FAILURE_JUDGEMENT\) return;/,
+      'only a 4xx — a real decision about the coupon — may remove it');
+  });
+
+  test('THE MONEY MESSAGE: a taken payment is never reported as a failed one', () => {
+    // Razorpay has ALREADY taken the money by the time the handler runs. What
+    // can fail afterwards is OUR confirmation of it. "Payment verification
+    // failed" reads as "your payment failed": it is untrue, it invites a second
+    // attempt at paying, and it invites a chargeback.
+    const idx = html.indexOf('THE MOST IMPORTANT MESSAGE ON THE SITE');
+    assert.ok(idx > -1, 'the verification failure path lost its explanation');
+    const block = html.slice(idx, idx + 2400);
+    assert.match(block, /Your payment went through/, 'the customer must be told the money moved');
+    assert.match(block, /confirmed by email shortly/, 'and that the order completes without them');
+    assert.ok(!/'Payment verification failed'/.test(block),
+      'the old wording told the customer their payment had failed');
+    assert.match(block, /signature/,
+      'a genuine refusal must still show the server own words rather than the reassurance');
+    assert.match(block, /razorpay_payment_id/,
+      'a reference the customer can quote to support is what separates reassurance from a brush-off');
+  });
+
+  test('the waiting screen stays usable on a small phone', () => {
+    // Measured at 360x640: the suggestion phase pushed Cancel below the fold,
+    // so the customer saw product cards and no visible way out of a screen that
+    // cannot be dismissed any other way. Structural, not per-phase copy tuning,
+    // so a phase added later inherits it.
+    assert.match(html, /#waitModal \.modal-box\{ display:flex; flex-direction:column; max-height:92vh; \}/,
+      'the box must be a column with a bounded height');
+    assert.match(html, /#waitModal \.wait-body\{ overflow-y:auto; min-height:0; flex:1 1 auto; \}/,
+      'the BODY scrolls so the head and foot stay put in every phase');
+    assert.match(html, /#waitModal \.btn\{ min-height:44px; \}/,
+      '44px is the floor both the Apple HIG and WCAG 2.5.8 settle on; these were 39');
+  });
+}
+
+// ============================================================
+section('[fe-39] The disclosure chevron says which categories expand');
+// ============================================================
+{
+  const html = read('index.html');
+  function grab(name) {
+    const i = html.search(new RegExp('(async )?function ' + name + '\\('));
+    if (i < 0) throw new Error('missing ' + name);
+    let d = 0; const s = html.indexOf('{', i);
+    for (let k = s; k < html.length; k++) {
+      if (html[k] === '{') d++;
+      else if (html[k] === '}') { d--; if (!d) return html.slice(i, k + 1); }
+    }
+  }
+  const fn = grab('renderShopFilterSidebar');
+
+  test('THE AFFORDANCE: only a category with subcategories shows a chevron', () => {
+    // Subcategories are revealed by SELECTING a category, so without an
+    // indicator the customer has to commit to a filter — changing what the grid
+    // shows — just to discover whether there was anything to discover. A
+    // chevron on a category with nothing under it would be a promise the UI
+    // cannot keep, so it is conditional, not decorative.
+    assert.match(fn, /const hasSubs = Object\.keys\(subCounts\[key\] \|\| \{\}\)\.length > 0;/,
+      'the indicator must be driven by real subcategory counts');
+    assert.match(fn, /hasSubs \? '' : ' is-placeholder'/,
+      'a category without subcategories gets the placeholder, never a live chevron');
+    assert.match(fn, /\(hasSubs\?' has-subs':''\)/,
+      'the row needs the class the rotation rule hangs off');
+  });
+
+  test('THE ALIGNMENT: every row reserves the same space, by construction', () => {
+    // Omitting the icon on plain rows pushed their counts 24px right of the
+    // rest. Compensating with a margin would hard-code the icon width AND the
+    // flex gap in a second place — two constants to keep in step for a purely
+    // visual result. An invisible placeholder keeps every row the same shape.
+    assert.match(html, /\.filter-check \.filter-chev\.is-placeholder\{ visibility:hidden; \}/,
+      'the placeholder must reserve space, so visibility — never display:none');
+    // "All Products" is built outside the loop and was the one row that missed
+    // it, which put its count 24px out on its own.
+    assert.match(fn, /const chevSpacer = '<svg class="filter-chev is-placeholder"/,
+      'the All Products row is built separately and needs the spacer explicitly');
+    assert.match(fn, /All Products<\/span><span class="c">' \+ PRODUCTS\.length \+ '<\/span>' \+ chevSpacer/,
+      'and it must actually be appended to that row');
+  });
+
+  test('it points the way the list will move, and never lies about a third level', () => {
+    assert.match(html, /\.filter-check\.active \.filter-chev\{ transform:rotate\(180deg\)/,
+      'selected means expanded, so the chevron must turn');
+    assert.match(html, /\.filter-subs \.filter-check \.filter-chev\{ display:none; \}/,
+      'a sub-row has nothing beneath it — an icon that expands nothing is worse than no icon');
+    assert.match(html, /@media \(prefers-reduced-motion:reduce\)\{ \.filter-check \.filter-chev\{ transition:none; \} \}/,
+      'the rotation must be still for anyone who asked for less motion');
+  });
+
+  test('the icon is decorative — the radio and label carry the meaning', () => {
+    const svgs = fn.match(/<svg class="filter-chev[^>]*>/g) || [];
+    assert.strictEqual(svgs.length, 2, 'expected the live chevron and the All Products spacer');
+    for (const s of svgs) {
+      assert.match(s, /aria-hidden="true"/, 'announcing a decorative triangle only adds noise: ' + s.slice(0, 60));
+      assert.match(s, /focusable="false"/, 'and it must never take a tab stop: ' + s.slice(0, 60));
+    }
   });
 }
 

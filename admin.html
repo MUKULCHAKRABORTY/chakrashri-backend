@@ -1443,7 +1443,7 @@ async function loadTopProducts(){
     const body = await api('/api/admin/analytics/top-products?limit=8');
     if (!body.products.length) { tbody.innerHTML = '<tr><td colspan="4" class="empty">No sales yet.</td></tr>'; return; }
     tbody.innerHTML = body.products.map((p) => `<tr>
-      <td>${esc(p.name)}</td><td class="muted">${esc(p.category)}</td>
+      <td>${esc(p.name)}</td><td class="muted">${esc(p.category)}${p.subcategory ? ` / ${esc(p.subcategory)}` : ''}</td>
       <td>${esc(p.units_sold)}</td><td>${paise(p.revenue_paise)}</td>
     </tr>`).join('');
   } catch (err) { tbody.innerHTML = '<tr><td colspan="4" class="empty">Could not load.</td></tr>'; }
