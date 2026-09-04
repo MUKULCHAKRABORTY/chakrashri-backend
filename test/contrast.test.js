@@ -30,6 +30,14 @@
  * Run: node test/contrast.test.js
  */
 const path = require('path');
+/* pathToFileURL, never a hand-built 'file:///' + path.
+
+   Concatenation is correct on Windows and WRONG on Linux, and the difference is
+   invisible on the machine this was written on. A Windows path starts with a
+   drive letter, so 'file:///' + 'C:/x' gives the correct three slashes. A Linux
+   path already starts with one, so 'file:///' + '/home/x' gives FOUR — which is
+   the UNC form with an empty host, not the local file. CI is Linux. */
+const { pathToFileURL } = require('url');
 
 const REQUIRE_BROWSER = process.env.REQUIRE_BROWSER_TESTS === 'true';
 const INSTALL_HINT = 'npx playwright install chromium';
@@ -59,7 +67,8 @@ const ROOT = path.join(__dirname, '..');
 const ROUTES = ['home', 'shop', 'puja', 'astrology', 'about', 'contact',
                 'policies', 'blog', 'cart', 'checkout', 'wishlist', 'orders'];
 
-/** Runs in the page. Returns every text node below its WCAG AA threshold. */
+/** Runs in the page. Returns { measured, failures } so a page that never
+    loaded cannot be mistaken for a page with nothing wrong. */
 function collectFailures() {
   function parse(c) {
     const m = String(c).match(/rgba?\(([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:[,\s/]+([\d.]+))?/);
@@ -95,6 +104,7 @@ function collectFailures() {
 
   const out = [];
   const seen = new Set();
+  let measured = 0;
   for (const el of document.querySelectorAll('body *')) {
     // Only elements painting their OWN text, or a container's colour would be
     // reported once per descendant.
@@ -109,6 +119,7 @@ function collectFailures() {
     const bg = effectiveBg(el);
     if (bg.unknown) continue;
 
+    measured++;
     const r = ratio(fg.a < 1 ? over(fg, bg) : fg, bg);
     const px = parseFloat(cs.fontSize);
     const bold = (parseInt(cs.fontWeight, 10) || 400) >= 700;
@@ -127,7 +138,7 @@ function collectFailures() {
       px: Math.round(px * 10) / 10, ratio: Math.round(r * 100) / 100, need
     });
   }
-  return out.sort((a, b) => a.ratio - b.ratio);
+  return { measured, failures: out.sort((a, b) => a.ratio - b.ratio) };
 }
 
 (async () => {
@@ -142,9 +153,10 @@ function collectFailures() {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   const failures = [];
   let checkedRoutes = 0;
+  let totalMeasured = 0;
 
   // ---- storefront, every route -------------------------------------------
-  await page.goto('file:///' + path.join(ROOT, 'index.html').replace(/\\/g, '/'));
+  await page.goto(pathToFileURL(path.join(ROOT, 'index.html')).href);
   await page.waitForTimeout(1200);
   // A running transition reports a mid-tween colour; freeze before measuring.
   await page.addStyleTag({ content: '*,*::before,*::after{transition:none!important;animation:none!important;}' });
@@ -154,25 +166,50 @@ function collectFailures() {
   for (const route of ROUTES) {
     await page.evaluate((r) => { if (typeof navigateTo === 'function') navigateTo(r); }, route);
     await page.waitForTimeout(400);
-    const found = await page.evaluate(collectFailures);
+    const { measured, failures: found } = await page.evaluate(collectFailures);
     checkedRoutes++;
-    console.log('  ' + route.padEnd(21) + (found.length ? found.length : 'none'));
+    totalMeasured += measured;
+    console.log('  ' + route.padEnd(21) + (found.length ? found.length : 'none')
+      + '   (' + measured + ' text nodes measured)');
     for (const f of found) failures.push(Object.assign({ where: 'index.html /' + route }, f));
   }
 
-  // ---- admin console -------------------------------------------------------
-  await page.goto('file:///' + path.join(ROOT, 'admin.html').replace(/\\/g, '/'));
+  /* ---- admin console -------------------------------------------------------
+
+     A caveat worth stating rather than hiding: opened over file:// the console
+     cannot reach its API, so it renders the signed-out shell and only a handful
+     of text nodes are measurable. The admin's colour tokens are covered another
+     way — [fe-50] asserts the values it mirrors from scripts/seo-fields.js and
+     index.html, and the three browser suites that stub the API render its real
+     screens. This measures what it can and does not pretend to more. */
+  await page.goto(pathToFileURL(path.join(ROOT, 'admin.html')).href);
   await page.waitForTimeout(900);
   await page.addStyleTag({ content: '*,*::before,*::after{transition:none!important;animation:none!important;}' });
-  const adminFound = await page.evaluate(collectFailures);
-  console.log('\n  admin console        ' + (adminFound.length ? adminFound.length : 'none'));
+  const admin = await page.evaluate(collectFailures);
+  const adminFound = admin.failures;
+  totalMeasured += admin.measured;
+  console.log('\n  admin console        ' + (adminFound.length ? adminFound.length : 'none')
+    + '   (' + admin.measured + ' text nodes measured)');
   for (const f of adminFound) failures.push(Object.assign({ where: 'admin.html' }, f));
 
   await browser.close();
 
-  // A scan that silently matches nothing would pass forever.
+  /* A scan that silently matches nothing would pass forever.
+
+     Counting ROUTES alone was not enough: a page that failed to load still gets
+     iterated, still reports zero failures, and still looks green. Only the
+     number of text nodes actually MEASURED can tell a clean page from a page
+     that was never there — which is exactly what a malformed file:// URL on a
+     platform nobody develops on produces. */
   if (checkedRoutes < ROUTES.length) {
-    console.error('\n[contrast] FAILED: only ' + checkedRoutes + ' of ' + ROUTES.length + ' routes were measured.\n');
+    console.error('\n[contrast] FAILED: only ' + checkedRoutes + ' of ' + ROUTES.length + ' routes were visited.\n');
+    process.exit(1);
+  }
+  if (totalMeasured < 200) {
+    console.error('\n[contrast] FAILED: only ' + totalMeasured + ' text nodes were measured across '
+      + checkedRoutes + ' routes and the admin console.');
+    console.error('           The pages did not render. A contrast suite that measures nothing');
+    console.error('           reports no failures, which is indistinguishable from success.\n');
     process.exit(1);
   }
 
