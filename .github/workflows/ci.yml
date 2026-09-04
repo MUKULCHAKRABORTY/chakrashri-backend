@@ -133,18 +133,6 @@ jobs:
         # stubbed, and no message leaves the runner.
         run: npm run test:emails
 
-      - name: Rendered contrast (WCAG AA)
-        # Measures what a person actually sees, on every route and in the
-        # admin console. Reading the CSS cannot answer this — a colour token
-        # is only readable relative to the surface behind it, which is why a
-        # section heading sat at 1.18:1 and the automatic BESTSELLER badge at
-        # 2.68:1 with every static check passing.
-        # A skip here would mean the chromium install above silently failed,
-        # and this suite would report success having rendered nothing at all.
-        env:
-          REQUIRE_BROWSER_TESTS: 'true'
-        run: npm run test:contrast
-
       - name: Drawer and category-ranking fuzz
         # Added in the same breath as the suite itself, because the comment
         # above is the record of what happens otherwise: a suite that exists,
@@ -173,6 +161,24 @@ jobs:
 
       - name: Install Chromium for the browser regression tests
         run: npx playwright install --with-deps chromium
+
+      - name: Rendered contrast (WCAG AA)
+        # Placed AFTER the chromium install, which is the whole reason this
+        # step exists in this position rather than up with the offline suites.
+        # It was originally slotted in beside the other `npm test` members, four
+        # steps BEFORE the browser was installed, so it ran with no chromium —
+        # and because REQUIRE_BROWSER_TESTS correctly forbids skipping, it
+        # failed the build. The suite behaved exactly as designed; the ordering
+        # was wrong. [fe-44] now asserts this ordering so it cannot recur.
+        #
+        # What it measures: what a person actually sees, on every route and in
+        # the admin console. Reading the CSS cannot answer it — a colour is
+        # only readable relative to the surface behind it, which is why a
+        # section heading sat at 1.18:1 and the automatic BESTSELLER badge at
+        # 2.68:1 with every static check passing.
+        env:
+          REQUIRE_BROWSER_TESTS: 'true'
+        run: npm run test:contrast
 
       - name: Browser regression tests
         # Catches the class of bug that only a real browser can see. Making the

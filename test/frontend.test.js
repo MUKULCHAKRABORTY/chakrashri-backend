@@ -4107,6 +4107,40 @@ section('[fe-44] The gate cannot quietly stop running a suite');
       'these can skip silently in CI, which is a green build that tested nothing: ' + unforced.join(', '));
   });
 
+  test('every browser suite runs AFTER the browser is installed', () => {
+    /* THE FAILURE THIS EXISTS TO PREVENT, WHICH HAPPENED.
+
+       The contrast suite was added to CI in the obvious place — beside the
+       other members of `npm test` — which put it FOUR STEPS BEFORE the workflow
+       installs chromium. It ran with no browser. And because the previous check
+       had just correctly forced it not to skip, it failed the build, taking
+       every step after it down with it.
+
+       The suite was right. The ordering was wrong, and nothing could see that:
+       the step was present, it was forced to run, and both existing checks
+       passed. Position was the one property nobody was asserting.
+
+       Locally none of this is visible, because chromium is already installed. */
+    const ci = read('.github/workflows/ci.yml');
+    const installAt = ci.search(/run:\s*npx playwright install/);
+    assert.ok(installAt > -1, 'CI must install chromium somewhere, or no browser suite can run');
+
+    const fs2 = require('fs');
+    const late = [];
+    for (const file of fs2.readdirSync(__dirname).filter((f) => f.endsWith('.test.js'))) {
+      const src = fs2.readFileSync(path.join(__dirname, file), 'utf8');
+      if (!/require\('playwright'\)/.test(src)) continue;
+      const script = Object.keys(pkg.scripts).find((k) => pkg.scripts[k] === 'node test/' + file);
+      if (!script) continue;
+      const at = ci.search(new RegExp('run:\\s*npm run ' + script.replace(/:/g, '[:]') + '\\s*$', 'm'));
+      if (at === -1) continue;   // [fe-44]'s coverage check owns the absent case
+      if (at < installAt) late.push(script + ' (step is before the install)');
+    }
+    assert.deepStrictEqual(late, [],
+      'these need a browser but CI runs them before it installs one, so they fail on a '
+      + 'machine that has no chromium yet: ' + late.join(', '));
+  });
+
   test('the drawer fuzz is a real file, and it is committed', () => {
     // An npm script pointing at a path nobody committed is a green gate that
     // runs nothing on any machine but this one.
