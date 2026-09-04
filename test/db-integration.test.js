@@ -1138,13 +1138,20 @@ section('[db-12] "Most sold" must count money that was actually taken');
 // refunded or payment_failed order therefore counted exactly as much toward
 // "most sold" as a delivered one.
 {
-  // The real query, lifted out of the route so this tests what ships.
-  const routeSrc = require('fs').readFileSync(
-    require('path').join(__dirname, '..', 'src', 'routes', 'products.routes.js'), 'utf8');
-  const start = routeSrc.indexOf("router.get('/meta/top-categories'");
-  const sqlStart = routeSrc.indexOf('`SELECT p.category', start);
-  const sqlEnd = routeSrc.indexOf('`', sqlStart + 1);
-  const TOP_CATEGORIES_SQL = routeSrc.slice(sqlStart + 1, sqlEnd);
+  /* The real query, IMPORTED from the route so this tests exactly what ships.
+
+     This used to slice the SQL out of the file as text, between the first two
+     backticks. That worked until the query gained an interpolation: the slice
+     then handed Postgres a literal `${...}` and every check here failed with
+     "syntax error at or near $" — while the route was entirely correct. A test
+     that re-derives what it is testing will eventually test something else. */
+  const TOP_CATEGORIES_SQL = require('../src/routes/products.routes.js').TOP_CATEGORIES_SQL;
+  if (typeof TOP_CATEGORIES_SQL !== 'string' || !TOP_CATEGORIES_SQL.includes('SELECT p.category')) {
+    throw new Error('products.routes.js no longer exports TOP_CATEGORIES_SQL — [db-12] is testing nothing.');
+  }
+  if (TOP_CATEGORIES_SQL.includes('${')) {
+    throw new Error('TOP_CATEGORIES_SQL carries an unresolved template interpolation.');
+  }
 
   async function makeProductIn(category, stock = 100) {
     const { rows } = await db.query(

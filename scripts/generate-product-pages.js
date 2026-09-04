@@ -286,10 +286,21 @@ function renderProductPage(html, p) {
   const image = productImageUrl(p);
   const missed = [];
 
+  /* Reports a MISSING PATTERN, not an unchanged string.
+
+     It used to compare the html before and after and treat "no change" as a
+     miss. That is right almost always and wrong in one case: when the tag is
+     already exactly what we were going to write. index.html now ships
+     twitter:card="summary_large_image", which is also what a product page
+     wants, so a perfectly correct no-op replacement was reported as a failure
+     and the whole prerender aborted — ten pages not written, for a tag that was
+     already right.
+
+     Testing the pattern answers the question actually being asked: is the head
+     still the shape these patterns were written for? */
   function replaceOnce(label, pattern, replacement) {
-    const before = html;
+    if (!pattern.test(html)) { missed.push(label); return; }
     html = html.replace(pattern, replacement);
-    if (html === before) missed.push(label);
   }
 
   replaceOnce('title', /<title>[\s\S]*?<\/title>/, '<title>' + text(title) + '</title>');
@@ -310,19 +321,38 @@ function renderProductPage(html, p) {
   replaceOnce('twitter:description', /<meta name="twitter:description" content="[^"]*">/,
     '<meta name="twitter:description" content="' + attr(description) + '">');
 
-  // og:image is ADDED here, not replaced — index.html ships without one,
-  // because a site-wide default would be wrong on a product page and a broken
-  // image URL in a preview card is worse than no image at all.
-  // summary_large_image is only claimed when there is a large image to show.
-  replaceOnce('twitter:card', /<meta name="twitter:card" content="[^"]*">/,
-    '<meta name="twitter:card" content="' + (image ? 'summary_large_image' : 'summary') + '">' +
-    (image
-      ? '\n<meta property="og:image" content="' + attr(image) + '">' +
-        '\n<meta property="og:image:alt" content="' + attr(p.name) + '">' +
-        '\n<meta name="twitter:image" content="' + attr(image) + '">'
-      : ''));
+  /* og:image is REPLACED, not added.
 
-  replaceOnce('json-ld', /<script type="application\/ld\+json" id="ldPage"><\/script>/,
+        index.html now ships a site-wide brand card (og-cover.png) so that every
+        non-product page has a preview image at all. That made appending here a
+        real defect: a product page ended up with TWO og:image tags, the brand
+        card first and the product photo second, and scrapers take the first —
+        so every product shared to WhatsApp or Facebook would have shown the
+        generic card instead of the item being sold.
+
+        A product WITHOUT a photo keeps the brand card rather than having its
+        image tags stripped: a branded preview is better than none, which is the
+        opposite of what was true when there was no card to fall back on. */
+  if (image) {
+    replaceOnce('og:image', /<meta property="og:image" content="[^"]*">/,
+      '<meta property="og:image" content="' + attr(image) + '">');
+    replaceOnce('og:image:alt', /<meta property="og:image:alt" content="[^"]*">/,
+      '<meta property="og:image:alt" content="' + attr(p.name) + '">');
+    replaceOnce('twitter:image', /<meta name="twitter:image" content="[^"]*">/,
+      '<meta name="twitter:image" content="' + attr(image) + '">');
+    // The dimensions belong to the brand card, not to a product photo of
+    // unknown size. Leaving them would tell a scraper the wrong aspect ratio.
+    html = html.replace(/\n?<meta property="og:image:(width|height)" content="[^"]*">/g, '');
+  }
+  replaceOnce('twitter:card', /<meta name="twitter:card" content="[^"]*">/,
+    '<meta name="twitter:card" content="summary_large_image">');
+
+  // [\s\S]*? rather than an exactly-empty tag: this matched only
+  // `id="ldPage"></script>` with nothing between, so the day anybody puts a
+  // default inside that island, replaceOnce stops finding it and every product
+  // page silently ships without its Product JSON-LD. Matching any content
+  // removes the coupling; replaceOnce still fails loudly if it finds none.
+  replaceOnce('json-ld', /<script type="application\/ld\+json" id="ldPage">[\s\S]*?<\/script>/,
     '<script type="application/ld+json" id="ldPage">' + jsonForScript(productJsonLd(p)) + '</script>');
 
   // The product's own API row, inline. Lets the detail view render before

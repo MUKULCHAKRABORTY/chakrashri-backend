@@ -6,6 +6,7 @@ const { requireAuth, requireRole, requireCapability, CAPABILITIES: C } = require
 const { asyncHandler } = require('../middleware/asyncHandler');
 const { validateUuidParam, handleValidation, isUuid } = require('../middleware/validate');
 const { normaliseTerm } = require('../utils/text');
+const { REVENUE_STATUS_SQL } = require('../utils/orderStatus');
 const { recomputeProductRating } = require('../utils/reviews');
 const { getSettings } = require('../utils/settings');
 const { logger } = require('../utils/logger');
@@ -82,6 +83,25 @@ router.get('/', asyncHandler(async (req, res) => {
                       -- chosen, and checkout would then reject the whole order.
                       EXISTS(SELECT 1 FROM product_variants v
                               WHERE v.product_id = p.id AND v.is_active = true) AS has_variants,
+                      /* Units actually sold, so "Bestseller" can be COMPUTED
+                         rather than typed in by hand and then left wrong for
+                         months. Correlated subquery rather than a JOIN + GROUP
+                         BY: the outer query already has a window function and a
+                         GROUP BY here would have to list every selected column.
+                         idx_order_items_product (migration 014) makes it an
+                         index lookup per row.
+
+                         The status filter is the same one /meta/top-categories
+                         uses, and for the same reason: a pending, cancelled,
+                         refunded or payment_failed order is not a sale, and
+                         letting it count would let an abandoned cart badge a
+                         product as a bestseller. */
+                      COALESCE((SELECT SUM(oi.quantity)::int
+                                  FROM order_items oi
+                                  JOIN orders o ON o.id = oi.order_id
+                                 WHERE oi.product_id = p.id
+                                   AND o.status IN ${REVENUE_STATUS_SQL}
+                               ), 0) AS units_sold,
                       COUNT(*) OVER() AS total_count
                FROM products p
                WHERE ${conditions.join(' AND ')}
@@ -132,12 +152,19 @@ router.get('/meta/subcategories', asyncHandler(async (req, res) => {
   res.json({ subcategories: rows });
 }));
 
-router.get('/meta/top-categories', asyncHandler(async (req, res) => {
-  // 20 is the ceiling the storefront's "top 15" sits under; an unbounded limit
-  // here would be a cheap way to make the database do arbitrary work.
-  const limit = Math.min(20, Math.max(1, parseInt(req.query.limit, 10) || 7));
-  const { rows } = await db.query(
-    `SELECT p.category,
+/* Hoisted to a named constant so [db-12] can IMPORT the query instead of
+   slicing it out of this file as text.
+
+   That test used to lift the SQL by string-slicing between backticks — which
+   worked for exactly as long as the query contained no interpolation. The
+   moment `${REVENUE_STATUS_SQL}` was introduced, the test handed Postgres a
+   literal dollar-brace and failed with "syntax error at or near $", while the
+   route itself was perfectly correct. The test was testing a string that no
+   longer resembled what shipped.
+
+   Exporting it removes the whole class: the test now runs the exact bytes the
+   route runs, and no future interpolation can make the two disagree. */
+const TOP_CATEGORIES_SQL = `SELECT p.category,
             COUNT(DISTINCT p.id)::int AS product_count,
             -- THE CONDITION IS ON THE SUM, not only on the join.
             --
@@ -158,7 +185,7 @@ router.get('/meta/top-categories', asyncHandler(async (req, res) => {
      FROM products p
      LEFT JOIN order_items oi ON oi.product_id = p.id
      LEFT JOIN orders o ON o.id = oi.order_id
-            AND o.status IN ('paid','processing','shipped','delivered','partially_refunded')
+            AND o.status IN ${REVENUE_STATUS_SQL}
      WHERE p.is_active = true AND p.category IS NOT NULL AND p.category <> ''
      GROUP BY p.category
      -- A TOTAL order, so "top 15" is the same 15 on every request: units first,
@@ -166,9 +193,13 @@ router.get('/meta/top-categories', asyncHandler(async (req, res) => {
      -- p.category the order of equal rows would be whatever the plan returned,
      -- and the list would reshuffle between page loads.
      ORDER BY units_sold DESC, product_count DESC, p.category ASC
-     LIMIT $1`,
-    [limit]
-  );
+     LIMIT $1`;
+
+router.get('/meta/top-categories', asyncHandler(async (req, res) => {
+  // 20 is the ceiling the storefront's "top 15" sits under; an unbounded limit
+  // here would be a cheap way to make the database do arbitrary work.
+  const limit = Math.min(20, Math.max(1, parseInt(req.query.limit, 10) || 7));
+  const { rows } = await db.query(TOP_CATEGORIES_SQL, [limit]);
   res.json({ categories: rows });
 }));
 
@@ -899,5 +930,9 @@ router.delete('/:id/variants/:variantId', requireAuth, requireCapability(C.CATAL
   if (!rowCount) return res.status(404).json({ error: 'Variant not found.' });
   res.status(204).send();
 }));
+
+/* The router IS the export (app.use needs it), so the query rides along as a
+   property. [db-12] imports this rather than re-deriving it from the source. */
+router.TOP_CATEGORIES_SQL = TOP_CATEGORIES_SQL;
 
 module.exports = router;

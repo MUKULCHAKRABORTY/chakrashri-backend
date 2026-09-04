@@ -466,7 +466,10 @@ section('[fe-9] The capture forms actually submit somewhere');
 
   test('the password reset flow is reachable — there is a link that requests one', () => {
     assert.ok(/requestPasswordReset/.test(read('index.html')), 'no requestPasswordReset function');
-    assert.ok(/onclick="return requestPasswordReset\(\);"/.test(read('index.html')),
+    // Asserted on the CALL, not on the element. It was an <a href="#"> and is a
+    // <button> now — href="#" is a link to nowhere, and a crawler followed it
+    // from every page on the site. What matters is that markup still invokes it.
+    assert.ok(/onclick="(return )?requestPasswordReset\(\);?"/.test(read('index.html')),
       'the function exists but nothing in the markup calls it, which is how it was unreachable before');
     assert.ok(read('index.html').includes('/api/auth/forgot-password'), 'nothing calls the forgot-password endpoint');
   });
@@ -712,12 +715,39 @@ section('[fe-13] Prerendered product pages carry the right link preview');
     assert.strictEqual(metaContent(out, 'name="twitter:card"'), 'summary_large_image');
   });
 
-  test('a product with no image does NOT claim a large-image card', () => {
+  test('a product with no image falls back to the site card, not to nothing', () => {
+    /* THE TRADE-OFF CHANGED, and this is the record of why.
+
+       This used to assert NO og:image on a product without a photo, and that
+       was right at the time: index.html shipped without one, so the only
+       alternative to nothing was a broken image, and a broken preview is worse
+       than a plain link.
+
+       The site now has a real branded card (og-cover.png), so the choice is
+       between a branded preview and no preview — and the branded one wins on
+       every surface that shows it. */
     const noImage = gen.renderProductPage(source, Object.assign({}, PRODUCT, { image_url: null }));
     assert.deepStrictEqual(noImage.missed, []);
-    assert.strictEqual(metaContent(noImage.html, 'property="og:image"'), null,
-      'og:image was emitted with no image to point at — a broken preview image is worse than none');
-    assert.strictEqual(metaContent(noImage.html, 'name="twitter:card"'), 'summary');
+    assert.match(metaContent(noImage.html, 'property="og:image"') || '', /og-cover\.png$/,
+      'a product with no photo should still share as the brand, not as a bare link');
+    assert.strictEqual(metaContent(noImage.html, 'name="twitter:card"'), 'summary_large_image');
+  });
+
+  test('THE REGRESSION THIS NEARLY WAS: exactly one og:image, and it is the product', () => {
+    /* Adding a site-wide og:image to index.html made the generator's ADD
+       produce TWO og:image tags on every product page — the brand card first,
+       the product photo second. Scrapers take the first, so every product
+       shared to WhatsApp or Facebook would have shown the generic card instead
+       of the item being sold. Replaced now, not appended. */
+    const head = out.slice(0, out.indexOf('</head>'));
+    assert.strictEqual((head.match(/<meta property="og:image" content=/g) || []).length, 1,
+      'two og:image tags means the scraper picks the wrong one');
+    assert.strictEqual((head.match(/<meta name="twitter:card"/g) || []).length, 1);
+    assert.strictEqual(metaContent(out, 'property="og:image"'), 'https://cdn.example.test/shivling.jpg');
+    // The brand card's dimensions must not survive onto a product photo of
+    // unknown size — they would tell a scraper the wrong aspect ratio.
+    assert.strictEqual((head.match(/<meta property="og:image:(width|height)"/g) || []).length, 0,
+      'the 1200x630 of the brand card does not describe a product photo');
   });
 
   test('quotes and ampersands in a product name cannot break out of an attribute', () => {
@@ -1387,11 +1417,14 @@ section('[fe-22] Pre-push deep sweep — two more caught by running it');
     // one without it. The customer would add it during the wait, watch the
     // backend wake, and have the order rejected at the moment of payment: the
     // exact failure the waiting screen exists to prevent, caused by the screen.
+    // Asserted through the SHARED predicate now. buyable() used to carry its own
+    // copy of the rule; the copies are what allowed the product page's version
+    // to be wrong while this one was right.
     const fn = html.slice(html.indexOf('function buyable('), html.indexOf('function buyable(') + 1400);
-    assert.match(fn, /if\(p\.hasVariants\) return false;/,
+    assert.match(fn, /if\(requiresVariantChoice\(p\)\) return false;/,
       'buyable() still offers products that cannot be added without choosing an option');
-    assert.match(fn, /Array\.isArray\(p\.variantOptions\) && p\.variantOptions\.length/,
-      'a product whose variants are only known from the detail fetch must also be excluded');
+    assert.match(html, /function requiresVariantChoice\(p\)\{[\s\S]{0,200}?p\.hasVariants \|\| \(Array\.isArray\(p\.variantOptions\) && p\.variantOptions\.length\)/,
+      'and the predicate itself must consider BOTH the list flag and the detail options');
   });
 
   test('every product thumb clips its photo to its own rounded corners', () => {
@@ -2688,9 +2721,9 @@ section('[fe-33] Variants: a variant is its own product, priced and stocked sepa
     // with no variantId — and the server refuses to sell a variant product
     // without one. The customer would have added it during the wait and had the
     // order rejected at the moment of payment.
-    assert.match(grab('buyable'), /if\(p\.hasVariants\) return false;/,
+    assert.match(grab('buyable'), /if\(requiresVariantChoice\(p\)\) return false;/,
       'a variant product must never reach a suggestion card');
-    assert.match(grab('buyable'), /Array\.isArray\(p\.variantOptions\) && p\.variantOptions\.length/,
+    assert.match(grab('requiresVariantChoice'), /p\.hasVariants \|\| \(Array\.isArray\(p\.variantOptions\) && p\.variantOptions\.length\)/,
       'including one only known to have variants from the detail endpoint');
   });
 }
@@ -3898,10 +3931,12 @@ section('[fe-43] Service Booking, and the All Categories browser');
     // They are one thing a customer comes for, so they are one menu — and the
     // originals are gone, because the same destination twice in one drawer is
     // a defect, not a convenience.
+    // Below Shop now, by request. Shop is the primary destination; services are
+    // the secondary one.
     const svcAt = html.indexOf('id="mServiceToggle"');
     const shopAt = html.indexOf('id="mShopToggle"');
-    assert.ok(svcAt > -1 && shopAt > -1 && svcAt < shopAt,
-      'Service Booking must sit above Shop');
+    assert.ok(svcAt > -1 && shopAt > -1 && shopAt < svcAt,
+      'Service Booking must sit below Shop');
     assert.match(html, /class="mnav-servicelink"[^>]*onclick="navigateTo\('puja'\)/);
     assert.match(html, /class="mnav-servicelink"[^>]*onclick="navigateTo\('astrology'\)/);
     // Exactly one drawer row per destination.
@@ -3922,10 +3957,17 @@ section('[fe-43] Service Booking, and the All Categories browser');
     assert.match(code, /wireDrawerSection\('mServiceToggle'\);/);
     const fn = grab('wireDrawerSection');
     assert.match(fn, /setAttribute\('aria-expanded'/, 'the state must be announced, not only drawn');
-    // The service row is the whole toggle: there is no "all services" page, so
-    // a split label would navigate nowhere.
-    assert.match(html, /id="mServiceToggle">\s*<button class="mnav-toggle"/,
-      'the whole row toggles, because its label has nowhere honest to go');
+    // Structurally identical to Shop, deliberately — same .mnav-split, same
+    // 56px bordered toggle, same chevron, same wiring. Measured at 375 and 768:
+    // row, toggle, label and chevron all match Shop exactly.
+    assert.match(html, /id="mServiceToggle">\s*<div class="mnav-split">/,
+      'Service Booking uses Shop\'s row, not a shape of its own');
+    assert.match(html, /class="mnav-split-label mnav-split-label-btn"/,
+      'its label is a BUTTON: there is no combined services page, so a link would go nowhere');
+    // Height is pinned on the shared class, so a future section cannot be a
+    // different height just because its label carries a pill or does not.
+    assert.match(html, /\.mnav-split\{ display:flex; align-items:stretch; min-height:56px; \}/,
+      'every section is the same height by construction, not by coincidence');
   });
 
   test('the All Categories browser is complete, searchable, and works cold', () => {
@@ -4022,6 +4064,49 @@ section('[fe-44] The gate cannot quietly stop running a suite');
       'already covered through `npm test`, so naming them again in verify:full runs them twice: ' + dupes.join(', '));
   });
 
+  test('a suite that CAN skip itself is forced to run in CI', () => {
+    /* THE HOLE [fe-44] DID NOT COVER.
+
+       [fe-44] proves every suite is LISTED in CI. It said nothing about whether
+       CI can actually run it. Five suites need a chromium binary and skip
+       themselves — deliberately — when it is absent, so a developer without the
+       download is not blocked. In CI that leniency is exactly wrong: the
+       workflow installs the browser, so a skip means the install failed, and
+       the suite reports success having rendered nothing.
+
+       Three suites were in that state — test:contrast, test:browser-inbox and
+       test:browser-orders — all added recently, all listed in CI, none forced
+       to run. CI would have been green with three browser suites doing nothing.
+
+       Derived, not a list: any test file that requires playwright must have
+       REQUIRE_BROWSER_TESTS set on its CI step. A new browser suite cannot be
+       added without it. */
+    const fs2 = require('fs');
+    const ci = read('.github/workflows/ci.yml');
+
+    // Which suites can skip themselves, read from the files rather than named here.
+    const skippable = [];
+    for (const file of fs2.readdirSync(__dirname).filter((f) => f.endsWith('.test.js'))) {
+      const src = fs2.readFileSync(path.join(__dirname, file), 'utf8');
+      if (!/require\('playwright'\)/.test(src)) continue;
+      assert.match(src, /REQUIRE_BROWSER_TESTS/,
+        file + ' needs a browser but has no way to be forced to run — its skip can never become a failure');
+      const script = Object.keys(pkg.scripts).find((k) => pkg.scripts[k] === 'node test/' + file);
+      assert.ok(script, 'no npm script runs ' + file + ', so CI cannot run it at all');
+      skippable.push(script);
+    }
+    assert.ok(skippable.length >= 4, 'expected several browser suites; found ' + skippable.length);
+
+    // Each one's CI step must set the flag that turns its skip into a failure.
+    const steps = ci.split(/\n(?=      - name:)/);
+    const unforced = skippable.filter((script) => {
+      const step = steps.find((s) => new RegExp('run:\\s*npm run ' + script.replace(/[:]/g, '[:]') + '\\s*$', 'm').test(s));
+      return !step || !/REQUIRE_BROWSER_TESTS/.test(step);
+    });
+    assert.deepStrictEqual(unforced, [],
+      'these can skip silently in CI, which is a green build that tested nothing: ' + unforced.join(', '));
+  });
+
   test('the drawer fuzz is a real file, and it is committed', () => {
     // An npm script pointing at a path nobody committed is a green gate that
     // runs nothing on any machine but this one.
@@ -4032,6 +4117,960 @@ section('[fe-44] The gate cannot quietly stop running a suite');
       'no absolute path from one machine — it must resolve its own root');
     assert.match(src, /path\.join\(__dirname, '\.\.'\)/,
       'it locates the repo relative to itself, so it runs anywhere');
+  });
+}
+
+// ============================================================
+section('[fe-45] A product needing a variant cannot enter the cart without one');
+// ============================================================
+// THE LIVE BUG: on the product page, Add to Cart stayed enabled for a product
+// with variants whenever the DETAIL fetch had not landed — a reload, a cold
+// start, or that one request failing. The customer added the base product and
+// the server refused the order at the payment step.
+//
+// The cause was five hand-written copies of one rule. quickAdjust, qvAddToCart
+// and buyable checked `hasVariants || variantOptions.length`; pdAddToCart,
+// pdBuyNow and updateVariantUI checked `variantOptions.length` alone — and
+// variantOptions only exists after the detail fetch succeeds.
+{
+  const html = read('index.html');
+  const strip = s => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const code = strip(html);
+  function grab(name) {
+    const i = code.search(new RegExp('(?:async )?function ' + name + '\\('));
+    if (i < 0) throw new Error('missing ' + name);
+    let d = 0; const s = code.indexOf('{', i);
+    for (let k = s; k < code.length; k++) {
+      if (code[k] === '{') d++;
+      else if (code[k] === '}') { d--; if (!d) return code.slice(i, k + 1); }
+    }
+  }
+
+  test('ONE definition of the rule, and nothing hand-writes it again', () => {
+    const fn = grab('requiresVariantChoice');
+    assert.match(fn, /p\.hasVariants \|\| \(Array\.isArray\(p\.variantOptions\) && p\.variantOptions\.length\)/,
+      'both facts: the list flag known immediately, and the options known only after the detail fetch');
+    // Exactly one place may spell the rule out. Everywhere else calls it.
+    const spelled = (code.match(/hasVariants \|\| \(Array\.isArray\(p\.variantOptions\)/g) || []).length;
+    assert.equal(spelled, 1,
+      'the rule is written out more than once again — that is precisely how this bug happened');
+    const oldForm = code.match(/\(p\.variantOptions \|\| \[\]\)\.length > 0/g) || [];
+    assert.deepStrictEqual(oldForm, [],
+      'a check on variantOptions ALONE is the defective form: it is blind until the detail fetch lands');
+  });
+
+  test('THE INVARIANT: addToCart refuses, so no caller can create a broken line', () => {
+    // A UI guard can be forgotten by the next feature. The boundary cannot.
+    const fn = grab('addToCart');
+    assert.match(fn, /if\(requiresVariantChoice\(p\) && !variantId\)\{/,
+      'the single doorway every add path passes through must enforce it');
+    assert.match(fn, /return false;/, 'and refuse rather than add');
+    // Verified in a browser at 1440 against the real product page with the
+    // detail fetch blocked: addToCart(id, 1, "", null, null) returned false and
+    // the cart did not grow.
+  });
+
+  test('the button has FOUR states, because there are four situations', () => {
+    const fn = grab('updateVariantUI');
+    /* Three was not enough. "Select Options" with nothing on screen to select is
+       as useless as leaving the button enabled — and so is "Select Options" on a
+       product whose options have no purchasable variant behind them, which is
+       the fourth state and the one a customer meets without ever being told. */
+    assert.match(fn, /atcBtn\.innerHTML = !needs \? 'Add to Cart'\s*\n\s*: \(dead \? 'Out of Stock' : \(loaded \? 'Select Options' : 'Loading options…'\)\);/,
+      'add / cannot-be-bought / choose / still-loading, in that order of certainty');
+    assert.match(fn, /atcBtn\.disabled = needs;/);
+    // Buy Now must move with it on BOTH branches, or it stays dead after a
+    // valid choice — caught in the browser exactly that way.
+    assert.match(fn, /if\(buyBtnSel\) buyBtnSel\.disabled = !inStock;/,
+      'Buy Now must be re-enabled when a variant IS chosen');
+    assert.match(fn, /if\(buyBtn\) buyBtn\.disabled = needs;/,
+      'and disabled when none is');
+  });
+
+  test('the first paint is already correct, before any fetch resolves', () => {
+    // This markup renders before updateVariantUI ever runs. An enabled button
+    // here is a real window in which an unbuyable line can be added, and on a
+    // cold backend that window is the whole visit.
+    assert.match(html, /id="pdAtcBtn" ' \+ \(\(!p\.stock \|\| requiresVariantChoice\(p\)\)\?'disabled':''\)/);
+    assert.match(html, /id="pdBuyNowBtn" ' \+ \(\(!p\.stock \|\| requiresVariantChoice\(p\)\)\?'disabled':''\)/);
+  });
+
+  test('a cart that ALREADY holds a broken line is healed, and says so', () => {
+    // addToCart cannot create one any more, but a cart saved before this fix
+    // still has it in localStorage and would fail at the payment step.
+    const fn = grab('reconcileCartWithCatalog');
+    assert.match(fn, /if\(requiresVariantChoice\(p\) && !line\.variantId\)\{/,
+      'the unbuyable line must be detected');
+    assert.match(fn, /needOption\.push\(p\.name\);/, 'the customer must be told WHICH product');
+    assert.ok(!/needOption[\s\S]{0,400}?cart\.splice\(i, 1\);[\s\S]{0,80}?\/\/ silent/.test(fn),
+      'never removed silently');
+    assert.match(fn, /needs an option chosen before it can be ordered/,
+      'and told what to do about it');
+    // The report is a closure called on BOTH return paths. It first landed in
+    // the wrong function entirely (setCartQty, where needOption is undefined —
+    // a ReferenceError on every quantity change), and then on only one path,
+    // which meant a cart whose sole problem was an unbuyable line was never
+    // saved and met the same rejected order next visit.
+    assert.match(fn, /const reportUnbuyable = function\(\)\{/);
+    assert.equal((fn.match(/reportUnbuyable\(\);/g) || []).length, 1,
+      'called once, after saveCart, on the path both returns pass through');
+    assert.match(fn, /if\(!reduced\.length && !removed\.length && !needOption\.length\) return false;/,
+      'an unbuyable line must count as a change, or the removal is never persisted');
+    const setQty = grab('setCartQty');
+    assert.ok(!/needOption/.test(setQty),
+      'needOption is not in scope there; it threw a ReferenceError on every quantity change');
+  });
+}
+
+// ============================================================
+section('[fe-46] Every drawer section with a dropdown behaves the same way');
+// ============================================================
+// Measured at 375 and 768 with transitions disabled: Shop and Service Booking
+// report identical row (330x56 / 360x56), toggle (56x56), label (274x56) and
+// chevron (18x18). Before the row height was pinned they were 56 and 55 — a
+// difference nobody would see, and a difference with no reason behind it,
+// which is how the next section ends up a third height.
+{
+  const html = read('index.html');
+  const strip = s => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const code = strip(html);
+
+  test('one wiring function drives every section, including the label button', () => {
+    const at = code.indexOf('function wireDrawerSection(itemId){');
+    assert.ok(at > -1, 'the shared wiring must exist');
+    const fn = code.slice(at, code.indexOf('\n  }', at) + 4);
+    assert.match(fn, /const toggle = function\(\)\{/,
+      'one behaviour, bound to both controls — not two copies that can drift');
+    assert.match(fn, /btn\.addEventListener\('click', toggle\);/);
+    assert.match(fn, /button\.mnav-split-label-btn/,
+      'a label with nowhere to navigate opens the list instead of being dead text');
+    // Shop's label is an anchor with a real destination and must NOT be hijacked.
+    assert.match(fn, /if\(labelBtn\) labelBtn\.addEventListener/,
+      'only a label that is a BUTTON gets the toggle; Shop\'s anchor keeps navigating');
+  });
+
+  test('Shop keeps its destination, Service Booking honestly has none', () => {
+    const shopAt = html.indexOf('id="mShopToggle"');
+    const shopRow = html.slice(shopAt, shopAt + 700);
+    assert.match(shopRow, /<a href="\/shop\?category=all" class="mnav-split-label"/,
+      'Shop\'s label still goes to all products');
+    const svcAt = html.indexOf('id="mServiceToggle"');
+    const svcRow = html.slice(svcAt, svcAt + 700);
+    assert.ok(!/<a [^>]*class="mnav-split-label"/.test(svcRow),
+      'Service Booking must not pretend to have a destination it does not have');
+    assert.match(svcRow, /<button type="button" class="mnav-split-label mnav-split-label-btn"/);
+  });
+
+  test('a long section name truncates rather than growing the row', () => {
+    // "Service Booking" plus a hint pill wrapped at 375px and made that row
+    // 78px against Shop's 56px.
+    assert.match(html, /\.mnav-split-label\{ white-space:nowrap; overflow:hidden; \}/,
+      'a drawer row is a fixed shape; a long label must truncate, not wrap');
+  });
+
+  test('both sections still open, close, and rotate their chevron', () => {
+    // The chevron rotation is shared CSS keyed on .mnav-item.open, so both get
+    // it from the same rule rather than one each.
+    assert.match(html, /\.mnav-item\.open svg\.chev\{ transform:rotate\(180deg\); \}/);
+    assert.match(html, /wireDrawerSection\('mShopToggle'\);/);
+    assert.match(html, /wireDrawerSection\('mServiceToggle'\);/);
+  });
+}
+
+// ============================================================
+section('[fe-47] The admin product table knows about subcategories');
+// ============================================================
+// Same law as the category column and the category filter, one level down:
+// derived from what the catalog actually holds, never a hardcoded list, and
+// normalised on the server the same way the write path normalises it.
+{
+  const admin = read('admin.html');
+  const routes = read('src/routes/admin.routes.js');
+
+  test('the column exists, and every colspan moved with it', () => {
+    assert.match(admin, /<th>Category<\/th><th>Sub-category<\/th>/,
+      'the column sits next to the category it refines');
+    assert.match(admin, /<td class="muted">\$\{p\.subcategory \? esc\(p\.subcategory\) : '<span class="muted">—<\/span>'\}<\/td>/,
+      'a product without one shows a dash, not an empty cell or "undefined"');
+    // [fe-10] checks headers against colspans generally; these pin the two that
+    // have now moved twice — 9 to 10 for Sub-category, 10 to 11 for Sold — and
+    // would otherwise silently misalign.
+    assert.match(admin, /<tbody id="productsTbody"><tr><td colspan="11"/);
+    assert.ok(!/colspan="(9|10)"><div class="empty">No products found/.test(admin),
+      'the empty-state colspan must move with the header count');
+  });
+
+  test('the filter is beside All badges and offers only real subcategories', () => {
+    assert.match(admin, /id="productSubcategoryFilter"/);
+    const badgeAt = admin.indexOf('id="productBadgeFilter"');
+    const subAt = admin.indexOf('id="productSubcategoryFilter"');
+    assert.ok(badgeAt > -1 && subAt > badgeAt, 'it belongs beside the badge filter, as asked');
+    const fn = admin.slice(admin.indexOf('function refreshSubcategoryFilterOptions('),
+                           admin.indexOf('function refreshSubcategoryFilterOptions(') + 1600);
+    assert.match(fn, /productsState\.subcategoriesByCat/,
+      'derived from the catalog, never a hardcoded list');
+    assert.ok(!/CAT_LABELS|SUBCATEGORIES\s*=/.test(fn), 'no fixed list of subcategories');
+  });
+
+  test('THE TRAP: a stale subcategory cannot silently empty the table', () => {
+    // Choose Book/Scripture, then switch the category to Malas: without this,
+    // subcategory=scripture stays ANDed on, the table goes empty, and nothing
+    // on screen explains why.
+    const fn = admin.slice(admin.indexOf('function refreshSubcategoryFilterOptions('),
+                           admin.indexOf('function refreshSubcategoryFilterOptions(') + 1600);
+    assert.match(fn, /sel\.value = available\.has\(current\) \? current : '';/,
+      'a selection the current category cannot contain must be cleared');
+    assert.match(admin, /id="productCategoryFilter" onchange="refreshSubcategoryFilterOptions\(\); loadProducts\(1\)"/,
+      'and changing the category must re-derive the list before reloading');
+    assert.match(fn, /sel\.style\.display = available\.size \? '' : 'none';/,
+      'a filter that can only ever say "All" is noise, not a control');
+  });
+
+  test('the server filters by it, normalised exactly like category', () => {
+    assert.match(routes, /const \{ search, category, subcategory, badge \} = req\.query;/);
+    assert.match(routes, /params\.push\(normaliseTerm\(subcategory\)\);/,
+      'normalised, so a dropdown value matches what migration 016 stores');
+    assert.match(routes, /conditions\.push\(`subcategory = \$\$\{params\.length\}`\);/);
+    assert.match(routes, /require\('\.\.\/utils\/text'\)/, 'normaliseTerm must actually be in scope');
+    // AND-ed with the rest, like every other filter.
+    assert.match(routes, /const where = conditions\.length \? 'WHERE ' \+ conditions\.join\(' AND '\) : '';/);
+  });
+}
+
+// ============================================================
+section('[fe-48] Checkout in two panes, service search, badges, booking mail');
+// ============================================================
+{
+  const html = read('index.html');
+  const strip = s => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const code = strip(html);
+  function grab(name) {
+    const i = code.search(new RegExp('(?:async )?function ' + name + '\\('));
+    if (i < 0) throw new Error('missing ' + name);
+    let d = 0; const s = code.indexOf('{', i);
+    for (let k = s; k < code.length; k++) {
+      if (code[k] === '{') d++;
+      else if (code[k] === '}') { d--; if (!d) return code.slice(i, k + 1); }
+    }
+  }
+
+  // ---------------------------------------------------------------- checkout
+  test('CHECKOUT: the two-pane split is narrow-screen ONLY', () => {
+    // Measured at 1440: both panes visible, grid still "804px 380px", Continue
+    // and Back both hidden, chips still read "Details & Payment" and
+    // "Confirmation". At 768 and 375: details only, Continue visible.
+    assert.match(html, /\.co-continue, \.co-back\{ display:none; \}/,
+      'neither control may exist on a desktop, where both panes are already on screen');
+    // THE block, not merely the first one carrying that media query: this file
+    // has SEVEN of them, and indexOf would happily measure the wrong one and
+    // prove nothing. Same trap as the filter touch-overrides in [fe-39].
+    const MQ = '@media (max-width:900px){';
+    let mq = -1;
+    for (let at = html.indexOf(MQ); at > -1; at = html.indexOf(MQ, at + 1)) {
+      const end = html.indexOf('\n}', at);
+      if (html.slice(at, end).includes('data-costep')) { mq = at; break; }
+    }
+    assert.ok(mq > -1, 'the checkout step rules must live in a max-width:900px block');
+    const block = html.slice(mq, html.indexOf('\n}', mq));
+    assert.match(block, /\.checkout-layout\[data-costep="2"\] \.co-review\{ display:none; \}/);
+    assert.match(block, /\.checkout-layout\[data-costep="3"\] \.co-details\{ display:none; \}/);
+    assert.match(block, /\.co-continue\{ display:block;/,
+      'the gating rules must live INSIDE the media query, or desktop loses a pane');
+    assert.match(block, /min-height:44px;/, 'Back is a touch target like everything else');
+  });
+
+  test('CHECKOUT: the step resets on arrival, never on a cart change', () => {
+    // renderCheckoutPage also runs on every cart mutation. Resetting there
+    // would throw a customer standing on the review pane back to the address
+    // form because they changed a quantity.
+    assert.match(code, /if\(pageId === 'checkout'\)\{[\s\S]{0,400}?setCheckoutStep\(2\);[\s\S]{0,80}?renderCheckoutPage\(\);/,
+      'the reset belongs on the navigation path');
+    assert.ok(!/function renderCheckoutPage\(\)\{[\s\S]{0,300}?setCheckoutStep\(/.test(code),
+      'and must NOT be inside renderCheckoutPage, which re-runs on every cart change');
+  });
+
+  test('CHECKOUT: the form is validated before the review pane, not after', () => {
+    const fn = grab('continueToReview');
+    assert.match(fn, /reportValidity/,
+      'reporting it at Place Order throws them back to a field they cannot see');
+    assert.match(fn, /if\(form && typeof form\.reportValidity === 'function' && !form\.reportValidity\(\)\) return;/);
+    // One breakpoint, read from the stylesheet, so layout and behaviour cannot
+    // disagree about which mode is active.
+    assert.match(grab('checkoutIsStepped'), /matchMedia\('\(max-width:900px\)'\)/);
+  });
+
+  // ---------------------------------------------------------- service search
+  test('SEARCH: one implementation serves both booking pages', () => {
+    assert.match(html, /id="pujaSearch"/);
+    assert.match(html, /id="astroSearch"/);
+    // Both call the same function with a different kind, rather than each
+    // page carrying its own matcher.
+    assert.match(html, /oninput="filterServices\('puja', this\.value\)"/);
+    assert.match(html, /oninput="filterServices\('astro', this\.value\)"/);
+    const fn = grab('serviceMatches');
+    assert.match(fn, /terms\.every\(/,
+      'every typed word must match somewhere — word order is not something a searcher should guess');
+    assert.match(grab('visibleServices'), /kind === 'puja' \? PUJA_SERVICES : ASTRO_SERVICES/);
+  });
+
+  test('SEARCH: it looks in the description, and folds accents', () => {
+    // A customer looking for a housewarming does not know the words "Griha
+    // Pravesh" — the description is where that connection lives. Verified live:
+    // searching a description word returned the right single service.
+    assert.match(grab('serviceMatches'), /\(service\.name \|\| ''\) \+ ' ' \+ \(service\.desc \|\| ''\)/,
+      'the description is searched, not only the name');
+    assert.match(grab('foldForSearch'), /normalize\('NFD'\)/,
+      'so "pooja" reaches copy written with diacritics, and "sri" reaches "Śrī"');
+    assert.match(grab('foldForSearch'), /replace\(\/\\s\+\/g, ' '\)\.trim\(\)/);
+  });
+
+  test('SEARCH: no match explains itself instead of emptying the grid', () => {
+    assert.match(grab('noServiceMatchHTML'), /Nothing matches/);
+    assert.match(grab('noServiceMatchHTML'), /clearServiceSearch\(/,
+      'and offers a way back to the full list');
+    assert.match(grab('updateServiceCount'), /No match for/);
+    assert.match(html, /id="pujaSearchCount" aria-live="polite"/,
+      'a grid changing under a screen reader with no announcement just emptied silently');
+  });
+
+  // ----------------------------------------------------------------- badges
+  test('BADGES: computed from facts, with the admin still able to override', () => {
+    const fn = grab('effectiveBadge');
+    assert.match(fn, /if\(p && p\.badge\) return p\.badge;/,
+      'a deliberate admin badge must win — this adds a floor, it does not take the control away');
+    assert.match(fn, /if\(isBestseller\(p\)\) return 'bestseller';/);
+    assert.match(fn, /if\(isNewArrival\(p\)\) return 'new';/);
+    // The card and the Featured tabs must read the SAME answer or they
+    // disagree on one page.
+    assert.match(code, /const autoBadge = effectiveBadge\(p\);/);
+    assert.match(grab('renderFeaturedGrid'), /PRODUCTS\.filter\(isBestseller\)/);
+    assert.match(grab('renderFeaturedGrid'), /PRODUCTS\.filter\(isNewArrival\)/);
+  });
+
+  test('BADGES: the threshold cannot go stale', () => {
+    // There are five places PRODUCTS is assigned. A recompute() called from
+    // each is five chances to forget one; keying the cache on array identity
+    // is none.
+    const fn = grab('bestsellerThreshold');
+    assert.match(fn, /if\(_bestsellerCut\.src === list\) return _bestsellerCut\.value;/,
+      'invalidated by the identity of PRODUCTS itself');
+    assert.match(fn, /sold\.length >= MIN_SELLING_PRODUCTS/,
+      'a percentile over too few products is not a distribution');
+    assert.match(fn, /Math\.max\(sold\[Math\.max\(0, Math\.min\(sold\.length - 1, rank\)\)\], MIN_BESTSELLER_UNITS\)/,
+      'and a floor, or one sale becomes a bestseller on a young shop');
+    // The server has to supply the input.
+    assert.match(read('src/routes/products.routes.js'), /AS units_sold/);
+    assert.match(read('src/routes/products.routes.js'),
+      /o\.status IN \('paid','processing','shipped','delivered','partially_refunded'\)[\s\S]{0,120}?AS units_sold|AS units_sold/,
+      'counted from paid orders only, like the category ranking');
+  });
+
+  test('FEATURED: five across on desktop, three on tablet, mobile untouched', () => {
+    // Measured: 1440 -> 5, 1024 -> 3, 768 -> 3 (iPad portrait), 375 -> 2, and
+    // the shop grid stayed at 4 throughout.
+    assert.match(html, /#featuredGrid\{ grid-template-columns:repeat\(5,1fr\); \}/);
+    assert.match(html, /@media \(max-width:1024px\)\{[\s\S]{0,120}?#featuredGrid\{ grid-template-columns:repeat\(3,1fr\); \}/);
+    assert.match(html, /@media \(max-width:767px\)\{[\s\S]{0,120}?#featuredGrid\{ grid-template-columns:repeat\(2,1fr\); \}/);
+    /* Ten cards divide by five and by two but not by four or three, so the two
+       middle widths trim their remainder instead of showing a stub row. */
+    assert.match(html, /@media \(min-width:1025px\) and \(max-width:1180px\)\{\s*#featuredGrid > :nth-child\(n\+9\)\{ display:none; \}/,
+      'four across shows eight, not 4+4+2');
+    assert.match(html, /@media \(min-width:768px\) and \(max-width:1024px\)\{\s*#featuredGrid > :nth-child\(n\+10\)\{ display:none; \}/,
+      'three across shows nine, not 3+3+3+1');
+    /* THE TRAP: an unbounded max-width chain needs display:revert to undo the
+       previous step, and revert rolls back to the BROWSER default rather than to
+       the author rule. .p-card is display:flex, so that would have made every
+       featured card display:block below 1024px. Bounded bands need no undo. */
+    assert.ok(!/#featuredGrid > :nth-child\([^)]*\)\{ display:revert/.test(html),
+      'revert would flatten .p-card from flex to block on tablet and mobile');
+    // Scoped by id so the shop, related and wishlist grids are untouched.
+    assert.match(html, /\.product-grid\{ display:grid; grid-template-columns:repeat\(4,1fr\)/,
+      'the shared grid must still be four across');
+    assert.match(grab('renderFeaturedGrid'), /slice\(0, 10\)/,
+      'eight items under a five-wide grid leaves a ragged row of three');
+  });
+
+  test('CARD: the corner brackets never move the grid, and show on touch', () => {
+    assert.match(html, /\.p-card::after\{[\s\S]{0,200}?position:absolute; inset:0; pointer-events:none/,
+      'a border or box-shadow on the card would change its geometry and shift the grid on hover');
+    assert.match(html, /@media \(hover:none\)\{\s*\.p-card::after\{ opacity:\.45; \}/,
+      'a touch device has no hover, so the brackets would otherwise never appear');
+    assert.match(html, /@media \(prefers-reduced-motion:reduce\)\{ \.p-card::after\{ transition:none; \} \}/);
+  });
+
+  // --------------------------------------------------------- booking emails
+  test('BOOKING MAIL: a payment under review is not called a failure', () => {
+    const templates = read('src/utils/email/templates.js');
+    assert.match(templates, /async function sendBookingPaymentReview\(/);
+    assert.match(templates, /You do not need to pay again/,
+      'by this point the money is usually taken; "failed" invites a second payment');
+    assert.match(templates, /category: CATEGORY\.TRANSACTIONAL/,
+      'service mail, so consent and the marketing kill switch cannot swallow it');
+    // It must actually be sent from the review branch.
+    const routes = read('src/routes/bookings.routes.js');
+    assert.match(routes, /sendBookingPaymentReview\(\{/);
+    assert.match(routes, /email: req\.user\.email,/,
+      'neither booking table has a contact_email column');
+    assert.match(routes, /\.catch\(function\(err\)\{/,
+      'a mail failure must never turn a received payment into an error response');
+  });
+
+  test('BOOKING MAIL: an abandoned booking is chased once, for both types', () => {
+    const job = read('scripts/send-scheduled-emails.js');
+    assert.match(job, /async function runAbandonedBookings\(\)/);
+    assert.match(job, /bookingsAbandoned: runAbandonedBookings/, 'and is actually registered');
+    assert.match(job, /\[\['puja_bookings', 'puja'\], \['astrology_bookings', 'astrology'\]\]/,
+      'one code path for both, or the two quietly stop behaving the same way');
+    assert.match(job, /recovery_email_sent_at = now\(\)/, 'claimed before sending');
+    assert.match(job, /FOR UPDATE SKIP LOCKED/, 'so two workers cannot both claim it');
+    assert.match(job, /SET recovery_email_sent_at = NULL WHERE id = \$1/,
+      'and released on a retryable failure, or one SMTP blip consumes the only email this booking gets');
+    // The column has to exist.
+    const mig = read('migrations/017_booking_recovery_email.sql');
+    assert.match(mig, /ALTER TABLE puja_bookings\s+ADD COLUMN IF NOT EXISTS recovery_email_sent_at/);
+    assert.match(mig, /ALTER TABLE astrology_bookings ADD COLUMN IF NOT EXISTS recovery_email_sent_at/);
+  });
+}
+
+// ============================================================
+section('[fe-49] SEO stays correct for products nobody has added yet');
+// ============================================================
+// THE PROBLEM THIS SOLVES, and it is a future problem by nature.
+//
+// Two things independently turn a product row into something Google indexes:
+// the prerenderer, which writes the page, and the drift check, which decides
+// whether the DEPLOYED page is stale and a rebuild is needed. They must agree
+// about which fields matter, and they were two hand-written lists.
+//
+// They had already drifted. The prerenderer reads `subcategory` for the JSON-LD
+// category path and the breadcrumb; the fingerprint did not include it. So an
+// admin re-filing a product under a new subcategory changed nothing the drift
+// check could see, no rebuild fired, and the live page kept the old category in
+// its structured data — silently, permanently, and invisibly without opening
+// the JSON-LD of a deployed page.
+//
+// The list lives in one place now, and these tests make it impossible to add an
+// SEO-relevant field without also wiring the republish that keeps it in sync.
+{
+  const { SEO_PRODUCT_FIELDS, SEO_IRRELEVANT_FIELDS } = require('../scripts/seo-fields');
+  const prerender = read('scripts/generate-product-pages.js');
+  const drift = read('scripts/publish-catalog-if-changed.js');
+
+  test('THE GUARD: the prerenderer cannot read a field nobody declared', () => {
+    /* Scans the generator for every `p.<field>` it reads and requires each to be
+       either declared as SEO-relevant (so changing it republishes the site) or
+       listed as irrelevant WITH A REASON. There is no third state where a field
+       quietly affects the page and nothing notices when it changes. */
+    const readFields = new Set(
+      (prerender.match(/\bp\.[a-z_]+/g) || []).map((s) => s.slice(2))
+    );
+    const declared = new Set(SEO_PRODUCT_FIELDS);
+    const excused = new Set(Object.keys(SEO_IRRELEVANT_FIELDS));
+    const undeclared = [...readFields].filter((f) => !declared.has(f) && !excused.has(f));
+    assert.deepStrictEqual(undeclared, [],
+      'these product fields reach the crawler but are not in SEO_PRODUCT_FIELDS, so editing them '
+      + 'would never republish the site: ' + undeclared.join(', '));
+  });
+
+  test('every excused field says WHY it is excused', () => {
+    // An escape hatch with no justification is a hole.
+    for (const [field, reason] of Object.entries(SEO_IRRELEVANT_FIELDS)) {
+      assert.ok(typeof reason === 'string' && reason.length > 15,
+        'SEO_IRRELEVANT_FIELDS.' + field + ' needs a real reason, not "' + reason + '"');
+    }
+  });
+
+  test('the drift fingerprint is DERIVED from the list, never retyped', () => {
+    assert.match(drift, /require\('\.\/seo-fields'\)/,
+      'the fingerprint must read the shared declaration');
+    assert.match(drift, /SEO_PRODUCT_FIELDS\.map\(/,
+      'built from the list, so a field can only be forgotten in one place');
+    // The old hand-written array must be gone, or the two can disagree again.
+    assert.ok(!/p\.id, p\.slug, p\.name, p\.category, p\.price_paise/.test(drift),
+      'the hand-written field array is what drifted; it must not come back');
+  });
+
+  test('THE PROOF: changing ANY declared field republishes the site', () => {
+    /* Not an assertion about the source — the real fingerprint function, run
+       over a product with one field changed at a time. If any change fails to
+       move the hash, an admin could edit that field and the deployed page would
+       never update. */
+    const crypto = require('crypto');
+    const i = drift.indexOf('function fingerprint(products)');
+    let d = 0; const s = drift.indexOf('{', i); let e = s;
+    for (let k = s; k < drift.length; k++) {
+      if (drift[k] === '{') d++;
+      else if (drift[k] === '}') { d--; if (!d) { e = k; break; } }
+    }
+    const fingerprint = new Function('crypto', 'SEO_PRODUCT_FIELDS',
+      drift.slice(i, e + 1) + '; return fingerprint;')(crypto, SEO_PRODUCT_FIELDS);
+
+    const base = {
+      id: '1', slug: 'a', name: 'A', sku: 'S', category: 'c', subcategory: 's',
+      short_desc: 'd', image_url: 'u', price_paise: 1, mrp_paise: 2, stock_qty: 3,
+      has_variants: false, rating: 4, review_count: 5, badge: 'b'
+    };
+    const reference = fingerprint([base]);
+    const inert = [];
+    for (const field of SEO_PRODUCT_FIELDS) {
+      const changed = Object.assign({}, base);
+      changed[field] = typeof base[field] === 'number' ? base[field] + 99 : 'CHANGED';
+      if (fingerprint([changed]) === reference) inert.push(field);
+    }
+    assert.deepStrictEqual(inert, [],
+      'editing these fields would not trigger a rebuild, so the live page would keep the old value: '
+      + inert.join(', '));
+  });
+
+  test('THE ORIGINAL BUG: a changed image URL republishes', () => {
+    // The single most common catalogue edit, and the one that decides what every
+    // social platform shows.
+    assert.ok(SEO_PRODUCT_FIELDS.includes('image_url'),
+      'an admin swapping a product photo must republish, or every share keeps the old picture');
+    assert.ok(SEO_PRODUCT_FIELDS.includes('subcategory'),
+      'this is the field that had already drifted');
+  });
+
+  test('the social card is LIFTED from the site, not redrawn beside it', () => {
+    // A copied mandala agrees today and drifts the first time either is touched.
+    const gen = read('scripts/generate-og-image.js');
+    assert.match(gen, /function extractChakra\(\)/);
+    assert.match(gen, /index\.indexOf\('<svg viewBox="0 0 500 500" aria-hidden="true">'\)/,
+      'it must read the awakening chakra out of index.html');
+    assert.match(gen, /throw new Error\(/,
+      'and fail loudly if the markup moved, rather than silently drawing something else');
+    assert.match(gen, /cssVar\('gold'/, 'the palette comes from the stylesheet too');
+    // The card must show the chakra ABOVE the wordmark, as asked.
+    const chakraAt = gen.indexOf('${CHAKRA}');
+    const wordAt = gen.indexOf('class="word">CHAKRASHRI');
+    assert.ok(chakraAt > -1 && wordAt > chakraAt, 'the chakra sits above the wordmark');
+  });
+}
+
+// ============================================================
+section('[fe-50] One rule, one place — the combinations this pass closed');
+// ============================================================
+// Every finding here is the same shape: a rule that was correct when it was
+// written by hand in N places, and became wrong in N-1 of them the moment the
+// Nth changed. None of them failed loudly. They just got quietly worse.
+{
+  const html = read('index.html');
+  const admin = read('admin.html');
+  const adminRoutes = read('src/routes/admin.routes.js');
+  const productRoutes = read('src/routes/products.routes.js');
+
+  // Wide enough for addToCart, which is 3.4KB of function and comment.
+  function grab(name, span) {
+    const at = html.indexOf('function ' + name + '(');
+    assert.ok(at > -1, 'expected function ' + name);
+    return html.slice(at, at + (span || 4200));
+  }
+
+  test('SALES: "which orders count" is written once, not seven times', () => {
+    const util = read('src/utils/orderStatus.js');
+    assert.match(util, /const REVENUE_STATUSES = Object\.freeze\(\[/,
+      'frozen, so no caller can mutate the list every query shares');
+    assert.match(util, /REVENUE_STATUSES\.map\(\(s\) => `'\$\{s\}'`\)\.join\(','\)/,
+      'the SQL tuple is BUILT from the array, never typed a second time');
+
+    const literal = "'paid','processing','shipped','delivered','partially_refunded'";
+    for (const [file, src] of [['admin.routes.js', adminRoutes], ['products.routes.js', productRoutes]]) {
+      assert.ok(!src.includes(literal),
+        file + ' still hand-writes the status list; that is the seventh copy coming back');
+    }
+    // And it is genuinely used, rather than the copies having simply been deleted.
+    assert.ok((adminRoutes.match(/\$\{REVENUE_STATUS_SQL\}/g) || []).length >= 6,
+      'admin has six queries that count sales');
+    assert.ok((productRoutes.match(/\$\{REVENUE_STATUS_SQL\}/g) || []).length >= 2);
+  });
+
+  test('SALES: the two NEIGHBOURING rules were not swept in with it', () => {
+    /* Both of these look like the revenue list and are not it. Folding either
+       one in would be a silent behaviour change on a money path: fulfilment
+       would start counting partial refunds, and the admin would lose its
+       ability to move an order into payment_review. */
+    assert.match(adminRoutes, /'paid', 'processing', 'shipped', 'delivered'\]/,
+      'reachedFulfilment excludes partially_refunded, on purpose');
+    assert.match(read('src/routes/payments.routes.js'), /'paid', 'processing', 'shipped', 'delivered'\]/);
+    assert.match(adminRoutes, /'partially_refunded', 'payment_review'/,
+      'the admin status whitelist includes payment_review, on purpose');
+  });
+
+  test('BADGES: automatic badges broke four rankings, now one comparator', () => {
+    /* p.badge === 'bestseller' was correct only while a badge was hand-typed.
+       Deriving it from sales made all four copies read a field that is now
+       usually empty — mega-menu picks, related-product filler and two wait
+       suggestion lists all stopped ranking by bestseller, silently. */
+    const cmp = grab('byBestsellerThenReviews');
+    assert.match(cmp, /isBestseller\(b\) \? 1 : 0/);
+    assert.match(cmp, /isBestseller\(a\) \? 1 : 0/);
+    assert.ok(!/\.badge === 'bestseller'/.test(html.replace(/\/\*[\s\S]*?\*\//g, '')),
+      'no surface may compare the raw badge again — that is the bug returning');
+    for (const caller of ['renderMegaMenuPicks', 'waitRelevanceSort']) {
+      assert.match(grab(caller), /byBestsellerThenReviews/, caller + ' must use the shared comparator');
+    }
+    assert.match(html, /PRODUCTS\.filter\(function\(p\)\{ return buyable\(p\) && isBestseller\(p\); \}\)/,
+      'the wait screen\'s bestseller card matched nothing once badges were computed');
+  });
+
+  test('SHOP: "Newest" sorts by date, not by whether something is labelled new', () => {
+    const fn = grab('getFilteredSortedProducts');
+    assert.match(fn, /Date\.parse\(a\.createdAt \|\| ''\) \|\| 0/,
+      'undated sorts to 1970, which is last');
+    assert.ok(!/createdAt \|\| ''\) \|\| -Infinity/.test(html),
+      'two undated products would make -Infinity minus -Infinity, which is NaN, '
+      + 'and a comparator returning NaN has no defined ordering at all');
+    assert.ok(!/sortBy === 'newest'[\s\S]{0,160}?badge==='new'/.test(html),
+      'a badge is a label; Newest is a date, and every new product used to tie');
+  });
+
+  test('CART: the one doorway answers TRUE or FALSE on every path', () => {
+    /* It returned false for a variant refusal and bare undefined for the other
+       two, so the payment-wait card flipped to "Added" after a refusal and told
+       the customer their order contained something it did not. */
+    const fn = grab('addToCart');
+    assert.match(fn, /if\(!p \|\| !p\.stock\) return false;/);
+    assert.match(fn, /holds every ' \+ what \+ ' we have\.', 'err'\);\s*\n\s*return false;/);
+    assert.match(fn, /toast\(p\.name \+ ' added to cart'\);\s*\n\s*return true;/,
+      'the success path must say so, or every caller has to guess');
+    assert.match(grab('waitAddSuggestion'), /if\(!addToCart\(String\(id\), 1\)\) return;/,
+      'no confirmation UI before the cart has actually accepted it');
+  });
+
+  test('VARIANTS: a product with options and nothing behind them says so', () => {
+    /* THE HOLE. A seller adds "Size" and saves before creating the variant rows.
+       The product stays Active with real stock, so the shop lists it, asks the
+       customer to choose, and not one chip resolves to anything purchasable.
+       "Select Options" is then an instruction that cannot be carried out.
+
+       Deactivating every variant does NOT land here — the stock trigger sums
+       active variants only, so stock_qty falls to 0 and the product reads Out of
+       Stock by itself. It is the never-created case that slips through, because
+       no product_variants row ever existed to fire that trigger. */
+    const pred = grab('hasPurchasableVariant');
+    assert.match(pred, /Number\(v\.stock_qty\) > 0/,
+      'a variant row that exists but holds nothing is not purchasable either');
+    const ui = grab('updateVariantUI');
+    assert.match(ui, /const dead = needs && loaded && !hasPurchasableVariant\(p\);/);
+    assert.match(ui, /dead \? 'Out of Stock'/,
+      'four states, not three: loading, choose, cannot-be-bought, add');
+    assert.match(ui, /This product is not available to order at the moment\./);
+    // And the console has to be able to find it before a customer does.
+    assert.match(adminRoutes, /AS option_count/);
+    assert.match(admin, /function unsellableWarning\(p\)/);
+    assert.match(admin, /p\.option_count > 0 && p\.variant_count === 0/,
+      'options with no active variant — active, in stock, and unbuyable');
+  });
+
+  test('ADMIN: the badge field no longer tells the seller the opposite', () => {
+    assert.ok(!/Leave blank for no badge/.test(admin),
+      'blank now means the shop computes one — the old hint was actively false');
+    assert.match(admin, /Leave blank and the shop decides/);
+    assert.match(admin, /what you type always wins/);
+    // And the table must not print a dash for a product the shop badges.
+    const fn = admin.slice(admin.indexOf('function badgeCell('), admin.indexOf('function badgeCell(') + 1200);
+    assert.match(fn, /if\(p\.badge\) return '<span class="pill pill-warn">'/);
+    assert.match(fn, /86400000 <= NEW_ARRIVAL_DAYS/,
+      'New is exact from created_at, and reads the window by name so the two files cannot drift');
+    assert.ok(!/percentile|BESTSELLER_PERCENTILE/.test(fn),
+      'the admin list is paged 20 at a time; a percentile over one page is a wrong badge');
+  });
+
+  test('ADMIN: the seller can see the number the badge is computed from', () => {
+    assert.match(adminRoutes, /\), 0\) AS units_sold/,
+      'the products endpoint must return it, or the Sold column is always zero');
+    assert.match(admin, /<th>Sub-category<\/th><th>Badge<\/th><th>Sold<\/th>/);
+    assert.match(admin, /\$\{Number\(p\.units_sold\) \|\| 0\}/,
+      'a missing figure reads 0, never "undefined"');
+  });
+
+  test('CONSTANTS: the copies admin.html cannot import must still agree', () => {
+    /* admin.html is a static file. It cannot require() anything, so two rules it
+       needs are necessarily written out a second time. That is only safe if
+       something notices them drifting — which is this test.
+
+       Both had ALREADY drifted within one working session. The description rule
+       existed in three places with three different numbers (50/165 for a page,
+       40/none for a product, 70/155 in the form), so a 45-character description
+       was red in the console and green in the audit and the seller could not
+       satisfy both. */
+    const { SEO_DESCRIPTION } = require(path.join(ROOT, 'scripts/seo-fields.js'));
+    const num = (name) => {
+      const m = admin.match(new RegExp('const ' + name + ' = (\\d+);'));
+      assert.ok(m, 'admin.html must declare ' + name + ' as a named constant, not inline it');
+      return Number(m[1]);
+    };
+    assert.strictEqual(num('SEO_DESC_MIN'), SEO_DESCRIPTION.MIN);
+    assert.strictEqual(num('SEO_DESC_IDEAL_MAX'), SEO_DESCRIPTION.IDEAL_MAX);
+    assert.strictEqual(num('SEO_DESC_HARD_MAX'), SEO_DESCRIPTION.HARD_MAX);
+
+    // The audit must READ that declaration rather than carry its own numbers.
+    const audit = read('scripts/seo-audit.js');
+    assert.match(audit, /require\('\.\/seo-fields'\)/);
+    assert.ok(!/length >= 50|length <= 165|length > 40/.test(audit),
+      'the audit is back to hand-written thresholds that disagree with the form');
+    /* IDEAL_MAX must never become an advisory: eight of eleven products are over
+       it and all of them read fine. An advisory that fires on a healthy
+       catalogue is how people learn to ignore advisories. */
+    assert.ok(!/SEO_DESCRIPTION\.IDEAL_MAX/.test(audit),
+      'exceeding what Google renders is not a defect and must not be reported as one');
+
+    // And the new-arrival window, which decides a badge on both surfaces.
+    const shopDays = Number((html.match(/const NEW_ARRIVAL_DAYS = (\d+);/) || [])[1]);
+    const adminDays = num('NEW_ARRIVAL_DAYS');
+    assert.ok(Number.isFinite(shopDays), 'index.html must declare NEW_ARRIVAL_DAYS');
+    assert.strictEqual(adminDays, shopDays,
+      'the console and the storefront would disagree about which products are New');
+    assert.ok(!/86400000 <= 30/.test(admin), 'the window must not be inlined again');
+  });
+
+  test('ADMIN: SEO guidance sits where a product is actually written', () => {
+    const fn = admin.slice(admin.indexOf('function updateSeoHint('), admin.indexOf('function updateSeoHint(') + 1400);
+    assert.match(fn, /n < SEO_DESC_MIN/,
+      'the same floor the audit reports as a thin description, read by name');
+    assert.match(fn, /n > SEO_DESC_IDEAL_MAX/, 'and the ceiling Google actually renders');
+    assert.match(fn, /n > SEO_DESC_HARD_MAX/, 'plus the point where it stopped being a summary');
+    assert.ok(!/n > 155|n < 70/.test(admin), 'no bare numbers: [fe-50] can only guard named constants');
+    assert.match(fn, /hint\.textContent = /,
+      'textContent, not innerHTML — nothing here should be able to inject markup');
+    // Said on open, not only once they start typing.
+    assert.ok((admin.match(/updateSeoHint\(\)/g) || []).length >= 3,
+      'wired to input, to the blank Add form, and to a loaded Edit form');
+  });
+}
+
+// ============================================================
+section('[fe-51] Nothing in the markup points at something that is not there');
+// ============================================================
+/* THE CLASS OF BUG NOTHING ELSE HERE CATCHES.
+
+   Both front ends are single files of ~700KB with no modules and no imports. A
+   button wired to a function name that does not exist, or a qs('#panel') for an
+   element nobody added, is not a syntax error and not a failing unit test — it
+   is a click that silently does nothing, found by a customer or by the seller.
+
+   Eleven tasks in this cycle added buttons, inputs, filters and panels to these
+   two files. This resolves every one of them at build time. */
+{
+  const BUILTIN = new Set(['return', 'this', 'window', 'document', 'event', 'if', 'else',
+    'true', 'false', 'null', 'undefined', 'void', 'new', 'typeof', 'delete']);
+
+  function definedNames(js) {
+    const names = new Set();
+    for (const m of js.matchAll(/(?:^|\n)\s*(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(/g)) names.add(m[1]);
+    // ANY binding, not only literal functions: the admin's search handlers are
+    // built as `const debounceLoadProducts = debounce(...)`.
+    for (const m of js.matchAll(/(?:^|\n)\s*(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=/g)) names.add(m[1]);
+    for (const m of js.matchAll(/window\.([A-Za-z_$][\w$]*)\s*=/g)) names.add(m[1]);
+    return names;
+  }
+
+  for (const file of FILES) {
+    test(`${file}: every inline handler resolves to a function that exists`, () => {
+      const html = read(file);
+      const defined = definedNames(inlineScriptBodies(html).join('\n'));
+      const missing = [];
+      const attr = /\son(?:click|input|change|submit|keyup|keydown|focus|blur|mouseenter|mouseleave|toggle)\s*=\s*"([^"]*)"/g;
+      const seen = new Set();
+      for (const m of html.matchAll(attr)) {
+        // (?<![.\w$]) skips METHOD calls — event.preventDefault() and
+        // window.open() are not bare function names.
+        for (const c of m[1].matchAll(/(?<![.\w$])([A-Za-z_$][\w$]*)\s*\(/g)) {
+          const name = c[1];
+          if (BUILTIN.has(name) || seen.has(name)) continue;
+          seen.add(name);
+          // A handler may legitimately call a global: String(x), Number(x),
+          // JSON.parse(...). Those are defined by the language, not by us.
+          if (!defined.has(name) && !(name in globalThis)) missing.push(name);
+        }
+      }
+      assert.ok(seen.size > 20, 'expected to find real handlers; the scan found ' + seen.size);
+      assert.deepStrictEqual(missing, [],
+        'wired in markup but never defined — these do nothing when clicked');
+    });
+
+    test(`${file}: every element lookup has an element to find`, () => {
+      const html = read(file);
+      const js = inlineScriptBodies(html).join('\n');
+      const ids = new Set();
+      for (const m of html.matchAll(/\sid\s*=\s*"([^"]+)"/g)) ids.add(m[1]);
+      // Panels the code creates rather than declaring in markup.
+      for (const m of js.matchAll(/\.id\s*=\s*'([^']+)'/g)) ids.add(m[1]);
+      const missing = [];
+      const seen = new Set();
+      for (const re of [/qs\('#([A-Za-z][\w-]*)'\)/g, /getElementById\('([A-Za-z][\w-]*)'\)/g]) {
+        for (const m of js.matchAll(re)) {
+          if (seen.has(m[1])) continue;
+          seen.add(m[1]);
+          if (!ids.has(m[1])) missing.push(m[1]);
+        }
+      }
+      assert.ok(seen.size > 50, 'expected to find real lookups; the scan found ' + seen.size);
+      assert.deepStrictEqual(missing, [],
+        'looked up by id, but nothing in the document carries that id');
+    });
+  }
+}
+
+// ============================================================
+section('[fe-52] No write may hide behind a read grant');
+// ============================================================
+/* Capability grants are edited by ROLE, not by route.
+
+   Whoever creates a support role will grant customers:read — the name says
+   "let them look at customers" — and any write hiding behind that read arrives
+   with it, silently, invisible to the person reviewing the role change. Two
+   endpoints were in exactly that state: changing an enquiry's status, and
+   SENDING EMAIL TO A CUSTOMER AS THE BUSINESS. Neither was exposed, because
+   only admin holds customers:read today, which is precisely why it would have
+   gone unnoticed until the day it mattered.
+
+   The rule is structural rather than a list of known-bad routes: a mutating
+   endpoint must require at least one capability whose name is not a read. */
+{
+  const fs2 = require('fs');
+  const routeDir = path.join(ROOT, 'src/routes');
+  const { CAPABILITIES, capabilitiesForRole } = require(path.join(ROOT, 'src/middleware/capabilities.js'));
+  const MUTATING = new Set(['post', 'put', 'patch', 'delete']);
+
+  function mutatingRoutes() {
+    const out = [];
+    for (const file of fs2.readdirSync(routeDir).filter((f) => f.endsWith('.js'))) {
+      const src = fs2.readFileSync(path.join(routeDir, file), 'utf8');
+      const re = /router\.(get|post|put|patch|delete)\(\s*'([^']+)'([^\n]*(?:\n[^\n]*?)??)requireCapability\(([^)]*)\)/g;
+      for (const m of src.matchAll(re)) {
+        if (!MUTATING.has(m[1])) continue;
+        const caps = m[4].split(',').map((s) => s.trim().replace(/^C\./, '')).filter(Boolean)
+          .map((c) => CAPABILITIES[c] || c);
+        out.push({ file, method: m[1].toUpperCase(), path: m[2], caps });
+      }
+    }
+    return out;
+  }
+
+  test('every mutating endpoint requires a capability that names a write', () => {
+    const routes = mutatingRoutes();
+    assert.ok(routes.length >= 25,
+      'the scan found only ' + routes.length + ' guarded mutating routes; the pattern stopped matching');
+    const bad = routes
+      .filter((r) => r.caps.length && r.caps.every((c) => /:read($|_)/.test(String(c))))
+      .map((r) => r.method + ' ' + r.path + '  [' + r.caps.join(' + ') + ']');
+    assert.deepStrictEqual(bad, [],
+      'these change state but ask only for permission to LOOK: ' + bad.join('; '));
+  });
+
+  test('the two contact-message writes need the contact grant, not just the read', () => {
+    const admin = read('src/routes/admin.routes.js');
+    assert.match(admin, /router\.patch\('\/contact-messages\/:id', requireCapability\(C\.CUSTOMERS_READ, C\.CUSTOMERS_CONTACT\)/);
+    assert.match(admin, /router\.post\('\/contact-messages\/:id\/reply', requireCapability\(C\.CUSTOMERS_READ, C\.CUSTOMERS_CONTACT\)/);
+    // requireCapability demands ALL of them, which is what makes this a tightening.
+    const guard = read('src/middleware/capabilities.js');
+    assert.match(guard, /const missing = required\.filter\(\(cap\) => !granted\.includes\(cap\)\)/,
+      'if it ever became "any of these", listing two capabilities would WEAKEN the route');
+  });
+
+  test('the tightening changed nothing for any role that exists today', () => {
+    // Admin holds everything by construction; staff never held customers:read,
+    // so neither gains nor loses. A "fix" that locks the owner out of their own
+    // inbox would be a far worse bug than the one being fixed.
+    assert.ok(capabilitiesForRole('admin').includes(CAPABILITIES.CUSTOMERS_CONTACT));
+    assert.ok(capabilitiesForRole('admin').includes(CAPABILITIES.CUSTOMERS_READ));
+    assert.ok(!capabilitiesForRole('staff').includes(CAPABILITIES.CUSTOMERS_CONTACT));
+    assert.ok(!capabilitiesForRole('staff').includes(CAPABILITIES.CUSTOMERS_READ),
+      'staff never had the read grant, so the write behind it was never reachable');
+    assert.deepStrictEqual(capabilitiesForRole('customer'), []);
+  });
+
+  test('the console hides the controls it knows would 403', () => {
+    // A button that exists and always fails is worse than no button.
+    const admin = read('admin.html');
+    assert.match(admin, /hasCapability\('customers:contact'\)/,
+      'Reply, Mark read, Unarchive and Archive all call the newly-gated endpoints');
+    assert.match(admin, /'<span class="muted">View only<\/span>'/,
+      'and a viewer without the grant is told why the actions are absent');
+  });
+}
+
+// ============================================================
+section('[fe-53] A test may not re-derive the thing it is testing');
+// ============================================================
+/* THE FAILURE THIS EXISTS TO PREVENT, WHICH ALREADY HAPPENED ONCE.
+
+   [db-12] used to lift the top-categories query out of products.routes.js by
+   slicing the source between backticks. That is fine for exactly as long as the
+   query contains no interpolation. The moment `${REVENUE_STATUS_SQL}` was
+   introduced, the slice handed Postgres a literal dollar-brace and all four
+   checks failed with "syntax error at or near $" — while the route itself was
+   entirely correct. The test had quietly stopped testing what ships.
+
+   Worse, `npm test` could never have caught it: the only suite that executes
+   SQL against a real database needs one, so it lives in verify:full rather than
+   the offline gate. This check runs OFFLINE, and fails the build for the whole
+   class rather than for the one instance. */
+{
+  const fs2 = require('fs');
+  const testDir = __dirname;
+
+  test('no test slices SQL out of a route file as text', () => {
+    const offenders = [];
+    for (const file of fs2.readdirSync(testDir).filter((f) => f.endsWith('.js'))) {
+      const src = fs2.readFileSync(path.join(testDir, file), 'utf8');
+      // Reading a route file is fine; slicing a backticked query out of it is not.
+      const readsRoute = /readFileSync\([^)]*routes[\\/]/.test(src) || /'\.\.', 'src', 'routes'/.test(src);
+      if (!readsRoute) continue;
+      const slicesSql = /\.indexOf\('`SELECT/i.test(src) || /\.slice\(\s*sqlStart/.test(src);
+      if (slicesSql) offenders.push(file);
+    }
+    assert.deepStrictEqual(offenders, [],
+      'these rebuild a query from source instead of importing it, so an interpolation '
+      + 'silently turns them into tests of a different string: ' + offenders.join(', '));
+  });
+
+  test('the query [db-12] runs is EXPORTED, and carries nothing left to interpolate', () => {
+    const dbTest = read('test/db-integration.test.js');
+    assert.match(dbTest, /require\('\.\.\/src\/routes\/products\.routes\.js'\)\.TOP_CATEGORIES_SQL/,
+      'it must import the real query rather than reconstruct it');
+    const route = read('src/routes/products.routes.js');
+    assert.match(route, /router\.TOP_CATEGORIES_SQL = TOP_CATEGORIES_SQL;/,
+      'and the route must actually export it, or the import is undefined and the test tests nothing');
+    // The route must USE the constant, not keep a second copy inline.
+    assert.match(route, /await db\.query\(TOP_CATEGORIES_SQL, \[limit\]\)/,
+      'a hoisted constant the route does not use is just a third copy of the query');
+  });
+
+  test('every SQL string a test can import resolves fully at load time', () => {
+    /* Loaded with the db module stubbed, because requiring a route otherwise
+       opens a real connection pool — which is the reason these queries were
+       being read as text in the first place. */
+    const Module = require('module');
+    const origLoad = Module._load;
+    const stub = {
+      query: async () => ({ rows: [] }),
+      getClient: async () => ({ query: async () => ({ rows: [] }), release() {} }),
+      transaction: async (fn) => fn({ query: async () => ({ rows: [] }) })
+    };
+    Module._load = function (request) {
+      if (/config[\\/]db$/.test(request) || request.endsWith('/config/db')) return stub;
+      return origLoad.apply(this, arguments);
+    };
+    process.env.JWT_SECRET = process.env.JWT_SECRET || 'x'.repeat(48);
+    process.env.JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'y'.repeat(48);
+    process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgres://stub/stub';
+    try {
+      const router = require(path.join(ROOT, 'src/routes/products.routes.js'));
+      const sql = router.TOP_CATEGORIES_SQL;
+      assert.strictEqual(typeof sql, 'string');
+      assert.ok(!sql.includes('${'),
+        'an unresolved interpolation reaches Postgres as a literal $ and fails at runtime');
+      assert.ok(sql.includes("('paid','processing','shipped','delivered','partially_refunded')"),
+        'the status tuple must be expanded, not still a reference');
+      assert.strictEqual((sql.match(/\(/g) || []).length, (sql.match(/\)/g) || []).length,
+        'unbalanced parentheses');
+      assert.ok(!/\bIN\s*\(\s*\)/i.test(sql), 'an empty IN () means the constant rendered as nothing');
+      assert.match(sql.trim(), /LIMIT \$1$/, 'the real placeholder must survive');
+    } finally {
+      Module._load = origLoad;
+    }
   });
 }
 

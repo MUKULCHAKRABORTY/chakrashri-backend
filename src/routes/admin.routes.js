@@ -3,11 +3,14 @@ const { body } = require('express-validator');
 const db = require('../config/db');
 const { requireAuth, requireRole, requireCapability, CAPABILITIES: C } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/asyncHandler');
+const { normaliseTerm } = require('../utils/text');
+const { REVENUE_STATUS_SQL } = require('../utils/orderStatus');
 const { validateUuidParam, handleValidation } = require('../middleware/validate');
 const { restoreOrderStock, restoreOrderStockInTransaction, STOCK_RESTORED_STATUSES } = require('../utils/stock');
 const { issueRefund } = require('../utils/refunds');
 const {
-  sendOrderStatusUpdate, sendRefundInitiated, sendAdminRefundIssued, sendReviewApproved
+  sendOrderStatusUpdate, sendRefundInitiated, sendAdminRefundIssued, sendReviewApproved,
+  sendContactReply
 } = require('../utils/mailer');
 const { loadOrderForEmail, fireAndForget } = require('../utils/orderEmails');
 const { getSettings, setSetting, DEFAULTS: SETTING_DEFAULTS } = require('../utils/settings');
@@ -44,7 +47,7 @@ router.get('/overview', requireCapability(C.ANALYTICS_READ), asyncHandler(async 
   const [products, orders, revenue, pujaBookings, needsReview] = await Promise.all([
     db.query('SELECT COUNT(*) FROM products WHERE is_active = true'),
     db.query("SELECT COUNT(*) FROM orders WHERE status NOT IN ('payment_failed')"),
-    db.query("SELECT COALESCE(SUM(total_paise),0) AS total FROM orders WHERE status IN ('paid','processing','shipped','delivered','partially_refunded')"),
+    db.query(`SELECT COALESCE(SUM(total_paise),0) AS total FROM orders WHERE status IN ${REVENUE_STATUS_SQL}`),
     db.query("SELECT COUNT(*) FROM puja_bookings WHERE status = 'requested'"),
     // PAY-01 surfaces mismatched payments as 'payment_review'. A state nobody
     // can see is a state nobody resolves, so it gets a dashboard number.
@@ -136,10 +139,19 @@ router.get('/orders/:id', requireCapability(C.ORDERS_READ), asyncHandler(async (
     order.ship_country = snap.country;
   }
 
+  /* LEFT JOINs, both of them, and that is load-bearing: a product deleted
+     since the order was placed must not make the order's own items vanish from
+     the screen. The snapshot columns still carry what was bought; the joined
+     columns simply go null, and the UI falls back to them. */
   const { rows: items } = await db.query(
-    `SELECT id, product_id, product_name_snapshot, unit_price_paise, quantity, line_total_paise,
-            variant_id, variant_snapshot
-       FROM order_items WHERE order_id = $1 ORDER BY id`,
+    `SELECT oi.id, oi.product_id, oi.product_name_snapshot, oi.unit_price_paise,
+            oi.quantity, oi.line_total_paise, oi.variant_id, oi.variant_snapshot,
+            p.sku, p.slug, p.category, p.subcategory,
+            v.sku AS variant_sku
+       FROM order_items oi
+       LEFT JOIN products p ON p.id = oi.product_id
+       LEFT JOIN product_variants v ON v.id = oi.variant_id
+      WHERE oi.order_id = $1 ORDER BY oi.id`,
     [req.params.id]
   );
   const { rows: refunds } = await db.query(
@@ -484,7 +496,7 @@ router.get('/products', requireCapability(C.CATALOG_READ), asyncHandler(async (r
   const page = Math.max(1, parseInt(req.query.page, 10) || 1);
   const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
   const offset = (page - 1) * limit;
-  const { search, category, badge } = req.query;
+  const { search, category, subcategory, badge } = req.query;
   const conditions = [];
   const params = [];
   if (search) {
@@ -494,6 +506,13 @@ router.get('/products', requireCapability(C.CATALOG_READ), asyncHandler(async (r
   if (category) {
     params.push(category);
     conditions.push(`category = $${params.length}`);
+  }
+  if (subcategory) {
+    // Exactly the category rule, one level down: AND-ed with the others, and
+    // normalised the same way, so "Scripture" from a dropdown matches the
+    // "scripture" stored by the write path (migration 016 enforces lowercase).
+    params.push(normaliseTerm(subcategory));
+    conditions.push(`subcategory = $${params.length}`);
   }
   if (badge) {
     // Combined with category via AND, so selecting both narrows to products
@@ -512,6 +531,24 @@ router.get('/products', requireCapability(C.CATALOG_READ), asyncHandler(async (r
     `SELECT p.*,
             (SELECT COUNT(*)::int FROM product_variants v
               WHERE v.product_id = p.id AND v.is_active = true) AS variant_count,
+            /* The exact number the storefront ranks bestsellers by, counted by
+               the exact same rule (REVENUE_STATUS_SQL). The shop now computes a
+               Bestseller badge from real sales, so without this the console
+               shows a badge it cannot explain, and "it decided on its own and I
+               cannot see why" is not something anyone should have to accept
+               about their own shop. */
+            COALESCE((SELECT SUM(oi.quantity)::int
+                        FROM order_items oi
+                        JOIN orders o ON o.id = oi.order_id
+                       WHERE oi.product_id = p.id
+                         AND o.status IN ${REVENUE_STATUS_SQL}), 0) AS units_sold,
+            /* An option row with no variant behind it makes a product that
+               looks live and cannot be bought: the shop asks the customer to
+               choose, and nothing they choose resolves to anything. It is
+               invisible from the product list — active, in stock, normal — so
+               the console has to be told to look for it. */
+            (SELECT COUNT(*)::int FROM product_options po
+              WHERE po.product_id = p.id) AS option_count,
             COUNT(*) OVER() AS total_count
      FROM products p ${where}
      ORDER BY p.created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`,
@@ -573,7 +610,7 @@ router.get('/analytics/revenue-by-day', requireCapability(C.ANALYTICS_READ), asy
             COALESCE(SUM(total_paise), 0) AS revenue_paise,
             COUNT(*) AS order_count
      FROM orders
-     WHERE status IN ('paid','processing','shipped','delivered','partially_refunded')
+     WHERE status IN ${REVENUE_STATUS_SQL}
        AND created_at >= now() - make_interval(days => $1)
      GROUP BY 1 ORDER BY 1`,
     [days]
@@ -588,7 +625,7 @@ router.get('/analytics/top-products', requireCapability(C.ANALYTICS_READ), async
      FROM order_items oi
      JOIN orders o ON o.id = oi.order_id
      JOIN products p ON p.id = oi.product_id
-     WHERE o.status IN ('paid','processing','shipped','delivered','partially_refunded')
+     WHERE o.status IN ${REVENUE_STATUS_SQL}
      GROUP BY p.id, p.name, p.category
      ORDER BY units_sold DESC
      LIMIT $1`,
@@ -605,13 +642,48 @@ router.get('/analytics/order-status-breakdown', requireCapability(C.ANALYTICS_RE
 // ---------- Products running low on stock ----------
 router.get('/low-stock', requireCapability(C.CATALOG_READ), asyncHandler(async (req, res) => {
   const threshold = Math.min(1000, Math.max(0, parseInt(req.query.threshold, 10) || 5));
-  const { rows } = await db.query(
-    `SELECT id, name, sku, stock_qty, category FROM products
-     WHERE is_active = true AND stock_qty <= $1
-     ORDER BY stock_qty ASC LIMIT 100`,
+
+  /* THE BLIND SPOT THIS CLOSES.
+
+     products.stock_qty on a variant product is a DERIVED figure — the sum of
+     its active variants, maintained by migration 012's trigger. So three sizes
+     holding 2 each report 6, clear a threshold of 5, and never appear here,
+     while every individual size is one order away from unsellable. The seller
+     finds out when a customer cannot check out.
+
+     Two queries rather than one, because they answer different questions and a
+     UNION would force the same columns onto both:
+
+       - a product with NO variants, low on its own directly-managed stock;
+       - a VARIANT that is low, named so it can be restocked.
+
+     A variant product is deliberately excluded from the first: its stock_qty is
+     not a number anybody manages, and listing "Dhoti: 6 left" beside "Dhoti /
+     Size M: 2 left" is noise that hides the actionable row. */
+  const { rows: products } = await db.query(
+    `SELECT p.id, p.name, p.sku, p.stock_qty, p.category, p.subcategory
+       FROM products p
+      WHERE p.is_active = true
+        AND p.stock_qty <= $1
+        AND NOT EXISTS (SELECT 1 FROM product_variants v
+                         WHERE v.product_id = p.id AND v.is_active = true)
+      ORDER BY p.stock_qty ASC LIMIT 100`,
     [threshold]
   );
-  res.json({ products: rows });
+
+  const { rows: variants } = await db.query(
+    `SELECT v.id AS variant_id, v.sku AS variant_sku, v.stock_qty,
+            v.option_values,
+            p.id AS product_id, p.name AS product_name, p.sku AS product_sku,
+            p.category, p.subcategory
+       FROM product_variants v
+       JOIN products p ON p.id = v.product_id
+      WHERE v.is_active = true AND p.is_active = true AND v.stock_qty <= $1
+      ORDER BY v.stock_qty ASC LIMIT 100`,
+    [threshold]
+  );
+
+  res.json({ products, variants, threshold });
 }));
 
 // ============================================================
@@ -631,8 +703,8 @@ router.get('/customers', requireCapability(C.CUSTOMERS_READ), asyncHandler(async
   params.push(limit, offset);
   const { rows } = await db.query(
     `SELECT u.id, u.name, u.email, u.phone, u.created_at, u.email_verified, u.cod_blocked, u.cod_rto_count,
-            COUNT(o.id) FILTER (WHERE o.status IN ('paid','processing','shipped','delivered','partially_refunded')) AS completed_order_count,
-            COALESCE(SUM(o.total_paise) FILTER (WHERE o.status IN ('paid','processing','shipped','delivered','partially_refunded')), 0) AS lifetime_value_paise
+            COUNT(o.id) FILTER (WHERE o.status IN ${REVENUE_STATUS_SQL}) AS completed_order_count,
+            COALESCE(SUM(o.total_paise) FILTER (WHERE o.status IN ${REVENUE_STATUS_SQL}), 0) AS lifetime_value_paise
      FROM users u
      LEFT JOIN orders o ON o.user_id = u.id
      ${where}
@@ -830,7 +902,9 @@ router.get('/contact-messages', requireCapability(C.CUSTOMERS_READ), asyncHandle
   res.json({ messages: rows, unread: counts[0].unread, total: counts[0].total });
 }));
 
-router.patch('/contact-messages/:id', requireCapability(C.CUSTOMERS_READ), asyncHandler(async (req, res) => {
+// Reading the enquiry AND acting on it: both grants, because this changes what
+// the customer's message is recorded as having been dealt with.
+router.patch('/contact-messages/:id', requireCapability(C.CUSTOMERS_READ, C.CUSTOMERS_CONTACT), asyncHandler(async (req, res) => {
   const { status, adminNotes } = req.body;
   if (status && !['new', 'read', 'replied', 'archived'].includes(status)) {
     return res.status(400).json({ error: 'Status must be new, read, replied or archived.' });
@@ -847,6 +921,65 @@ router.patch('/contact-messages/:id', requireCapability(C.CUSTOMERS_READ), async
   );
   if (!rows.length) return res.status(404).json({ error: 'Message not found.' });
   res.json({ message: rows[0] });
+}));
+
+/* Reply to a contact enquiry, by email, from the console.
+
+   THE GAP THIS CLOSES: there was a "Replied" button that set a status and sent
+   nothing. An admin could mark an enquiry answered without the customer ever
+   hearing back, and nothing in the system could tell the difference between a
+   real reply and a mis-click.
+
+   The status is only moved to 'replied' AFTER the send is accepted. If the mail
+   fails the message stays where it was, so the queue still shows it as
+   outstanding rather than quietly losing it. */
+/* Sending mail to a customer, signed as the business. A read grant must never
+   carry this: requireCapability demands ALL of the listed capabilities, so this
+   needs the contact grant as well as the one that lets you see the enquiry. */
+router.post('/contact-messages/:id/reply', requireCapability(C.CUSTOMERS_READ, C.CUSTOMERS_CONTACT), asyncHandler(async (req, res) => {
+  const body = typeof req.body.body === 'string' ? req.body.body.trim() : '';
+  if (body.length < 2) return res.status(400).json({ error: 'Write a reply before sending.' });
+  if (body.length > 5000) return res.status(400).json({ error: 'That reply is too long — 5000 characters maximum.' });
+
+  const { rows } = await db.query(
+    'SELECT id, name, email, subject, message, created_at FROM contact_messages WHERE id = $1',
+    [req.params.id]
+  );
+  if (!rows.length) return res.status(404).json({ error: 'Message not found.' });
+  const msg = rows[0];
+
+  const subject = msg.subject ? ('Re: ' + msg.subject) : 'Re: your message to Chakrashri';
+  const result = await sendContactReply({
+    toEmail: msg.email,
+    toName: msg.name,
+    subject,
+    replyBody: body,
+    messageId: msg.id,
+    originalMessage: {
+      subject: msg.subject,
+      message: msg.message,
+      when: new Date(msg.created_at).toISOString().slice(0, 10)
+    }
+  });
+
+  if (!result || result.sent === false) {
+    // Left as-is on purpose: an unsent reply must not read as answered.
+    return res.status(502).json({ error: 'The reply could not be sent. The message is still marked unanswered — please try again.' });
+  }
+
+  // Appended, not overwritten: an enquiry can be replied to more than once and
+  // the console is the only record of what was actually said.
+  await db.query(
+    `UPDATE contact_messages
+        SET status = 'replied',
+            admin_notes = COALESCE(admin_notes || E'\n\n', '') || $2,
+            handled_by = $3,
+            handled_at = now()
+      WHERE id = $1`,
+    [msg.id, '[' + new Date().toISOString().slice(0, 16).replace('T', ' ') + '] ' + body, req.user.id]
+  );
+
+  res.json({ ok: true, sentTo: msg.email });
 }));
 
 // ---------- Newsletter subscribers ----------

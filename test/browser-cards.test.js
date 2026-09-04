@@ -95,6 +95,11 @@ const harness = `<!doctype html><html><body><div id="grid"></div><script>
   // that throws renders nothing, and the symptom was a 30-second timeout on a
   // button that never existed — see the render guard below.
   function catPath(p){ return p && p.subcat ? (catLabel(p.cat)+'/'+catLabel(p.subcat)) : catLabel(p && p.cat); }
+  /* The card asks what badge a product should show, and that is now COMPUTED
+     from sales and age rather than read off a column. Stubbed to the admin
+     value here: this suite is about what the card's controls DO, and the badge
+     maths has its own coverage in scripts/badge-math.js. */
+  function effectiveBadge(p){ return (p && p.badge) || ''; }
   function starsHTML(){ return '<span class="stars"></span>'; }
   function formatINR(n){ return '\\u20b9'+n; }
   function cartQtyForProduct(){ return 0; }

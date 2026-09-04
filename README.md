@@ -924,6 +924,624 @@ snapshot`): ranked `book 59, malas 25, sphatik 25, idols 22, yantra 21`, with th
 malas/sphatik tie — equal units, equal depth — broken alphabetically exactly as
 specified. Rail still 7 cards.
 
+### 4p. A variant product could reach the cart with no variant
+
+**The live bug.** On the product page, *Add to Cart* stayed enabled for a
+product with variants whenever the per-product DETAIL fetch had not landed — a
+reload, a cold start, or that one request failing. The customer added the base
+product and the **server refused the order at the payment step**, which is the
+worst possible place to discover it.
+
+**The cause was five hand-written copies of one rule.** `quickAdjust`,
+`qvAddToCart` and `buyable()` asked `hasVariants || variantOptions.length`;
+`pdAddToCart`, `pdBuyNow` and `updateVariantUI` asked `variantOptions.length`
+**alone**. `hasVariants` comes from the list endpoint and the snapshot, so it is
+known immediately; `variantOptions` arrives only from the detail fetch, which is
+awaited *after* the page paints and is deliberately allowed to fail. So the three
+checks that looked only at `variantOptions` were blind exactly when it mattered.
+
+The fix is not "add `hasVariants` to those three" — that leaves four copies that
+agree today. There is now one `requiresVariantChoice(p)`, and **the invariant is
+enforced inside `addToCart` itself**: the single doorway every path converges on.
+A UI guard can be forgotten by the next feature; a boundary check cannot.
+
+Four things follow from that:
+
+- **Three button states, not two.** `Add to Cart` / `Select Options` /
+  `Loading options…`. The old two-state version put "options not yet known" into
+  the *enabled* state. Saying "Select Options" with nothing on screen to select
+  would be just as unhelpful, so loading gets its own wording.
+- **The first paint is already correct.** That markup renders before
+  `updateVariantUI` ever runs, so an enabled button there is a real window in
+  which an unbuyable line can be added — on a cold backend, the whole visit.
+- **Buy Now moves in lockstep.** It was never disabled at all, so it stayed live
+  beside a correctly greyed Add to Cart. Caught in the browser *twice*: once as
+  the original defect, and once when the first fix disabled it without
+  re-enabling it after a valid choice.
+- **Carts that already hold a broken line are healed.** `addToCart` cannot create
+  one any more, but a cart saved before this fix still has it in `localStorage`.
+  It is removed and the customer is told which product and what to do — not
+  silently dropped, and not left to fail at payment.
+
+Two mistakes of my own, both caught by the tests that now pin them: the healing
+report first landed in `setCartQty`, where `needOption` is undefined — a
+`ReferenceError` on **every quantity change**; and the early return did not count
+an unbuyable line as a change, so the removal was never saved and the line came
+back on the next load. `[fe-45]` asserts both.
+
+Verified in a browser at 1440 against the real product page with the detail fetch
+blocked: `addToCart(id, 1, '', null, null)` returns `false` and the cart does not
+grow; select → *Add to Cart* enabled with the variant id on the line; deselect →
+back to *Select Options*, both buttons disabled; an out-of-stock variant → *Out
+of Stock*, both disabled.
+
+### 4q. Every drawer section with a dropdown is the same section
+
+Service Booking moved **below** Shop, and now uses Shop's own row: the same
+`.mnav-split`, the same 56px bordered toggle, the same chevron, driven by the
+same `wireDrawerSection()`. Measured at 375 and 768 — row, toggle, label and
+chevron all identical.
+
+The one honest difference is the label. Shop's is an `<a>` because there is a
+page to go to; there is no combined services page, so Service Booking's is a
+`<button>` that opens the same list. Same geometry, no link that goes nowhere.
+
+`min-height:56px` is pinned on `.mnav-split` rather than left to the content.
+Shop's label carries a hint pill and Service Booking's does not, which alone made
+the rows 56px and 55px — invisible, and with no reason behind it, which is how
+the next section ends up a third height. Any future section using this row
+inherits all of it.
+
+### 4r. Sub-category in the admin product table
+
+A column beside Category, and an **All sub-categories** filter beside All badges.
+Derived from what the catalog holds (`productsState.subcategoriesByCat`), never a
+fixed list — the same law the category filter follows.
+
+It is **category-aware**, and that is the part worth knowing: choose
+Book/Scripture, then switch the category to Malas, and without clearing it
+`subcategory=scripture` stays ANDed onto the query, the table goes empty, and
+nothing on screen explains why. Changing the category re-derives the list and
+drops a selection the new category cannot contain. When there is nothing to
+narrow by, the control hides rather than offering only "All".
+
+Server side, `subcategory` is filtered exactly like `category` — AND-ed with the
+rest and passed through `normaliseTerm()`, so a dropdown value matches the
+lowercase form migration 016 enforces. `[fe-47]` covers all of it.
+
+### 4s. The admin console: what a packer, a seller and a replier each need
+
+**Every product name in the console is a link** (`productLink()`, used by the
+order drawer, the products table, top sellers, the restock waitlist and the
+low-stock panel). This catalog has several similarly-named products, so an order
+line showing only the frozen name snapshot left a packer guessing. Clicking opens
+that exact product's editor.
+
+**The order line now carries what is actually on the shelf**: the product SKU,
+the variant options, and the **variant's own SKU** — the only thing separating
+size M from size L in a stockroom. Unit price sits beside the quantity so a line
+total can be checked. Both joins are `LEFT`, so a product deleted since the order
+was placed still renders, marked *product no longer in catalogue*.
+
+**Copy for courier / Print label.** The address is produced once, in the block
+format Indian couriers expect, with **city and PIN on one line** — retyping it out
+of a definition list is where wrong pincodes come from, and a wrong pincode is a
+returned parcel. Print opens a 10×15cm label window rather than putting the
+sidebar and nav on the paper. The clipboard call falls back to a selectable box
+when the browser blocks it, instead of reporting failure and leaving nothing.
+
+**Low stock finally sees variants.** `products.stock_qty` on a variant product is
+a DERIVED sum (migration 012's trigger), so three sizes holding 2 each reported 6,
+cleared a threshold of 5, and never appeared — while every size was one order from
+unsellable. The endpoint now returns products and variants separately, variants
+listed **first** because they are the rows anybody can act on, each named by its
+options and its SKU.
+
+**The selected nav item is actually visible.** Measured: the old active
+background `#7A1128` against the sidebar's own `#2B0A12` is **1.68:1** — the
+highlight was in the stylesheet and invisible on screen. Gold on that ground is
+**7.52:1**. Selection now carries a gold rail, a warm wash and gold text, plus
+`aria-current="page"` for the reader that can see none of it.
+
+**Messages: Archive now archives.** The list fetched every status with no filter,
+so an archived message stayed on screen for ever and the button only changed a
+pill. Archived is hidden by default and reachable through a status filter, and an
+archived row offers *Unarchive*. **"Mark as replied" is gone** — an admin could
+mark an enquiry answered without the customer hearing anything. In its place is a
+real reply: a composer that quotes their original message, `POST
+/contact-messages/:id/reply`, a transactional email, and the status moved to
+`replied` **only after the send is accepted**. A failed send leaves the message
+unanswered, keeps the composer open with the text intact, and says so.
+
+`test/browser-inbox.test.js` (21 checks) and `test/browser-orders.test.js` (20)
+drive the real functions against a stubbed API — whether Archive removes a row is
+a property of the rendered table, not of the source.
+
+### 4t. Checkout in two panes, on narrow screens only
+
+Below 900px the two columns stacked into one continuous scroll: shipping, then
+payment, then the whole order summary, then Place Order. To check a total against
+the cart a customer scrolled past everything and back.
+
+Step 2 is now the two things they **decide** — where it goes and how they pay.
+Step 3 is the thing they **confirm**. Every gating rule lives inside the
+`max-width:900px` block, so desktop is untouched: measured at 1440 the grid is
+still `804px 380px`, both panes are on screen, Continue and Back do not exist, and
+the chips still read *Details & Payment* and *Confirmation*.
+
+Two details worth keeping:
+
+- The form is validated **before** the review pane. Reporting it at Place Order
+  throws the customer back to a field they cannot see.
+- The step resets on **arrival**, not inside `renderCheckoutPage()` — that also
+  runs on every cart mutation, and resetting there would throw somebody standing
+  on the review pane back to the address form because they changed a quantity.
+
+### 4u. Searching the services, and badges that compute themselves
+
+**One search for both booking pages.** It looks in the **description** as well as
+the name — a customer looking for a housewarming does not know the words "Griha
+Pravesh" — matches every typed word in **any order**, and folds accents so
+"pooja" reaches copy written with diacritics. Deliberately not fuzzy matching: on
+a dozen services that mostly produces confident wrong answers. No match explains
+itself and offers a way back, and the count is `aria-live`.
+
+**Badges are computed, not typed.** `products.badge` is a field somebody fills in
+by hand, so it is wrong by default — nobody un-flags last season's bestseller.
+Now:
+
+| badge | rule |
+|---|---|
+| New arrival | created within 30 days |
+| Bestseller | units sold at or above the **80th percentile** of products that have sold anything, floored at 3 units, needing at least 4 selling products |
+
+A percentile rather than a fixed number because "20 units" is wrong at both ends
+of a shop's life — nothing qualifies on a young catalog, everything does on a busy
+one. An admin-typed badge still wins; this adds a floor, it does not take the
+control away. `scripts/badge-math.js` (`npm run test:badges`) runs the real
+functions over the distributions a shop actually passes through: three orders, a
+wide spread, everything selling identically, one runaway hit.
+
+The threshold is invalidated by the **identity of `PRODUCTS`** rather than a
+`recompute()` call. There are five places the catalog is replaced, so a manual
+call is five chances to forget one; every assignment builds a new array, so
+identity is an exact invalidation key and the check is one reference comparison.
+
+**Featured is five across**, four on a small laptop, three on tablet (768
+included, so iPad portrait gets three), two on mobile — scoped by id, so the shop,
+related and wishlist grids keep their four. Cards grow gold corner brackets on
+hover, drawn on a `position:absolute` pseudo-element so the grid never shifts, and
+shown at lower strength on touch where there is no hover at all.
+
+### 4v. Booking events that were never emailed
+
+Two gaps, both on the booking path — the more expensive of the two purchases:
+
+**A payment under review.** Deliberately not called "failed": by the time this
+runs Razorpay has usually taken the money, and telling somebody their payment
+failed when their bank has debited them invites a second payment for a booking
+they have already paid for. It says what is true, and that no action is needed.
+
+**A booking left unpaid.** A booking row exists before it is paid for, so closing
+the tab leaves it unconfirmed with nothing said. `runAbandonedBookings` handles
+**both** tables in one code path — two near-identical loops is how puja and
+astrology stop behaving the same way — and claims each row by stamping
+`recovery_email_sent_at` inside the same `UPDATE` that selects it, under `FOR
+UPDATE SKIP LOCKED`. Migration 017 adds the column and a partial index matching
+the job's own `WHERE`. The stamp is cleared again on a retryable failure, so one
+SMTP blip does not permanently consume the single email that booking will get.
+
+One near-miss worth recording: the first version of the review email selected a
+`contact_email` column that **does not exist** on either booking table, which
+would have thrown on the one path where the customer has already been charged.
+The address comes from `req.user.email`, as every other booking email on that
+route does.
+
+### 4w. SEO, audited rather than asserted
+
+`npm run seo:audit` renders **every route in a real browser** and reads what a
+crawler would actually get. That is the only way to check this site: it is a
+single page that rewrites its own `<title>`, description, canonical and JSON-LD
+on each navigation, so reading `index.html` tells you what the code *intends*
+and nothing about what a given route ends up with. A canonical stuck on the home
+page is invisible in source and tells Google every other page is a duplicate.
+
+It went from **76 findings to 0 defects**. What it found:
+
+| Defect | Why it mattered |
+|---|---|
+| **No `og:image` anywhere** | Every non-product page shared to WhatsApp, Facebook or Slack as a bare grey link |
+| **An empty `ld+json` island on every route** | `<script type="application/ld+json">` with nothing in it is invalid JSON — a structured-data error on every page |
+| **14 `href="#"` links on the home page** | The category rail was a dead end; a crawler follows hrefs and ignores onclick |
+| **`/policies` had no `h1`** | The strongest on-page signal, absent |
+| **Heading levels skipped** (`h1 → h4`) | The outline a crawler builds claimed a level that did not exist |
+| **Two titles at 75 characters** | Cut mid-word in results, so the brand never appeared |
+| **Sitemap listed a product with no page** | `catalog.json` was stale against the live API by one product |
+
+**The social card is generated, not hotlinked.** There was no image asset in the
+repository and every product photo comes from a third-party CDN, so a site-wide
+default pointing at one would break the day that CDN moves a path — and SVG is
+refused by Facebook, WhatsApp and X. `npm run og:image` screenshots a branded
+1200×630 card in the Chromium this repo already requires, reading the palette
+straight out of the stylesheet so it cannot drift from the site.
+
+**Structured data per page type.** `setPageStructuredData()` emits
+`CollectionPage` for the shop, `Service` for each booking page, `AboutPage`,
+`ContactPage`, `Blog` and `WebPage` elsewhere, each with a `BreadcrumbList`. When
+a route has nothing to describe the island is **removed**, never left empty — an
+absent island is correct, an empty one is an error.
+
+**Three defects of my own, caught before they shipped:**
+
+- The static `og:image` I added made the prerenderer's *append* produce **two**
+  `og:image` tags on every product page — the brand card first, the product photo
+  second. Scrapers take the first, so every product shared as the generic card.
+  Replaced now, not appended, and a product with no photo keeps the brand card
+  rather than sharing as a bare link.
+- `setPageStructuredData` removed the island on a route with nothing to say, and
+  then `getElementById` returned null for ever after — so `/shop`, `/puja` and
+  every other page with real structured data got none, purely because the visitor
+  happened to land on the home page first. The element is held in a reference now.
+- A comment containing a literal closing `script` tag truncated the entire inline
+  script block. The suite already had a test for that trap, and it fired.
+
+**And two latent traps closed while passing through:**
+
+- `injectProductJsonLd(null)` blanked the same island `updatePageMeta` had just
+  filled — two owners of one element. It no longer clears a slot it does not own.
+- `replaceOnce()` in the prerenderer reported a *missing pattern* when the result
+  was merely **unchanged**. The day a tag already held the value we were about to
+  write, it aborted the whole prerender: ten pages unwritten, for a tag that was
+  already correct. It tests the pattern now.
+
+**Blocking versus advisory.** A defect fails the build. A product description too
+thin to earn a snippet is the seller's copy, not a bug — it is printed every run
+and does not fail anything. A gate that blocks a release on somebody's
+copywriting gets switched off, and a gate that is off catches nothing.
+
+Verified by breaking it on purpose: pinning every canonical to the home page
+makes the audit report 11 defects and exit non-zero.
+
+### 4x. The SEO system, built to stay correct without anyone maintaining it
+
+The audit in 4w fixed what was wrong on the day it ran. This is the part that
+keeps it right for products, pages and services nobody has created yet — because
+an SEO pass that has to be repeated by hand is one that stops being repeated.
+
+**Three things are DERIVED rather than declared twice.**
+
+*The audit's route list comes from the site.* `seo-audit.js` reads `PAGE_META`
+out of `index.html` and audits whatever it finds, using the same `noindex` flag
+`updatePageMeta()` acts on. A hardcoded list audits the pages that existed the
+day it was written; add a page next month and it is simply never checked, while
+the gate stays green. Now a page is audited from the moment it exists. It refuses
+to run at all if it parses fewer than five routes — auditing a handful of pages
+while believing it covers the site is worse than not running.
+
+*The republish trigger comes from one field list.* `scripts/seo-fields.js`
+declares every product field that changes what a crawler sees, and
+`publish-catalog-if-changed.js` builds its fingerprint from it. **This had
+already drifted**: the prerenderer reads `subcategory` for the JSON-LD category
+path and the breadcrumb, and the fingerprint did not include it — so re-filing a
+product under a new subcategory changed nothing the drift check could see, no
+rebuild fired, and the deployed page kept the old category in its structured data
+indefinitely. Silent, permanent, and invisible without opening the JSON-LD of a
+live page.
+
+*The social card comes from the site's own markup.* `generate-og-image.js` lifts
+the twelve-petal chakra out of the awakening screen in `index.html` and reads the
+palette from the stylesheet's custom properties. A copy would agree today and
+drift the first time either was touched; it throws rather than falling back to a
+drawing of its own, because a card silently showing a different mandala is worse
+than no card — nobody would ever notice.
+
+**And one thing is GUARDED, which is the part that makes it future-proof.**
+
+`[fe-49]` scans the prerenderer for every `p.<field>` it reads and fails the
+build if any is not declared in `SEO_PRODUCT_FIELDS` — or excused in
+`SEO_IRRELEVANT_FIELDS` **with a written reason**, because an escape hatch with
+no justification is a hole. There is no third state where a field quietly affects
+the page and nothing notices when it changes.
+
+So adding a field to the SEO output *forces* a decision about whether editing it
+should republish the site. That is the whole mechanism: the wiring cannot be
+forgotten, because forgetting it fails the build.
+
+Proven rather than asserted, both ways round:
+
+- Adding `p.brand_name` to the prerenderer without declaring it makes `[fe-49]`
+  fail and name the field.
+- Running the real fingerprint over a product with **one field changed at a
+  time** confirms all 15 move the hash — so no declared field can be edited
+  without the site republishing.
+- Pinning every canonical to the home page makes the audit report 11 defects and
+  exit non-zero.
+
+**The auto-sync chain, end to end.** An admin edits a product image →
+`refresh-catalog.yml` runs every six hours and calls
+`publish-catalog-if-changed.js` → the fingerprint moves because `image_url` is
+declared → a Netlify build hook fires → the build regenerates `catalog.json`,
+the sitemap and all 11 prerendered pages → the new photo is in `og:image`, the
+Product JSON-LD and the sitemap. Nobody touches anything.
+
+### 4y. What the automatic badges quietly broke, and the sweep that found it
+
+Computing Bestseller and New from real data instead of reading a hand-typed
+column was the right change. It also broke six other things, none of which
+failed, logged, or showed up in a test — they simply got worse.
+
+**The pattern, six times.** `p.badge === 'bestseller'` was correct for as long as
+a badge was something a person typed. The moment it became derived, every place
+that read the raw column was reading a field that is now usually empty:
+
+| Where | What it did instead |
+|---|---|
+| Shop → Sort by **Newest** | sorted on `badge === 'new'`, so it stopped ordering anything |
+| Mega-menu **Popular Picks** | fell through to review count |
+| **Related products** filler | fell through to review count |
+| Payment-wait **"Most chosen"** card | matched nothing, so the card never appeared |
+| Payment-wait ritual pairing | fell through to review count |
+| Payment-wait relevance tie-break | fell through to review count |
+
+Four of those were the *same comparator written out four times*. They are one
+function now — `byBestsellerThenReviews`, which asks `isBestseller()`, the same
+predicate the card and the Featured tabs use. A future change to what
+"bestseller" means cannot reach three of the four again.
+
+Newest now sorts by `createdAt`, which is a date. Sorting by whether something
+is *labelled* new gave every new product the same rank, so even when it did
+match it was not a sort.
+
+**"Which orders count as a sale" was written out seven times.** Site revenue, the
+revenue chart, top products, top categories, customer lifetime value, and the
+units the bestseller percentile is computed from — seven queries across three
+files, each with the status tuple typed by hand. It is `REVENUE_STATUS_SQL` now,
+built from a frozen array so the SQL and the list cannot disagree. Two
+*neighbouring* rules that look identical were deliberately left alone, and there
+is a test that keeps them that way: "has reached fulfilment" omits
+`partially_refunded` because it asks whether shipping has started, and the admin
+status whitelist includes `payment_review` because a human must be able to move
+an order there.
+
+**A product that could never be bought.** A seller adds "Size" as an option and
+saves before creating the variant rows behind it. The product stays Active with
+real stock, the shop lists it, asks the customer to choose — and no chip resolves
+to anything purchasable. "Select Options" became an instruction that cannot be
+carried out. Deactivating every variant does *not* land here, because the stock
+trigger sums active variants and drops the product to zero on its own; it is
+specifically the never-created case, where no `product_variants` row ever existed
+to fire that trigger. The button has four states now, and the console flags the
+row as **Cannot be bought** before a customer finds it.
+
+**Three bugs in the fixes themselves,** caught before they shipped:
+
+- `display:revert` reverts to the *browser* default, not to the author rule above
+  it. `.p-card` is `display:flex`, so the tidy way to write the featured-grid
+  trim would have flattened every card to `block` below 1024px — a fault visible
+  only on tablet and phone. Bounded, non-overlapping media bands need no undo.
+- `-Infinity - -Infinity` is `NaN`, and a comparator returning NaN has no defined
+  ordering at all. Two undated products was all it took.
+- `addToCart` returned `false` for one refusal and bare `undefined` for the other
+  two, so the payment-wait card flipped to "Added" after a refusal and told the
+  customer their order contained something it did not. It returns a real boolean
+  on every path now.
+
+**What the console gained.** The badge field said "Leave blank for no badge",
+which had become the opposite of the truth. It now says the shop decides, and
+what you type always wins. The products table shows **Sold** — the number the
+percentile is actually computed from — because a badge nobody can explain is
+worse than no badge. The bestseller percentile is deliberately *not* recomputed
+in the admin: that list is paged twenty rows at a time, and a percentile over one
+page would be confidently wrong on any shop large enough to page. And the product
+form now gives live SEO feedback on the description length, because the audit can
+detect a thin description but only a person can write a better one.
+
+### 4z. The second audit pass: one disagreeing rule, and two sweeps that find the rest
+
+A second full pass over the same work, looking specifically for the shape of
+problem the first pass created rather than the ones it fixed.
+
+**A rule that had already drifted into three disagreeing copies.** Description
+length was checked in three places with three different numbers: the audit
+wanted 50-165 for a page and 40-with-no-ceiling for a product, while the admin
+form told the seller 70-155. A 45-character description was therefore red in the
+console and green in the audit, and a seller following one could never satisfy
+the other. Worse, the admin's ceiling flagged eight of eleven products amber for
+exceeding 155 — which is not a fault at all, because Google simply shows the
+first ~155 characters and the rest still does its job on the page.
+
+It is one declaration now, in `scripts/seo-fields.js`, and the three numbers were
+separated because conflating them is what produced the drift:
+
+| | Means | Treated as |
+|---|---|---|
+| `MIN` 70 | too thin for Google to build a snippet from | a real warning |
+| `IDEAL_MAX` 155 | roughly what Google renders | information only, never an advisory |
+| `HARD_MAX` 300 | someone pasted the long description into the summary field | a real warning |
+
+The audit reads that declaration. The admin cannot — it is a static file with no
+module system — so it mirrors the numbers as named constants and `[fe-50]` fails
+the build the moment the two disagree. The same guard now covers the
+new-arrival window, which had also been silently written out twice: `30` inline
+in the console against `NEW_ARRIVAL_DAYS` in the storefront, so widening the shop
+to 45 days would have made the two disagree about which products are New for
+anything aged 30-45 days.
+
+Copying a rule is only safe when something notices the copy drifting.
+
+**Two sweeps that check the whole surface rather than one feature.** Eleven tasks
+in this cycle added buttons, inputs, filters and panels to two single files of
+~700KB with no modules and no imports. A handler wired to a function name that
+does not exist is not a syntax error and not a failing test — it is a click that
+silently does nothing.
+
+- **`[fe-51]`** resolves every inline `onclick`/`oninput`/`onchange` against the
+  functions that actually exist, and every `qs('#id')` against the ids that
+  actually exist, in both files. 149 handlers and 346 element lookups, all
+  resolving. It skips method calls (`event.preventDefault()`) and language
+  globals (`String(x)`), and it fails if the scan finds implausibly few — a
+  checker that silently matches nothing is worse than no checker.
+- An **endpoint sweep** builds the real route table by walking the mounted
+  express routers *and* the two routes declared straight on the app, then
+  resolves all 61 API strings both front ends call. Every one exists. Six are
+  base prefixes that get concatenated (`/api/auth/` + the rest); those are
+  reported separately, so a genuine typo — which resolves to nothing at all —
+  still stands out.
+
+**And the SQL was proven by rendering it, not by reading it.** `${REVENUE_STATUS_SQL}`
+only interpolates inside a template literal. Had any of those seven queries been
+an ordinary quoted string, it would have parsed fine and shipped a literal
+dollar-brace into the SQL, failing at runtime on a money path. So the real route
+handlers were invoked against a stubbed database and the captured SQL checked for
+leaked interpolations, unbalanced parens and empty `IN ()` lists. Eight endpoints,
+all rendering valid SQL, with the tuple visibly expanded.
+
+One more thing worth stating because it costs money: the catalogue snapshot now
+carries `units_sold`, and the republish fingerprint is built from
+`SEO_PRODUCT_FIELDS`, which deliberately excludes it. Proven both directions — a
+product going from 0 to 4,321 sales leaves the fingerprint identical, while
+changing its image URL moves it. Without that, every sale would have triggered a
+Netlify rebuild on a free plan.
+
+### 4za. The third pass: running the code that had never been run
+
+The first two passes read code and compared copies. This one went after the part
+of the system that had never been *executed*: three email templates and a
+scheduled job, all added in this cycle, none of them ever actually run.
+
+That matters more than it sounds. These sit on money paths — a customer whose
+booking payment is under review has usually already been charged — and none of
+them fails loudly. A template that throws is caught upstream, logged and
+swallowed. The first sign is a customer asking why they never heard anything.
+
+**Two real defects, both found only by running it.**
+
+*A message about money printed a nonsense figure.* The amount clause was guarded
+on truthiness rather than on being positive, so a corrupt or negative
+`amount_paise` rendered as `of ₹-0.01` in an email about money already taken.
+Omitting the clause reads perfectly; printing a negative one does not. Both
+booking templates now guard on `> 0`, and the suite checks null, zero, missing,
+`-1` and `-250000` against a rule that a real amount must still show.
+
+*The one job added this cycle was the one job no test could reach.*
+`runAbandonedBookings` was missing from `module.exports`. It ran correctly in
+production — `main()` iterates the `JOBS` registry, not the export list — so
+nothing was broken for customers, but nothing could import it either. The export
+list is now **derived from the registry**, under both naming conventions, so a
+job added to `JOBS` is exported automatically and the two cannot drift again.
+
+**A new suite, `test/emails.test.js`,** runs all three templates and all five
+jobs against a stubbed mail engine and a stubbed database. Nothing is sent and
+nothing touches a database. It is the only thing checking the invariant that
+makes claim-then-send work:
+
+| | claim markers released | meaning |
+|---|---|---|
+| every send succeeds | 0 | nobody is mailed twice |
+| every send fails | 3 | one order and both booking types all retry |
+
+The stub returns `{ sent: true }`, which is the exact shape the real engine
+returns and the exact shape every caller checks — getting that wrong in a stub
+makes working code look broken, which is its own kind of false alarm.
+
+**Four sweeps that found nothing, which is the useful result.** Each one is a
+whole-surface question rather than a feature test, and each was run again after
+every change in this pass:
+
+- **Structural integrity** — nothing declared twice, no duplicate element id.
+  String-based editing of a 700KB single file makes a silently-overridden second
+  definition more likely, not less. It correctly ignores two nested `row()`
+  helpers that live in different scopes and legitimately share a name.
+- **Nothing was lost** — every id, function, route and export present in the
+  committed version still exists. 2,996 insertions against 220 deletions is
+  exactly where a replacement that never landed would hide, and a diff cannot
+  answer it: it shows the line leaving and says nothing about what arrived.
+- **Wiring** — 149 inline handlers and 346 element lookups, all resolving.
+- **Endpoints** — all 61 API strings both front ends call, all resolving.
+
+And the migration was checked against the schema rather than assumed: 017 is
+idempotent on both columns and both indexes, every column the job selects
+(`contact_name`, `preferred_date`, `amount_paise`, `user_id`, `payment_status`)
+exists on both booking tables, and the partial index predicate matches the job's
+own `WHERE` clause exactly, so the index is actually used.
+
+A note on the tooling itself: three of these sweeps reported false alarms on
+their first run — a scope-blind duplicate check, an export reader that only
+understood one way of writing `module.exports`, and a handler scan that counted
+`event.preventDefault()` as a missing function. Each was fixed rather than
+tolerated. A checker that cries wolf is one people stop reading, which makes it
+worse than no checker at all.
+
+### 4zb. The fourth pass: authorization, and what a person can actually read
+
+Three passes had read the code, compared its copies and executed it. None had
+asked what a person SEES, or what a role can DO. Both questions found real
+defects, and neither was answerable by any method used before.
+
+**A write hiding behind a read grant.** Sending an email to a customer, signed
+as the business, required only `customers:read` — as did marking an enquiry
+dealt with. Nothing was exposed, because only admin holds that grant today, and
+that is exactly why it would have gone unnoticed. Capability grants are edited
+by ROLE, not by route: whoever creates a support role will grant
+`customers:read`, because the name says "let them look at customers", and every
+write hiding behind it arrives silently with it.
+
+There is a `customers:contact` capability now, required alongside the read on
+both endpoints, and the console hides the controls rather than letting them 403.
+The rule is enforced structurally rather than as a list of known-bad routes:
+`[fe-52]` walks every mutating endpoint in the app — 28 of them — and fails the
+build if any is gated only by capabilities whose names are reads.
+
+**Text nobody could read.** A rendered-contrast audit measures every text node in
+a real browser, resolving the effective background by climbing through
+transparent ancestors, at the real font size, on every route. Ten failures, and
+not one was findable by reading CSS, because a colour is only readable relative
+to the surface beneath it:
+
+| | was | now |
+|---|---|---|
+| astrology section heading | 1.18 | 13.89 |
+| `BESTSELLER` badge | 2.68 | 6.77 |
+| `LIVE` nav pill | 2.68 | 6.77 |
+| deal-panel body text | 2.77 | 9.97 |
+| footer about text | 2.77 | 11.73 |
+| `.eyebrow` labels | 2.13 | 4.62 |
+| `.section-sub` on parchment | 3.45 | 4.63 |
+
+The bestseller badge deserves its own note: it used to appear only where someone
+had typed the word by hand, which was almost nowhere. The shop now computes it
+for the top fifth of what sells, so **automatic badging turned a rare defect into
+a common one** on the busiest cards on the site — a consequence of this cycle's
+own work that no static check could have connected to it.
+
+Three root causes, each fixed as one rule rather than as symptoms:
+
+- *Dark surfaces styled the children they remembered.* The astrology zone, the
+  deal panel and the footer each set a heading colour and left every paragraph
+  inheriting the colour meant for parchment. A blanket `p { color: … }` beats
+  inheritance every time, which is why setting a colour on the SECTION never
+  worked. One rule now covers every dark surface.
+- *A token solved against the wrong background.* `--text-mute` cleared AA on
+  white and failed on the deepest parchment, because the site paints on four
+  light surfaces and only one of them is white. Solved against the worst.
+- *Ten hardcoded copies of a stale muted brown* that the token no longer matched.
+  Collapsed into the token; the same duplication existed in the console and was
+  collapsed there too.
+
+Marigold is kept exactly as designed. It is a superb background and a poor text
+colour, so the badges take dark ink on the brand marigold rather than a
+compromised orange, and the `.eyebrow`'s decorative rule stays bright while its
+label darkens — WCAG applies to text, not to a 1px line.
+
+`test:contrast` is now part of the gate and of CI. It also fails if it measures
+fewer routes than it expects, because a checker that silently matches nothing
+passes forever.
+
+**And a broken neighbour, caught and fixed.** Gating the inbox controls broke
+four assertions in the inbox browser suite, whose harness had no `hasCapability`
+stub. Restored, and the view-only state — which no role can reach today — now
+has its own scenario, precisely because nobody would ever test it by hand.
+
 ### 4o. Two ways the gate could lie, both closed
 
 **A dropped database connection was reported as twelve broken behaviours.** When
@@ -998,6 +1616,20 @@ measurement artifact, not a defect. Measure layout with transitions disabled.
 | `[fe-43]` | **Service Booking and All Categories** — one shared disclosure, the searchable browser, the specificity fix |
 | `[db-12]` | **"most sold" arithmetic** — unpaid orders excluded, money-bearing statuses kept, a total order |
 | `[fe-44]` | **the gate itself** — every suite runs in CI, or is exempt on purpose and says why |
+| `[fe-45]` | **the variant invariant** — one predicate, enforced in addToCart, three button states, cart healing |
+| `[fe-46]` | **drawer sections** — Shop and Service Booking are one shape, pinned by construction |
+| `[fe-47]` | **admin sub-category** — the column, the category-aware filter, the normalised server query |
+| `[fe-48]` | **checkout panes, service search, badge maths, booking mail** |
+| `browser-inbox` | the admin inbox — archive, filter, and a reply that is actually sent |
+| `browser-orders` | the order drawer and low-stock panel — SKUs, labels, low variants |
+| `seo:audit` | every route rendered — titles, canonicals, h1s, social tags, JSON-LD, sitemap, prerendered pages |
+| `[fe-49]` | **the SEO system itself** — no undeclared field, no un-republished edit, no redrawn chakra |
+| `[fe-50]` | **one rule, one place** — no second copy of the sales-status list or the bestseller comparator |
+| `[fe-51]` | **nothing points at nothing** — every inline handler and every element lookup resolves |
+| `test:emails` | **the mail actually runs** — templates render and escape, and a failed send gives back its claim |
+| `[fe-52]` | **no write behind a read grant** — all 28 mutating endpoints, checked structurally |
+| `test:contrast` | **what a person can actually read** — every text node, every route, measured in a browser |
+| `[fe-53]` | **no test re-derives its subject** — and no exported query ships an unresolved `${...}` |
 
 ```bash
 npm test
@@ -3232,6 +3864,117 @@ Verified additive-only afterwards: sections 24, pages 14, modals 4, drawers 2
 (all unchanged), functions 196 → 197 (+1, the new renderer). All 18 major
 homepage/site sections re-confirmed present, all onclick handlers resolve, all
 tags balanced, 54/54 tests pass.
+
+## Three browser suites were listed in CI and could not fail there
+
+`[fe-44]` proves every suite is LISTED in the workflow. It said nothing about
+whether CI can actually run one.
+
+Five suites need a Chromium binary and skip themselves when it is absent — on
+purpose, so a developer who has not run `npm run setup:browser` is not blocked.
+In CI that leniency is exactly backwards: the workflow installs the browser, so a
+skip there means the install failed and the suite reported success having
+rendered nothing at all. `REQUIRE_BROWSER_TESTS=true` turns the skip back into a
+failure, and two steps had it.
+
+The other three did not: `test:contrast`, `test:browser-inbox` and
+`test:browser-orders` — every one added in this cycle, every one listed, none
+able to fail. A green build could have contained three browser suites doing
+nothing, including the only check on what a person can actually read.
+
+Fixed on all three, and the rule is now derived rather than remembered: `[fe-44]`
+reads every test file, finds the ones that `require('playwright')`, and fails the
+build if any of their CI steps lacks the flag. A new browser suite cannot be
+added without it. Proven by removing the flag from one step and confirming the
+check goes red naming that exact suite, then restoring it.
+
+The same pass confirmed the things a green gate still cannot tell you:
+
+| checked | result |
+|---|---|
+| files under `.claude/` in the change set | none; `.claude/worktrees/` is ignored |
+| already-applied migrations modified | none — 017 is a new file, which is what `lint-sql` demands |
+| CI install method | `npm ci` on Node 20, so the `qs` override applies |
+| migrations before the DB suite | applied twice, as an idempotency check |
+| credentials in committed files | none; the only match is CI's throwaway localhost service |
+
+## The gate that was being run was not the gate
+
+`[db-12]` failed with `syntax error at or near "$"` after four passes of audits
+had all reported green. Both halves of that are worth writing down, because the
+second one is the actual failure.
+
+**The bug.** That test lifted the top-categories query out of
+`products.routes.js` by slicing the source between backticks. Correct for as
+long as the query contained no interpolation — and `${REVENUE_STATUS_SQL}` made
+it not. The slice handed Postgres a literal dollar-brace, all four checks failed,
+and the route itself was entirely correct the whole time. A test that
+re-derives what it is testing will eventually test something else.
+
+Fixed by exporting the query and importing it, so the test runs the exact bytes
+the route runs. No future interpolation can separate them again.
+
+**Why four green audits missed it.** They were run with `npm test`, which by
+design excludes every suite that needs a service. `test:db-integration` is the
+only thing in this repository that executes SQL against a real Postgres, and it
+lives in `verify:full`. So the failing check was never once executed.
+
+`npm test` is the pre-commit gate. **`verify:full` is the pre-push gate**, and
+they are not interchangeable — the README has always said so, and it was still
+possible to audit for hours against the wrong one.
+
+Two things changed so this cannot repeat:
+
+- `[fe-53]` fails the build if any test slices SQL out of a route file, and
+  loads every exported query to assert it carries no unresolved `${`. It runs
+  **offline**, in `npm test`, so the cheap gate now catches the class that
+  previously required a database to notice.
+- Verified by reintroducing the exact fault and confirming the new check goes
+  red, then removing it and confirming it goes green. A guard that has never
+  failed is a guard nobody has tested.
+
+## Dependency security — the qs advisories, and why `npm audit fix` could not fix them
+
+`npm audit` reported three moderate findings, all tracing to one package: `qs`
+at 6.15.3 and below carries an array-limit bypass and a denial of service via an
+attacker-controlled `isBuffer`.
+
+These are reachable. Express's default query parser is `extended`, which means
+**every query string on every request is parsed by qs**, from the public
+internet, on a free-tier instance where CPU is the scarce resource. The rate
+limiter caps how many requests arrive; it does not cap what one crafted request
+costs.
+
+`npm audit fix` reports a fix and then changes nothing, which looks like a tool
+bug and is not. The chain is:
+
+| | |
+|---|---|
+| patched in | `qs@6.16.0` |
+| express 4.22.2 requires | `qs@~6.15.1`, i.e. `>=6.15.1 <6.16.0` |
+| newest express 4.x | 4.22.2 — there is nothing newer to upgrade to |
+
+So the highest qs that Express 4 will ever accept is exactly the highest
+vulnerable one. No in-range fix exists, and npm correctly declines to invent one.
+The alternatives were an Express 4-to-5 migration, which is a large change with
+real regression risk, or an npm `overrides` entry. The override is in
+`package.json` with the full reasoning beside it.
+
+**Why it is safe here specifically.** The changes in 6.16.0 affect array and
+nested-object parsing. Every query parameter this application reads is a flat
+scalar — `search`, `category`, `subcategory`, `badge`, `status`, `action`,
+`entityType`, `page`, `limit`, `days`, `threshold` — with no arrays and no
+bracket syntax anywhere, so there is no behaviour here for those changes to
+alter. Verified by parsing the real query shapes through the new qs, including
+Devanagari and escaped ampersands, and confirming identical output.
+
+**Verified end to end**, because an override that only works on the developer's
+machine is worse than none: `npm ci` — the exact command in `render.yaml` —
+installs 6.16.0 from the lockfile and reports zero vulnerabilities, and the full
+gate passes on that clean install. `package-lock.json` must be committed
+alongside `package.json`, or the deploy installs the old resolution.
+
+Remove the override when Express 5 is adopted and depends on a patched qs itself.
 
 ## Round 12 — Tasks 6 and 8 Completed (all 18 now done)
 

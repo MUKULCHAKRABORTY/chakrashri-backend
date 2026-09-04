@@ -663,7 +663,121 @@ async function sendAdminDailyDigest(stats) {
   });
 }
 
+/**
+ * A human reply to a contact-form enquiry, sent from the admin console.
+ *
+ * TRANSACTIONAL, deliberately. The customer wrote to us and is waiting for an
+ * answer; that is the definition of service mail, and routing it as marketing
+ * would let the consent check or the marketing kill switch silently swallow a
+ * reply somebody is expecting. It carries no unsubscribe link for the same
+ * reason — there is nothing here to unsubscribe from.
+ *
+ * Their original message is quoted back so the reply makes sense on its own,
+ * days later, in a thread they may not remember writing.
+ */
+async function sendContactReply({ toEmail, toName, subject, replyBody, originalMessage, messageId }) {
+  return sendMail({
+    to: toEmail,
+    subject: subject,
+    template: 'contact_reply',
+    category: CATEGORY.TRANSACTIONAL,
+    // Keyed on the message AND the reply text: sending a second, different
+    // reply on the same enquiry is legitimate, sending the same one twice
+    // because a button was double-clicked is not.
+    dedupeKey: 'contact_reply:' + messageId + ':' + Buffer.from(String(replyBody)).toString('base64').slice(0, 40),
+    html: renderShell({
+      heading: 'Re: ' + (originalMessage && originalMessage.subject ? originalMessage.subject : 'your message'),
+      preheader: 'A reply from the ' + BRAND.name + ' team.',
+      body: p('Hello ' + esc(toName || 'there') + ',')
+        + String(replyBody).split(/\n{2,}/).map(function (para) {
+            return p(esc(para).replace(/\n/g, '<br>'));
+          }).join('')
+        + muted('— The ' + esc(BRAND.name) + ' team')
+        + (originalMessage && originalMessage.message
+            ? '<hr style="border:none;border-top:1px solid #e7ddd0;margin:22px 0;">'
+              + muted('On ' + esc(originalMessage.when || '') + ' you wrote:')
+              + '<blockquote style="margin:8px 0 0;padding:0 0 0 12px;border-left:3px solid #e7ddd0;color:#7a6a5c;font-size:13px;white-space:pre-wrap;">'
+              + esc(originalMessage.message) + '</blockquote>'
+            : '')
+    })
+  });
+}
+
+/**
+ * A booking whose payment could not be confirmed straight away.
+ *
+ * NOT called "failed", and that wording is the whole point. By the time this
+ * runs Razorpay has usually taken the money — what has not happened is our
+ * verification of it. Telling somebody their payment failed when their bank has
+ * already debited them is how a support queue fills up with frightened people,
+ * and it invites a second payment attempt for a booking they have already paid
+ * for. This says what is true: we have it, we are checking it, nobody needs to
+ * do anything.
+ */
+async function sendBookingPaymentReview({ email, name, type, bookingId, amountPaise }) {
+  return sendMail({
+    to: email,
+    subject: `We are confirming your ${type} booking payment`,
+    template: 'booking_payment_review',
+    category: CATEGORY.TRANSACTIONAL,
+    dedupeKey: 'booking_payment_review:' + bookingId,
+    html: renderShell({
+      heading: 'Confirming your payment',
+      preheader: 'We have your payment and are verifying it. No action needed.',
+      body: p('Hello ' + esc(name || 'there') + ',')
+        + p('We have received your payment for your <b>' + esc(type) + '</b> booking'
+            /* > 0, not truthy. A corrupt or negative amount_paise rendered as
+               "of ₹-0.01" in an email about money already taken, which is the
+               worst possible place to print a nonsense figure. Omitting the
+               clause reads perfectly; printing a negative one does not. */
+            + (Number(amountPaise) > 0 ? ' of ' + esc(formatRupees(amountPaise)) : '')
+            + ' and our team is confirming it now.')
+        + p('<b>You do not need to pay again.</b> We will email you as soon as it is confirmed, usually within a few hours.')
+        + muted('Reference: ' + esc(String(bookingId).slice(0, 8)))
+        + muted('If anything looks wrong, reply to this email and a person will read it.')
+    })
+  });
+}
+
+/**
+ * A booking that was started and never paid for.
+ *
+ * TRANSACTIONAL rather than marketing, and that is a considered call: the
+ * customer chose a service, entered their details and reached a payment screen.
+ * This is the completion of a transaction they began, not an approach we
+ * initiated — the same footing as an abandoned checkout on an order, which this
+ * codebase already treats the same way.
+ *
+ * Sent ONCE per booking. The dedupe key carries no timestamp, so a job that
+ * runs every fifteen minutes cannot turn a forgotten booking into a stream of
+ * reminders.
+ */
+async function sendBookingAbandoned({ email, name, type, bookingId, preferredDate, amountPaise }) {
+  return sendMail({
+    to: email,
+    subject: `Your ${type} booking is still waiting`,
+    template: 'booking_abandoned',
+    category: CATEGORY.TRANSACTIONAL,
+    dedupeKey: 'booking_abandoned:' + bookingId,
+    html: renderShell({
+      heading: 'Your booking is still held',
+      preheader: 'Complete the payment to confirm your ' + type + ' booking.',
+      body: p('Hello ' + esc(name || 'there') + ',')
+        + p('You started a <b>' + esc(type) + '</b> booking'
+            + (preferredDate ? ' for ' + esc(String(preferredDate).slice(0, 10)) : '')
+            + ' and it has not been paid for yet, so it is not confirmed.')
+        // > 0 for the same reason as the payment-review template above.
+        + (Number(amountPaise) > 0 ? p('Amount due: <b>' + esc(formatRupees(amountPaise)) + '</b>') : '')
+        + button(clientUrl('/account'), 'Complete my booking')
+        + muted('If you have changed your mind, no action is needed — the slot is released on its own.')
+    })
+  });
+}
+
 module.exports = {
+  sendBookingPaymentReview,
+  sendBookingAbandoned,
+  sendContactReply,
   // account
   sendEmailVerification,
   sendWelcome,

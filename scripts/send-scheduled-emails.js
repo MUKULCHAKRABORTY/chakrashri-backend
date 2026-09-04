@@ -23,14 +23,15 @@
  * silently is not a cron.
  *
  * Run: node scripts/send-scheduled-emails.js [job]
- *      job = stock | reminders | abandoned | digest   (default: all)
+ *      job = stock | reminders | abandoned | bookingsAbandoned | digest   (default: all)
  */
 require('dotenv').config();
 
 const db = require('../src/config/db');
 const { logger } = require('../src/utils/logger');
 const {
-  sendBackInStock, sendBookingReminder, sendAbandonedCheckout, sendAdminDailyDigest
+  sendBackInStock, sendBookingReminder, sendAbandonedCheckout, sendAdminDailyDigest,
+  sendBookingAbandoned
 } = require('../src/utils/mailer');
 // Which send outcomes are final versus worth retrying. Defined next to sendMail
 // so the vocabulary has one owner — see the comment on it in email/engine.js.
@@ -268,7 +269,85 @@ async function runAbandonedCheckout() {
 }
 
 // ---------------------------------------------------------------------------
-// 4. Daily digest
+// 4. Abandoned booking
+// ---------------------------------------------------------------------------
+/**
+ * One email per unpaid booking, for BOTH booking types.
+ *
+ * A booking row is created before it is paid for, so closing the tab at the
+ * payment step leaves it sitting there unconfirmed. The order path has had a
+ * recovery email for a while; the booking path — the more expensive purchase of
+ * the two — had nothing.
+ *
+ * Claim-then-send, exactly as the two jobs above do it. This runs every fifteen
+ * minutes and would otherwise see the same unpaid booking on every tick; the
+ * stamp is written inside the same UPDATE that selects the row, under FOR
+ * UPDATE SKIP LOCKED, and cleared again if the send fails for a retryable
+ * reason so a transient SMTP error does not permanently consume the single
+ * email this booking will ever get.
+ *
+ * Both tables are handled by the same code path. Two near-identical loops is
+ * how puja and astrology quietly stop behaving the same way.
+ */
+async function runAbandonedBookings() {
+  const after = parseInt(await setting('abandoned_cart_email_after_minutes', '20'), 10);
+  let claimed = 0;
+  let sent = 0;
+  let failed = 0;
+
+  for (const [table, typeLabel] of [['puja_bookings', 'puja'], ['astrology_bookings', 'astrology']]) {
+    // Table name comes from this literal pair, never from input.
+    const { rows } = await db.query(
+      `UPDATE ${table} b
+          SET recovery_email_sent_at = now()
+        WHERE b.id IN (
+          SELECT id FROM ${table}
+           WHERE payment_status = 'unpaid'
+             AND recovery_email_sent_at IS NULL
+             AND created_at < now() - ($1 || ' minutes')::interval
+             AND user_id IS NOT NULL
+           ORDER BY created_at
+           LIMIT $2
+           FOR UPDATE SKIP LOCKED
+        )
+        RETURNING b.id, b.contact_name, b.preferred_date, b.amount_paise, b.user_id`,
+      [String(after), BATCH]
+    );
+    claimed += rows.length;
+
+    for (const b of rows) {
+      // The booking tables hold a contact name and phone but no email, so the
+      // address is the account's.
+      const { rows: userRows } = await db.query('SELECT email, name FROM users WHERE id = $1', [b.user_id]);
+      if (!userRows.length) continue;
+
+      const res = await sendBookingAbandoned({
+        email: userRows[0].email,
+        name: b.contact_name || userRows[0].name,
+        type: typeLabel,
+        bookingId: b.id,
+        preferredDate: b.preferred_date,
+        amountPaise: Number(b.amount_paise)
+      });
+      if (res && res.sent) { sent++; continue; }
+      if (res && TERMINAL_SKIP_REASONS.has(res.reason)) continue;
+
+      failed++;
+      try {
+        await db.query(`UPDATE ${table} SET recovery_email_sent_at = NULL WHERE id = $1`, [b.id]);
+        logger.warn('Abandoned-booking send failed; marker cleared for retry', { bookingId: b.id, table, reason: res && res.reason });
+      } catch (err) {
+        logger.error('Abandoned-booking send failed AND the marker could not be cleared — no recovery email will be sent for this booking', err, {
+          bookingId: b.id, table, reason: res && res.reason
+        });
+      }
+    }
+  }
+  return { claimed, sent, failed };
+}
+
+// ---------------------------------------------------------------------------
+// 5. Daily digest
 // ---------------------------------------------------------------------------
 /**
  * One email a day covering yesterday. The dedupe key is the date, so this runs
@@ -330,6 +409,7 @@ const JOBS = {
   stock: runBackInStock,
   reminders: runBookingReminders,
   abandoned: runAbandonedCheckout,
+  bookingsAbandoned: runAbandonedBookings,
   digest: runDailyDigest
 };
 
@@ -389,4 +469,19 @@ if (require.main === module) {
   });
 }
 
-module.exports = { runBackInStock, runBookingReminders, runAbandonedCheckout, runDailyDigest };
+/* Exported FROM the registry, never hand-listed beside it.
+
+   runAbandonedBookings had ALREADY been missed here. It ran correctly in
+   production, because main() iterates JOBS — but nothing could import it, so
+   the one job added this cycle was the one job no test could reach. A list
+   maintained next to the thing it describes is a list that drifts from it.
+
+   Both naming conventions are derived: the registry keys (stock, reminders,
+   abandoned, bookingsAbandoned, digest) and the function names
+   (runBackInStock, ...), which db-integration.test.js imports. Adding a job to
+   JOBS now exports it under both, automatically. */
+module.exports = Object.assign(
+  { JOBS },
+  JOBS,
+  Object.fromEntries(Object.values(JOBS).map((fn) => [fn.name, fn]))
+);

@@ -51,6 +51,19 @@ const CAPABILITIES = Object.freeze({
 
   // --- Customers & governance ---------------------------------------------
   CUSTOMERS_READ: 'customers:read',   // bulk PII export surface
+  /* Acting ON a customer rather than reading about one: sending them an email
+     as the business, or changing the state of their enquiry.
+
+     Separate from CUSTOMERS_READ because capability grants are edited by ROLE,
+     not by route. Whoever creates a support role will grant customers:read —
+     the name says "let them look at customers" — and every write hiding behind
+     that read would arrive with it, silently, invisible to anyone reviewing the
+     role change. The capability name is the only documentation a person reads
+     at the moment they grant it, so it has to be true.
+
+     Admin holds every capability (Object.values below), so nothing changes for
+     the only role that can reach these routes today. */
+  CUSTOMERS_CONTACT: 'customers:contact',
   REVIEWS_MODERATE: 'reviews:moderate',
   AUDIT_READ: 'audit:read',
   ANALYTICS_READ: 'analytics:read'

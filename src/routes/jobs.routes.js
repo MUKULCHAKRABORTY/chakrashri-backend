@@ -16,7 +16,7 @@
  *                          instance sleeps after ~15 minutes, so a Razorpay
  *                          webhook can arrive at a cold instance and time out.
  *   • scheduled-emails   — restock alerts, booking reminders, abandoned-checkout
- *                          recovery, daily digest.
+ *                          recovery, abandoned-BOOKING recovery, daily digest.
  *
  * A free external scheduler (cron-job.org, UptimeRobot, Better Stack) calls this
  * endpoint on a schedule. The same call also keeps the instance warm, so it

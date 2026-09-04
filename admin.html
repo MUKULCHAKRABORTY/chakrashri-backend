@@ -50,11 +50,27 @@
   --parchment-2:#E9D9B4;
   --indigo:     #2E1B45;
   --indigo-lt:  #4A2E68;
-  --success:    #3E7A4F;
+  /* Darkened a shade for the same reason: 4.43:1 inside .pill-success, which is
+     what the automatic "New (auto)" badge uses. Now 4.85:1. Imperceptible as a
+     colour change; the difference is whether it can be read. */
+  --success:    #3b734b;
   --success-bg: #E7F1E9;
   --danger:     #B23A2E;
+  /* Secondary text. Was written out as #8a7768 in eleven separate rules, which
+     is both a rule in eleven places and, at 4.27:1 on white, under AA. One
+     token at 4.81:1 fixes the reading and the duplication together.
+
+     It was also being referenced as var(--text-mute) by the product form's SEO
+     hint while not existing at all — that only worked because of the fallback
+     in the var() call, and would have silently changed the moment anyone
+     defined the token with a different value. */
+  --text-mute:  #806f61;
   --danger-bg:  #FBEAE8;
-  --warn:       #9C7E1C;
+  /* Darkened from #9C7E1C. Measured, not guessed: the old value gave 3.88:1 on
+     white and 3.50:1 inside .pill-warn, both under the 4.5:1 WCAG AA needs for
+     normal text — and .pill-warn is what every hand-typed product badge renders
+     as. Now 5.35:1 and 4.83:1. */
+  --warn:       #816817;
   --warn-bg:    #FBF3DC;
   --f-display:  'Cinzel', serif;
   --f-body:     'Poppins', -apple-system, BlinkMacSystemFont, sans-serif;
@@ -140,7 +156,24 @@ h1,h2,h3{ font-family:var(--f-display); font-weight:600; color:var(--ink); }
   padding:1px 7px; border-radius:20px; min-width:18px; text-align:center;
 }
 .nav-btn:hover{ background:rgba(255,255,255,.06); opacity:1; }
-.nav-btn.active{ background:var(--oxblood); opacity:1; box-shadow:var(--shadow-sm); }
+/* THE SELECTED ITEM, and why it looks like this.
+
+   Measured contrast of the old rule: the active background #7A1128 against the
+   sidebar's own #2B0A12 is 1.68:1. Two dark reds — the highlight was there in
+   the stylesheet and effectively invisible on screen, which is exactly the
+   complaint. Gold on that same ground is 7.52:1.
+
+   So selection is carried by three signals rather than one weak one: a solid
+   gold rail down the left edge, a warm wash behind the row, and gold text and
+   icon. Any one of them alone would say it; together it cannot be missed, and
+   it still reads for someone who cannot distinguish the two reds at all. */
+.nav-btn.active{
+  background:linear-gradient(90deg, rgba(201,162,39,.20), rgba(201,162,39,.05));
+  opacity:1; color:var(--gold-lt); font-weight:700;
+  box-shadow:inset 3px 0 0 var(--gold);
+}
+.nav-btn.active svg{ opacity:1; color:var(--gold); }
+.nav-btn.active .badge{ background:var(--gold); }
 .sidebar-foot{ margin-top:auto; padding-top:14px; border-top:1px solid rgba(255,255,255,.1); }
 .admin-chip{ display:flex; align-items:center; gap:10px; padding:8px 10px; }
 .admin-avatar{
@@ -230,7 +263,7 @@ table.data th{
 }
 table.data td{ padding:12px; border-bottom:1px solid var(--parchment); vertical-align:middle; }
 table.data tr:hover td{ background:var(--ivory); }
-table.data .muted{ color:#8a7768; font-size:.8rem; }
+table.data .muted{ color:var(--text-mute); font-size:.8rem; }
 .thumb-sm{ width:38px; height:38px; border-radius:8px; object-fit:cover; background:var(--parchment); flex:none; }
 .row-flex{ display:flex; align-items:center; gap:10px; }
 
@@ -250,7 +283,7 @@ table.data .muted{ color:#8a7768; font-size:.8rem; }
 .field select{ width:100%; padding:12px 14px; border:1.5px solid var(--parchment-2); border-radius:10px; background:#fff; }
 .field.checkbox{ display:flex; align-items:center; gap:8px; }
 .field.checkbox input{ width:16px; height:16px; }
-.field .hint{ font-size:.72rem; color:#8a7768; margin-top:4px; }
+.field .hint{ font-size:.72rem; color:var(--text-mute); margin-top:4px; }
 .field .err{ font-size:.72rem; color:var(--danger); margin-top:4px; display:none; }
 
 /* ===== Toolbar / filters ===== */
@@ -269,6 +302,11 @@ table.data .muted{ color:#8a7768; font-size:.8rem; }
 .modal-head{ display:flex; align-items:center; justify-content:space-between; padding:20px 24px; border-bottom:1px solid var(--parchment); position:sticky; top:0; background:#fff; z-index:2; }
 .modal-body{ padding:22px 24px; }
 .modal-foot{ padding:16px 24px; border-top:1px solid var(--parchment); display:flex; justify-content:flex-end; gap:10px; }
+/* A product name is a link everywhere it appears. Underlined on hover rather
+   than always, so a table of twenty of them does not turn into a wall of blue. */
+.product-link{ color:inherit; text-decoration:none; border-bottom:1px dotted var(--gold-dk, #9a7b1e); cursor:pointer; }
+.product-link:hover{ color:var(--oxblood); border-bottom-style:solid; }
+.product-link:focus-visible{ outline:2px solid var(--oxblood); outline-offset:2px; }
 .close-x{ width:32px; height:32px; border-radius:50%; display:flex; align-items:center; justify-content:center; cursor:pointer; color:var(--oxblood); }
 .close-x:hover{ background:var(--parchment); }
 .drawer-overlay{ position:fixed; inset:0; background:rgba(43,10,18,.5); z-index:100; display:none; }
@@ -287,11 +325,11 @@ table.data .muted{ color:#8a7768; font-size:.8rem; }
 @keyframes toastIn{ from{ opacity:0; transform:translateY(-8px);} to{ opacity:1; transform:translateY(0);} }
 
 /* ===== Misc ===== */
-.empty{ text-align:center; padding:50px 20px; color:#8a7768; }
+.empty{ text-align:center; padding:50px 20px; color:var(--text-mute); }
 .empty svg{ width:44px; height:44px; opacity:.35; margin-bottom:10px; }
 .spinner{ width:20px; height:20px; border:2.5px solid var(--parchment-2); border-top-color:var(--oxblood); border-radius:50%; animation:spin .7s linear infinite; display:inline-block; }
 @keyframes spin{ to{ transform:rotate(360deg); } }
-.loading-row{ text-align:center; padding:30px; color:#8a7768; }
+.loading-row{ text-align:center; padding:30px; color:var(--text-mute); }
 .view{ display:none; }
 .view.active{ display:block; }
 .tab-strip{ display:flex; gap:6px; margin-bottom:18px; border-bottom:1px solid var(--parchment-2); }
@@ -306,14 +344,14 @@ table.data .muted{ color:#8a7768; font-size:.8rem; }
 .img-chip img{ width:100%; height:100%; object-fit:cover; }
 .img-chip .rm{ position:absolute; top:2px; right:2px; width:18px; height:18px; background:rgba(43,10,18,.75); color:#fff; border-radius:50%; display:flex; align-items:center; justify-content:center; cursor:pointer; font-size:.7rem; }
 .kv{ display:grid; grid-template-columns:120px 1fr; gap:6px 12px; font-size:.86rem; }
-.kv dt{ color:#8a7768; }
+.kv dt{ color:var(--text-mute); }
 .kv dd{ font-weight:500; }
 
 /* ---------- Booking "Manage" detail ---------- */
 .bk-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:16px;
   padding-bottom:14px; border-bottom:1px solid var(--parchment-2); margin-bottom:12px; }
 .bk-service{ font-family:var(--f-display); font-size:1.12rem; font-weight:600; color:var(--ink); line-height:1.3; }
-.bk-sub{ font-size:.78rem; color:#8a7768; margin-top:2px; }
+.bk-sub{ font-size:.78rem; color:var(--text-mute); margin-top:2px; }
 .bk-amount{ font-family:var(--f-display); font-size:1.25rem; font-weight:700; color:var(--oxblood); white-space:nowrap; }
 .bk-pills{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:18px; }
 
@@ -325,7 +363,7 @@ table.data .muted{ color:#8a7768; font-size:.8rem; }
 .bk-row{ display:grid; grid-template-columns:minmax(150px, 42%) 1fr; gap:12px;
   padding:7px 0; border-bottom:1px solid var(--ivory); align-items:start; }
 .bk-row:last-child{ border-bottom:none; }
-.bk-q{ font-size:.8rem; color:#8a7768; line-height:1.45; }
+.bk-q{ font-size:.8rem; color:var(--text-mute); line-height:1.45; }
 .bk-a{ font-size:.88rem; font-weight:600; color:var(--ink); line-height:1.45; word-break:break-word; }
 @media (max-width:560px){
   .bk-row{ grid-template-columns:1fr; gap:2px; padding:8px 0; }
@@ -535,18 +573,24 @@ code.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.78rem; 
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
             <input aria-label="Search products…" id="productSearch" placeholder="Search products…" oninput="debounceLoadProducts()">
           </div>
-          <select class="filter-select" id="productCategoryFilter" onchange="loadProducts(1)" aria-label="Filter products by category">
+          <select class="filter-select" id="productCategoryFilter" onchange="refreshSubcategoryFilterOptions(); loadProducts(1)" aria-label="Filter products by category">
             <option value="">All categories</option>
           </select>
           <select class="filter-select" id="productBadgeFilter" onchange="loadProducts(1)" aria-label="Filter products by badge">
             <option value="">All badges</option>
           </select>
+          <!-- Beside All badges, and filled the same way the category filter is:
+               from the subcategories the catalog actually contains, never from
+               a hardcoded list that can offer one holding no products. -->
+          <select class="filter-select" id="productSubcategoryFilter" onchange="loadProducts(1)" aria-label="Filter products by subcategory">
+            <option value="">All sub-categories</option>
+          </select>
           <button class="btn btn-primary btn-sm" style="margin-left:auto;" onclick="openProductForm()">+ Add Product</button>
         </div>
         <div class="card" style="padding:0;">
           <div class="table-wrap"><table class="data">
-            <thead><tr><th></th><th>Name</th><th>SKU</th><th>Category</th><th>Badge</th><th>Price</th><th>Stock</th><th>Status</th><th></th></tr></thead>
-            <tbody id="productsTbody"><tr><td colspan="9" class="loading-row"><span class="spinner"></span></td></tr></tbody>
+            <thead><tr><th></th><th>Name</th><th>SKU</th><th>Category</th><th>Sub-category</th><th>Badge</th><th>Sold</th><th>Price</th><th>Stock</th><th>Status</th><th></th></tr></thead>
+            <tbody id="productsTbody"><tr><td colspan="11" class="loading-row"><span class="spinner"></span></td></tr></tbody>
           </table></div>
         </div>
         <div class="pager" id="productsPager"></div>
@@ -648,11 +692,20 @@ code.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.78rem; 
       <!-- ============ AUDIT LOG ============ -->
       <section class="view" id="view-inbox">
         <div class="card" style="padding:14px;margin-bottom:14px;">
-          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
             <button class="btn btn-sm inbox-tab active" data-tab="messages"    onclick="switchInboxTab('messages')">Messages</button>
             <button class="btn btn-sm inbox-tab"        data-tab="subscribers" onclick="switchInboxTab('subscribers')">Subscribers</button>
             <button class="btn btn-sm inbox-tab"        data-tab="waitlist"    onclick="switchInboxTab('waitlist')">Restock waitlist</button>
             <button class="btn btn-sm inbox-tab"        data-tab="email"       onclick="switchInboxTab('email')">Email delivery</button>
+            <!-- Archived is hidden by DEFAULT, which is what makes Archive mean
+                 something. This is the only way back to it. -->
+            <select class="filter-select" id="messageStatusFilter" style="margin-left:auto;" onchange="loadContactMessages()" aria-label="Filter messages by status">
+              <option value="open">Open (new &amp; read)</option>
+              <option value="new">New only</option>
+              <option value="replied">Replied</option>
+              <option value="archived">Archived</option>
+              <option value="">Everything</option>
+            </select>
           </div>
         </div>
 
@@ -706,7 +759,7 @@ code.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.78rem; 
             <div class="loading-row" style="padding:24px;text-align:center;"><span class="spinner"></span></div>
           </div>
           <div id="settingsFooter" style="padding:16px 20px;border-top:1.5px solid var(--parchment-2);align-items:center;gap:12px;flex-wrap:wrap;display:none;">
-            <span id="settingsDirty" style="font-size:.8rem;color:#8a7768;">No unsaved changes</span>
+            <span id="settingsDirty" style="font-size:.8rem;color:var(--text-mute);">No unsaved changes</span>
             <button class="btn btn-primary btn-sm" style="margin-left:auto;" id="settingsSaveBtn" onclick="saveSettings()" disabled>Save changes</button>
             <button class="btn btn-sm" onclick="loadSettings()">Discard</button>
           </div>
@@ -747,11 +800,19 @@ code.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.78rem; 
         <div class="field"><label for="pfBadge">Badge</label>
           <input id="pfBadge" list="pfBadgeList" placeholder="Bestseller, New, Certified…" autocomplete="off">
           <datalist id="pfBadgeList"></datalist>
-          <div class="hint">Leave blank for no badge. Casing doesn't matter.</div>
+          <div class="hint"><strong>Leave blank and the shop decides.</strong> A product selling in the
+            top fifth of your catalogue is badged <em>Bestseller</em> automatically; one added in the last
+            30 days is badged <em>New</em>. Type here only to override that — what you type always wins.</div>
         </div>
         <div class="field"><label for="pfMaterial">Material</label><input id="pfMaterial"></div>
         <div class="field checkbox"><input type="checkbox" id="pfActive" checked aria-label="Product is active and visible in the shop"><label style="margin:0;text-transform:none;letter-spacing:0;font-weight:500;">Active (visible in store)</label></div>
-        <div class="field full"><label for="pfShortDesc">Short Description</label><textarea id="pfShortDesc" style="min-height:50px;"></textarea></div>
+        <div class="field full"><label for="pfShortDesc">Short Description</label>
+          <textarea id="pfShortDesc" style="min-height:50px;" oninput="updateSeoHint()"></textarea>
+          <!-- The SEO audit can detect a thin description but only a person can
+               write a better one, and this is where that person is. Said while
+               the product is being created, not reported weeks later. -->
+          <div class="hint" id="pfSeoHint"></div>
+        </div>
         <div class="field full"><label for="pfLongDesc">Long Description</label><textarea id="pfLongDesc"></textarea></div>
       </div>
 
@@ -817,6 +878,27 @@ code.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.78rem; 
 </div>
 
 <!-- ===================== VARIANT EDIT MODAL ===================== -->
+<!-- Reply to a customer enquiry. The original is shown above the box so the
+     reply is written against what they actually asked, not from memory. -->
+<div class="overlay" id="replyModal">
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="replyModalTitle">Reply</h3>
+      <button class="btn btn-sm" onclick="closeReplyModal()" aria-label="Close">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="replyOriginal" style="background:var(--parchment);border-radius:10px;padding:12px 14px;margin-bottom:16px;font-size:.86rem;white-space:pre-wrap;"></div>
+      <label for="replyBody" style="display:block;font-weight:600;font-size:.85rem;margin-bottom:6px;">Your reply</label>
+      <textarea id="replyBody" rows="9" style="width:100%;padding:12px;border:1px solid var(--line, #e7ddd0);border-radius:10px;font-family:inherit;font-size:.9rem;resize:vertical;" placeholder="Write your reply…"></textarea>
+      <p class="muted" style="font-size:.78rem;margin:8px 0 0;" id="replyHint"></p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-sm" onclick="closeReplyModal()">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="replySendBtn" onclick="sendReply()">Send reply</button>
+    </div>
+  </div>
+</div>
+
 <div class="overlay" id="variantEditModal">
   <div class="modal">
     <div class="modal-head">
@@ -825,7 +907,7 @@ code.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.78rem; 
     </div>
     <div class="modal-body">
       <div style="background:var(--ivory);border-radius:9px;padding:10px 12px;margin-bottom:16px;">
-        <div style="font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;color:#8a7768;margin-bottom:3px;">Combination</div>
+        <div style="font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;color:var(--text-mute);margin-bottom:3px;">Combination</div>
         <strong id="veLabel" style="font-size:.92rem;"></strong>
         <div class="hint" style="margin-top:6px;">The option combination can't be changed here — editing it would rewrite what past orders appear to contain. Remove and re-create the variant instead.</div>
       </div>
@@ -835,7 +917,7 @@ code.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.78rem; 
         <div class="field full"><label>Variant Image URL</label>
           <div style="display:flex;gap:10px;align-items:flex-start;">
             <input aria-label="https://…" id="veImage" placeholder="https://…" oninput="previewVariantEditImage()" style="flex:1;min-width:0;">
-            <div id="veImagePreview" style="width:52px;height:52px;border-radius:8px;border:1.5px dashed var(--parchment-2);flex:none;display:flex;align-items:center;justify-content:center;font-size:.62rem;color:#8a7768;text-align:center;overflow:hidden;">no image</div>
+            <div id="veImagePreview" style="width:52px;height:52px;border-radius:8px;border:1.5px dashed var(--parchment-2);flex:none;display:flex;align-items:center;justify-content:center;font-size:.62rem;color:var(--text-mute);text-align:center;overflow:hidden;">no image</div>
           </div>
         </div>
       </div>
@@ -1218,7 +1300,13 @@ function switchView(view){
   currentView = view;
   qsa('.view').forEach((v) => v.classList.remove('active'));
   qs('#view-' + view).classList.add('active');
-  qsa('.nav-btn').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
+  qsa('.nav-btn').forEach((b) => {
+    const on = b.dataset.view === view;
+    b.classList.toggle('active', on);
+    // The visual highlight says nothing to a screen reader. aria-current is the
+    // same fact in the form it can announce.
+    if(on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+  });
   qs('#pageTitle').textContent = VIEW_META[view].title;
   qs('#pageSub').textContent = VIEW_META[view].sub;
   toggleSidebar(false);
@@ -1353,7 +1441,7 @@ function showChartMessage(canvasId, message){
   if(!canvas) return;
   const holder = document.createElement('div');
   holder.id = canvasId + '_msg';
-  holder.style.cssText = 'text-align:center;padding:40px 20px;color:#8a7768;font-size:.88rem;';
+  holder.style.cssText = 'text-align:center;padding:40px 20px;color:var(--text-mute);font-size:.88rem;';
   holder.textContent = message;
   canvas.replaceWith(holder);
 }
@@ -1443,7 +1531,7 @@ async function loadTopProducts(){
     const body = await api('/api/admin/analytics/top-products?limit=8');
     if (!body.products.length) { tbody.innerHTML = '<tr><td colspan="4" class="empty">No sales yet.</td></tr>'; return; }
     tbody.innerHTML = body.products.map((p) => `<tr>
-      <td>${esc(p.name)}</td><td class="muted">${esc(p.category)}${p.subcategory ? ` / ${esc(p.subcategory)}` : ''}</td>
+      <td>${productLink(p.id, p.name)}</td><td class="muted">${esc(p.category)}${p.subcategory ? ` / ${esc(p.subcategory)}` : ''}</td>
       <td>${esc(p.units_sold)}</td><td>${paise(p.revenue_paise)}</td>
     </tr>`).join('');
   } catch (err) { tbody.innerHTML = '<tr><td colspan="4" class="empty">Could not load.</td></tr>'; }
@@ -1453,11 +1541,33 @@ async function loadLowStock(){
   const tbody = qs('#lowStockTable tbody');
   try {
     const body = await api('/api/admin/low-stock?threshold=5');
-    if (!body.products.length) { tbody.innerHTML = '<tr><td colspan="3" class="empty">All products well-stocked.</td></tr>'; return; }
-    tbody.innerHTML = body.products.map((p) => `<tr>
-      <td>${esc(p.name)}</td><td class="muted">${esc(p.sku)}</td>
+    const products = body.products || [];
+    const variants = body.variants || [];
+
+    /* Variants FIRST, and that ordering is the point of this panel.
+
+       A variant product's stock_qty is the sum of its variants, so three sizes
+       holding 2 each report 6 and never tripped a threshold of 5 — while every
+       individual size was one order from unsellable. Those rows are the ones
+       that need acting on, so they lead; "Dhoti" as a whole is not something
+       anybody can restock. */
+    const rows = variants.map((v) => {
+      const opts = Array.isArray(v.option_values)
+        ? v.option_values.map((o) => esc(o.option) + ': ' + esc(o.value)).join(' / ')
+        : '';
+      return `<tr>
+        <td>${productLink(v.product_id, v.product_name)}
+          <div class="muted" style="font-size:.72rem;">${opts || 'variant'}</div></td>
+        <td class="muted"><code class="mono">${esc(v.variant_sku || v.product_sku || '—')}</code></td>
+        <td><span class="pill ${v.stock_qty === 0 ? 'pill-danger' : 'pill-warn'}">${v.stock_qty} left</span></td>
+      </tr>`;
+    }).concat(products.map((p) => `<tr>
+      <td>${productLink(p.id, p.name)}</td><td class="muted"><code class="mono">${esc(p.sku)}</code></td>
       <td><span class="pill ${p.stock_qty === 0 ? 'pill-danger' : 'pill-warn'}">${p.stock_qty} left</span></td>
-    </tr>`).join('');
+    </tr>`));
+
+    if (!rows.length) { tbody.innerHTML = '<tr><td colspan="3" class="empty">All products and variants well-stocked.</td></tr>'; return; }
+    tbody.innerHTML = rows.join('');
   } catch (err) { tbody.innerHTML = '<tr><td colspan="3" class="empty">Could not load.</td></tr>'; }
 }
 
@@ -1473,10 +1583,12 @@ async function loadProducts(page){
   tbody.innerHTML = '<tr><td colspan="9" class="loading-row"><span class="spinner"></span></td></tr>';
   const search = qs('#productSearch').value.trim();
   const category = qs('#productCategoryFilter').value;
+  const subcategory = qs('#productSubcategoryFilter').value;
   const badge = qs('#productBadgeFilter').value;
   const params = new URLSearchParams({ page: productsState.page, limit: 20 });
   if (search) params.set('search', search);
   if (category) params.set('category', category);
+  if (subcategory) params.set('subcategory', subcategory);
   if (badge) params.set('badge', badge);
 
   try {
@@ -1493,22 +1605,25 @@ async function loadProducts(page){
       }
     });
     refreshCategoryFilterOptions();
+    refreshSubcategoryFilterOptions();
     refreshBadgeFilterOptions();
     refreshTermDatalists();
 
     if (!products.length) {
-      tbody.innerHTML = '<tr><td colspan="9"><div class="empty">No products found.' + (search || category || badge ? ' Try clearing filters.' : ' Add your first product to get started.') + '</div></td></tr>';
+      tbody.innerHTML = '<tr><td colspan="11"><div class="empty">No products found.' + (search || category || subcategory || badge ? ' Try clearing filters.' : ' Add your first product to get started.') + '</div></td></tr>';
       qs('#productsPager').innerHTML = '';
       return;
     }
     tbody.innerHTML = products.map((p) => `<tr>
-      <td><div class="thumb-sm" style="display:flex;align-items:center;justify-content:center;font-size:.7rem;color:#8a7768;">${esc((p.category||'').slice(0,2).toUpperCase())}</div></td>
-      <td><b>${esc(p.name)}</b></td>
+      <td><div class="thumb-sm" style="display:flex;align-items:center;justify-content:center;font-size:.7rem;color:var(--text-mute);">${esc((p.category||'').slice(0,2).toUpperCase())}</div></td>
+      <td>${productLink(p.id, p.name, { bold: true })}</td>
       <td class="muted">${esc(p.sku)}</td>
       <td class="muted">${esc(p.category)}</td>
-      <td>${p.badge ? '<span class="pill pill-warn">' + esc(p.badge) + '</span>' : '<span class="muted">—</span>'}</td>
+      <td class="muted">${p.subcategory ? esc(p.subcategory) : '<span class="muted">—</span>'}</td>
+      <td>${badgeCell(p)}</td>
+      <td title="Units sold in paid orders">${Number(p.units_sold) || 0}</td>
       <td>${paise(p.price_paise)}</td>
-      <td>${p.variant_count > 0
+      <td>${unsellableWarning(p)}${p.variant_count > 0
         ? `<span class="pill ${p.stock_qty === 0 ? 'pill-danger' : 'pill-success'}">${p.stock_qty}</span><div class="muted" style="font-size:.68rem;margin-top:3px;">sum of ${p.variant_count} variant${p.variant_count === 1 ? '' : 's'}</div>`
         : (p.stock_qty > 0 ? p.stock_qty : '<span class="pill pill-danger">Out of stock</span>')}</td>
       <td><span class="pill ${p.is_active !== false ? 'pill-success' : 'pill-neutral'}">${p.is_active !== false ? 'Active' : 'Hidden'}</span></td>
@@ -1578,12 +1693,86 @@ function titleCaseTerm(value){
   return cleaned.split(' ').map((w, i) => (i > 0 && DL_MINOR.includes(w)) ? w : w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 }
 
+/* Mirrors NEW_ARRIVAL_DAYS in index.html, and guarded by [fe-50] the same way
+   the description numbers are. Widening the shop's window to 45 days while this
+   still said 30 would make the console disagree with the storefront about which
+   products are badged New — silently, and only for products aged 30-45 days. */
+const NEW_ARRIVAL_DAYS = 30;
+
+/* What this product's badge actually SAYS on the shop.
+
+   A dash here had become a lie: the storefront computes a badge when none is
+   typed, so a product showing "—" in the console can be badged Bestseller to
+   every customer, and the seller had no way to see it or find out why.
+
+   Deliberately NOT recomputing the bestseller percentile here. That threshold is
+   a property of the WHOLE catalogue and this table is paged twenty rows at a
+   time, so a percentile over one page would be confidently wrong on any shop big
+   enough to page — the worst kind of wrong, because it looks precise. "New" is
+   exact from created_at and is shown; for Bestseller the Sold column shows the
+   units that drive it, which is the honest and more useful number anyway. */
+/* A product nobody can buy, flagged on the row rather than discovered by a
+   customer. Options exist, no active variant does — so the storefront asks for
+   a choice that resolves to nothing. Active and in stock, it looks perfectly
+   healthy in every other column, which is exactly why it needs saying here. */
+function unsellableWarning(p){
+  if (!(p.option_count > 0 && p.variant_count === 0)) return '';
+  return '<div class="pill pill-danger" style="margin-bottom:4px;" '
+    + 'title="This product has options but no active variant behind them. Customers are asked to choose and cannot. '
+    + 'Add a variant, or remove the option.">Cannot be bought</div>';
+}
+
+function badgeCell(p){
+  if(p.badge) return '<span class="pill pill-warn">' + esc(p.badge) + '</span>';
+  const created = p.created_at ? Date.parse(p.created_at) : NaN;
+  if(Number.isFinite(created) && (Date.now() - created) / 86400000 <= NEW_ARRIVAL_DAYS){
+    return '<span class="pill pill-success" title="Automatic — added within the last '
+      + NEW_ARRIVAL_DAYS + ' days">New (auto)</span>';
+  }
+  return '<span class="muted" title="No badge typed. The shop may still badge this a Bestseller — see the Sold column.">—</span>';
+}
+
 function refreshCategoryFilterOptions(){
   const sel = qs('#productCategoryFilter');
   const current = sel.value;
   sel.innerHTML = '<option value="">All categories</option>' +
     Array.from(productsState.categories).sort().map((c) => `<option value="${esc(c)}">${esc(titleCaseTerm(c))}</option>`).join('');
   sel.value = current;
+}
+
+/* The same law as the category filter, one level down.
+
+   Two things it does that a naive copy would not:
+
+   1. It is CATEGORY-AWARE. productsState.subcategoriesByCat already groups them
+      by parent, so when a category is selected this offers only that category's
+      subcategories. Offering "Scripture" while "Malas" is selected is offering a
+      filter combination that returns nothing.
+   2. It CLEARS a selection that the current category cannot contain. Without
+      that, choosing Book/Scripture and then switching to Malas leaves
+      subcategory=scripture silently ANDed on, and the table goes empty for a
+      reason nothing on screen explains. */
+function refreshSubcategoryFilterOptions(){
+  const sel = qs('#productSubcategoryFilter');
+  if(!sel) return;
+  const cat = qs('#productCategoryFilter') ? qs('#productCategoryFilter').value : '';
+  const byCat = productsState.subcategoriesByCat;
+
+  const available = new Set();
+  byCat.forEach((subs, parent) => {
+    if(cat && parent !== cat) return;
+    subs.forEach((s) => available.add(s));
+  });
+
+  const current = sel.value;
+  sel.innerHTML = '<option value="">All sub-categories</option>' +
+    Array.from(available).sort().map((s) => `<option value="${esc(s)}">${esc(titleCaseTerm(s))}</option>`).join('');
+  // Only restore the previous choice if it still makes sense under the
+  // currently selected category.
+  sel.value = available.has(current) ? current : '';
+  // Nothing to narrow by is not the same as a filter with no options: hide it
+  // rather than showing a control that can only ever say "All".
+  sel.style.display = available.size ? '' : 'none';
 }
 
 function refreshBadgeFilterOptions(){
@@ -1597,6 +1786,78 @@ function refreshBadgeFilterOptions(){
 
 let editingProductId = null;
 let editingProductImages = [];
+
+/* A product name that can be clicked to see WHICH product it is.
+
+   The problem it solves is real in this catalog: several products share a
+   naming pattern ("Sphatik Shivling", "Sphatik Lingam"), and an order line
+   showing only a name leaves the packer guessing. Clicking opens that exact
+   product's editor — SKU, category, images, stock, variants — which is the
+   fastest unambiguous answer to "what am I supposed to put in the box".
+
+   The id goes in raw, matching openOrderDetail and setMessageStatus elsewhere
+   in this file. esc() would be actively WRONG here: an HTML attribute is
+   entity-decoded before the JavaScript inside it is parsed, so escaping a
+   quote would reconstruct it inside the JS string rather than neutralise it.
+   These are gen_random_uuid() values and cannot contain a quote; the safety
+   comes from the type, not from escaping. The visible TEXT is escaped, because
+   a product name is free text an admin typed. */
+function productLink(productId, name, opts){
+  const o = opts || {};
+  const text = esc(name || '—');
+  if(!productId) return o.bold ? '<b>' + text + '</b>' : text;
+  const inner = o.bold ? '<b>' + text + '</b>' : text;
+  return '<a href="#" class="product-link" title="Open this product"'
+    + ' onclick="event.preventDefault(); openProductForm(\'' + productId + '\');">'
+    + inner + '</a>';
+}
+
+/* Mirrors SEO_DESCRIPTION in scripts/seo-fields.js.
+
+   admin.html is served as a static file and cannot require() that module, so
+   these are copied — and [fe-50] fails the build the moment the two disagree.
+   Copying a rule is only safe when something notices the copy drifting. */
+const SEO_DESC_MIN = 70;
+const SEO_DESC_IDEAL_MAX = 155;
+const SEO_DESC_HARD_MAX = 300;
+
+/* Live feedback on the one SEO input only a human can supply.
+
+   Google renders roughly 155 characters of a description; under about 70 there
+   is not enough for it to earn a snippet, and the search result falls back to
+   whatever text Google scrapes off the page instead. Same thresholds the audit
+   reports on, said early enough to act on. */
+function updateSeoHint(){
+  const box = qs('#pfShortDesc');
+  const hint = qs('#pfSeoHint');
+  if(!box || !hint) return;
+  const n = box.value.trim().length;
+  const base = 'Shown under your product in Google results and when the link is shared. ';
+  let tail, colour;
+  if(n === 0){
+    tail = 'Empty — the search result will carry no description at all.';
+    colour = 'var(--danger)';
+  } else if(n < SEO_DESC_MIN){
+    tail = n + ' characters — too thin to earn a snippet. Aim for '
+      + SEO_DESC_MIN + '–' + SEO_DESC_IDEAL_MAX + '.';
+    colour = 'var(--danger)';
+  } else if(n > SEO_DESC_HARD_MAX){
+    tail = n + ' characters — that is a description, not a summary. Move the detail below.';
+    colour = 'var(--warn)';
+  } else if(n > SEO_DESC_IDEAL_MAX){
+    /* NOT a warning. Google shows roughly the first 155 characters and the rest
+       still does its job on the page; eight of the eleven products here are
+       over it and every one reads well. Colouring this amber would have told
+       the seller most of their catalogue was broken. */
+    tail = 'Google will show about the first ' + SEO_DESC_IDEAL_MAX + ' of ' + n + ' characters.';
+    colour = 'var(--text-mute)';
+  } else {
+    tail = n + ' characters — good.';
+    colour = 'var(--success)';
+  }
+  hint.textContent = base + tail;
+  hint.style.color = colour;
+}
 
 async function openProductForm(id){
   editingProductId = id || null;
@@ -1613,6 +1874,7 @@ async function openProductForm(id){
   qs('#pfImagesSection').style.display = id ? '' : 'none';
   qs('#pfImageChips').innerHTML = '';
   qsa('.err').forEach((e) => e.style.display = 'none');
+  updateSeoHint();
   openModalEl('productModal');
 
   if (id) {
@@ -1635,6 +1897,7 @@ async function openProductForm(id){
       qs('#pfActive').checked = p.is_active !== false;
       qs('#pfShortDesc').value = p.short_desc || '';
       qs('#pfLongDesc').value = p.long_desc || '';
+      updateSeoHint();   // an existing thin description says so on open, not only on edit
       editingProductImages = body.images || [];
       renderProductImageChips();
       editingProductProperties = body.properties || [];
@@ -1880,7 +2143,7 @@ function renderVariantBuilder(){
       '<div class="field full" style="margin:0;"><label>Variant Image URL</label>' +
         '<div style="display:flex;gap:10px;align-items:flex-start;">' +
           '<input aria-label="https://… shown when this variant is selected" id="vbImage" placeholder="https://… shown when this variant is selected" oninput="previewVariantImage()" style="flex:1;min-width:0;">' +
-          '<div id="vbImagePreview" style="width:52px;height:52px;border-radius:8px;border:1.5px dashed var(--parchment-2);flex:none;display:flex;align-items:center;justify-content:center;font-size:.62rem;color:#8a7768;text-align:center;overflow:hidden;">no image</div>' +
+          '<div id="vbImagePreview" style="width:52px;height:52px;border-radius:8px;border:1.5px dashed var(--parchment-2);flex:none;display:flex;align-items:center;justify-content:center;font-size:.62rem;color:var(--text-mute);text-align:center;overflow:hidden;">no image</div>' +
         '</div></div>' +
       '<div class="field full" style="margin:0;"><button class="btn btn-primary btn-sm" style="width:100%;" onclick="addProductVariant()">Add This Combination</button></div>' +
     '</div>';
@@ -2179,6 +2442,89 @@ async function loadOrders(page){
 }
 
 let currentOrderId = null;
+/* THE ADDRESS AS A COURIER NEEDS IT.
+
+   Reading it off a definition list and retyping it into a courier portal is
+   where wrong pincodes come from, and a wrong pincode is a returned parcel. So
+   it is produced once, in the block format Indian couriers and label printers
+   expect: recipient, address, area, CITY - PIN, state, country, phone.
+
+   Held on the order object at render time rather than scraped back out of the
+   DOM, so what is copied is the data, not whatever the markup happened to
+   look like. */
+let currentOrderForLabel = null;
+
+function shippingAddressBlock(o){
+  if(!o || !o.ship_name) return '';
+  const lines = [
+    o.ship_name,
+    o.ship_line1,
+    o.ship_line2 || '',
+    // City and PIN on one line: this is the form every Indian courier label and
+    // manifest uses, and splitting them is what invites a transcription slip.
+    [o.ship_city, o.ship_pincode].filter(Boolean).join(' - '),
+    o.ship_state,
+    o.ship_country || 'India',
+    o.ship_phone ? 'Phone: ' + o.ship_phone : ''
+  ];
+  return lines.filter(function(l){ return String(l || '').trim(); }).join('\n');
+}
+
+async function copyShippingAddress(){
+  const text = shippingAddressBlock(currentOrderForLabel);
+  if(!text){ toast('No shipping address on this order.', 'err'); return; }
+  const btn = qs('#copyAddrBtn');
+  try {
+    await navigator.clipboard.writeText(text);
+    if(btn){ const was = btn.textContent; btn.textContent = 'Copied ✓'; setTimeout(function(){ btn.textContent = was; }, 1600); }
+    toast('Address copied — paste it straight onto the label.', 'ok');
+  } catch (err) {
+    /* clipboard.writeText needs a secure context and permission, and refuses in
+       some embedded browsers. Falling back to a selectable box means the admin
+       can still copy it by hand instead of being told "copy failed" and left
+       with nothing. */
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', 'readonly');
+    ta.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:200;width:min(90vw,360px);height:170px;padding:12px;font-family:inherit;';
+    document.body.appendChild(ta);
+    ta.select();
+    let copied = false;
+    try { copied = document.execCommand('copy'); } catch (e) { copied = false; }
+    if(copied){ document.body.removeChild(ta); toast('Address copied.', 'ok'); }
+    else { toast('Select the text and copy it — your browser blocked automatic copying.', 'err');
+           ta.addEventListener('blur', function(){ if(ta.parentNode) ta.parentNode.removeChild(ta); }); }
+  }
+}
+
+/* A real label, not window.print() on the whole console.
+
+   Printing the admin page would put the sidebar, the nav and the order drawer
+   on the paper. This opens a window containing only the address block, sized
+   for a 10x15cm thermal label, and prints that. */
+function printShippingLabel(){
+  const text = shippingAddressBlock(currentOrderForLabel);
+  if(!text){ toast('No shipping address on this order.', 'err'); return; }
+  const orderNo = (currentOrderForLabel && currentOrderForLabel.order_number) || '';
+  const w = window.open('', '_blank', 'width=420,height=560');
+  if(!w){ toast('Your browser blocked the print window. Allow pop-ups for this page.', 'err'); return; }
+  w.document.write(
+    '<!doctype html><meta charset="utf-8"><title>Label ' + esc(orderNo) + '</title>' +
+    '<style>@page{size:100mm 150mm;margin:6mm;}' +
+    'body{font:14px/1.55 system-ui,-apple-system,Segoe UI,sans-serif;margin:0;padding:10mm;}' +
+    '.on{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#666;margin-bottom:8px;}' +
+    '.addr{white-space:pre-wrap;font-size:16px;font-weight:600;}' +
+    '.frm{margin-top:14mm;padding-top:4mm;border-top:1px dashed #999;font-size:11px;color:#555;}</style>' +
+    '<div class="on">Order ' + esc(orderNo) + '</div>' +
+    '<div class="addr">' + esc(text) + '</div>' +
+    '<div class="frm">From: Chakrashri</div>'
+  );
+  w.document.close();
+  w.focus();
+  // Let the document lay out before printing, or some browsers print a blank page.
+  setTimeout(function(){ try{ w.print(); }catch(e){} }, 250);
+}
+
 async function openOrderDetail(id){
   currentOrderId = id;
   qs('#orderDrawerBody').innerHTML = '<div class="loading-row"><span class="spinner"></span></div>';
@@ -2192,6 +2538,7 @@ async function openOrderDetail(id){
 }
 
 function renderOrderDetail(o, items){
+  currentOrderForLabel = o;
   qs('#orderDrawerTitle').textContent = o.order_number;
   // Mirrors the server rule (#34): only a real captured Razorpay payment blocks
   // "cancelled". A COD order has nothing to refund, so it stays cancellable.
@@ -2204,16 +2551,33 @@ function renderOrderDetail(o, items){
   const terminal = ['cancelled','refunded','payment_failed'].includes(o.status);
   const needsPaymentReview = o.status === 'payment_review';
 
+  /* WHAT GOES IN THE BOX.
+
+     The name alone was not enough to pick an item: this catalog has several
+     similarly-named products, and the snapshot deliberately freezes the name as
+     it was at purchase, which is right for the record and no help on a shelf.
+     So the line now carries what a packer actually reads — the SKU, the variant
+     options, and the VARIANT's own SKU, which is the only thing distinguishing
+     one size from another in the stockroom.
+
+     Falls back to the snapshot throughout: a product deleted since the order
+     was placed still has to show what was bought. */
   const itemsHtml = items.map((i) => `
     <tr>
       <td>
-        ${esc(i.product_name_snapshot)}
-        ${Array.isArray(i.variant_snapshot) && i.variant_snapshot.length ? `<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:6px;">` +
+        ${productLink(i.product_id, i.product_name_snapshot, { bold: true })}
+        <div class="muted" style="font-size:.72rem;margin-top:2px;">
+          ${i.sku ? `SKU <code class="mono">${esc(i.sku)}</code>` : '<i>product no longer in catalogue</i>'}
+          ${i.category ? ` · ${esc(i.category)}${i.subcategory ? ' / ' + esc(i.subcategory) : ''}` : ''}
+        </div>
+        ${Array.isArray(i.variant_snapshot) && i.variant_snapshot.length ? `<div style="margin-top:5px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;">` +
           i.variant_snapshot.map((v) => `<span style="display:inline-flex;align-items:center;gap:4px;font-size:.72rem;background:var(--parchment);padding:2px 8px;border-radius:20px;">` +
             (v.colorHex ? `<span style="width:10px;height:10px;border-radius:50%;background:${esc(v.colorHex)};border:1px solid rgba(0,0,0,.2);"></span>` : '') +
-            `${esc(v.option)}: <b>${esc(v.value)}</b></span>`).join('') + `</div>` : ''}
+            `${esc(v.option)}: <b>${esc(v.value)}</b></span>`).join('') +
+          (i.variant_sku ? `<span class="muted" style="font-size:.72rem;">variant SKU <code class="mono">${esc(i.variant_sku)}</code></span>` : '') +
+          `</div>` : ''}
       </td>
-      <td>×${i.quantity}</td>
+      <td>×${i.quantity}<div class="muted" style="font-size:.72rem;">${paise(i.unit_price_paise)} each</div></td>
       <td>${paise(i.line_total_paise)}</td>
     </tr>
   `).join('');
@@ -2250,7 +2614,11 @@ function renderOrderDetail(o, items){
     </dl>
 
     <div class="divider"></div>
-    <label style="display:block;font-size:.72rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--oxblood);margin-bottom:8px;">Shipping Address</label>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap;">
+      <label style="font-size:.72rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--oxblood);margin:0;">Shipping Address</label>
+      ${o.ship_name ? `<button class="btn btn-sm" id="copyAddrBtn" onclick="copyShippingAddress()" style="margin-left:auto;">Copy for courier</button>
+      <button class="btn btn-sm" onclick="printShippingLabel()">Print label</button>` : ''}
+    </div>
     ${o.ship_name ? `<dl class="kv">
       <dt>Recipient</dt><dd>${esc(o.ship_name)}</dd>
       <dt>Phone</dt><dd>${esc(o.ship_phone)}</dd>
@@ -2983,6 +3351,10 @@ function deactivateCouponConfirm(id, code){
    waitlist on catalog:read), because all of them read customer email
    addresses in bulk — that is the capability staff deliberately do not hold. */
 let inboxTab = 'messages';
+/* What the messages table is currently showing. openReplyModal quotes the
+   customer's own words back to them, and it must quote the version that was on
+   screen — not one re-fetched later that may have been edited or archived. */
+let contactMessagesCache = [];
 
 function switchInboxTab(tab){
   inboxTab = tab;
@@ -3007,10 +3379,29 @@ async function loadContactMessages(){
   if (!tbody) return;
   tbody.innerHTML = '<tr><td colspan="6" class="loading-row"><span class="spinner"></span></td></tr>';
   try {
-    const body = await api('/api/admin/contact-messages?limit=100');
+    /* "open" is not a server status — it is new + read, i.e. everything still
+       waiting on us. The server filters one status at a time, so this one is
+       resolved here: ask for everything and drop what is already dealt with.
+       Archived is excluded from every view except its own, which is the whole
+       point of archiving. */
+    const wanted = (qs('#messageStatusFilter') || {}).value;
+    const qsStatus = (wanted && wanted !== 'open') ? ('&status=' + encodeURIComponent(wanted)) : '';
+    const body = await api('/api/admin/contact-messages?limit=100' + qsStatus);
     updateInboxBadge(body.unread);
-    if (!body.messages.length) { tbody.innerHTML = '<tr><td colspan="6"><div class="empty">No messages yet.</div></td></tr>'; return; }
-    tbody.innerHTML = body.messages.map(function(m){
+    const visible = (wanted === 'open' || wanted === undefined)
+      ? body.messages.filter(function(m){ return m.status === 'new' || m.status === 'read'; })
+      : body.messages;
+    if (!visible.length) {
+      tbody.innerHTML = '<tr><td colspan="6"><div class="empty">'
+        + (wanted === 'archived' ? 'Nothing archived yet.'
+          : wanted === 'replied' ? 'No replied messages.'
+          : wanted === 'open' || !wanted ? 'Nothing waiting on you — every message is replied to or archived.'
+          : 'No messages yet.')
+        + '</div></td></tr>';
+      return;
+    }
+    contactMessagesCache = visible;
+    tbody.innerHTML = visible.map(function(m){
       return '<tr>'
         + '<td class="muted">' + fmtDateTime(m.created_at) + '</td>'
         + '<td><strong>' + esc(m.name) + '</strong><br><span class="muted">' + esc(m.email) + '</span>'
@@ -3026,13 +3417,74 @@ async function loadContactMessages(){
            values and cannot contain a quote at all; the safety comes from the
            type, not from escaping. */
         + '<td style="white-space:nowrap;">'
-          + '<button class="btn btn-sm" onclick="setMessageStatus(\'' + m.id + '\',\'read\')">Read</button> '
-          + '<button class="btn btn-sm" onclick="setMessageStatus(\'' + m.id + '\',\'replied\')">Replied</button> '
-          + '<button class="btn btn-sm" onclick="setMessageStatus(\'' + m.id + '\',\'archived\')">Archive</button>'
+          /* Reply first, and primary: it is the thing the customer is waiting
+             for. "Replied" as a bare status button is gone — marking an enquiry
+             answered without answering it is how somebody gets forgotten. */
+          /* Hidden, not merely rejected. Every one of these calls an endpoint
+             that now needs customers:contact as well as customers:read, so a
+             read-only viewer would meet a 403 on click — a button that exists
+             and always fails is worse than no button. hasCapability() returns
+             true when the capability lookup itself failed, so a network blip
+             never blanks the controls an admin needs. */
+          + (hasCapability('customers:contact')
+              ? '<button class="btn btn-primary btn-sm" onclick="openReplyModal(\'' + m.id + '\')">Reply</button> '
+                + (m.status === 'new' ? '<button class="btn btn-sm" onclick="setMessageStatus(\'' + m.id + '\',\'read\')">Mark read</button> ' : '')
+                + (m.status === 'archived'
+                    ? '<button class="btn btn-sm" onclick="setMessageStatus(\'' + m.id + '\',\'read\')">Unarchive</button>'
+                    : '<button class="btn btn-sm" onclick="setMessageStatus(\'' + m.id + '\',\'archived\')">Archive</button>')
+              : '<span class="muted">View only</span>')
         + '</td></tr>';
     }).join('');
   } catch (err) {
     tbody.innerHTML = '<tr><td colspan="6"><div class="empty">Could not load messages.</div></td></tr>';
+  }
+}
+
+/* The message being replied to. Held rather than re-fetched: the modal shows
+   the customer their own words quoted back, and those must be the words that
+   were on screen when Reply was pressed. */
+let replyingTo = null;
+
+function openReplyModal(id){
+  const m = (contactMessagesCache || []).find(function(x){ return String(x.id) === String(id); });
+  if(!m){ toast('That message is no longer on screen — reload the inbox.', 'err'); return; }
+  replyingTo = m;
+  qs('#replyModalTitle').textContent = 'Reply to ' + (m.name || m.email);
+  qs('#replyOriginal').textContent =
+    (m.subject ? m.subject + '\n\n' : '') + m.message;
+  qs('#replyBody').value = '';
+  qs('#replyHint').textContent = 'Sends to ' + m.email + '. They will see your reply with their original message quoted below it.';
+  qs('#replySendBtn').disabled = false;
+  qs('#replySendBtn').textContent = 'Send reply';
+  qs('#replyModal').classList.add('show');
+  setTimeout(function(){ try{ qs('#replyBody').focus(); }catch(e){} }, 50);
+}
+
+function closeReplyModal(){
+  qs('#replyModal').classList.remove('show');
+  replyingTo = null;
+}
+
+async function sendReply(){
+  if(!replyingTo) return;
+  const body = qs('#replyBody').value.trim();
+  if(body.length < 2){ toast('Write a reply before sending.', 'err'); return; }
+  const btn = qs('#replySendBtn');
+  // Disabled for the whole round trip: a second click is a second email to a
+  // real customer, and the dedupe key upstream only catches an identical one.
+  btn.disabled = true; btn.textContent = 'Sending…';
+  try {
+    const res = await api('/api/admin/contact-messages/' + replyingTo.id + '/reply', {
+      method: 'POST', body: JSON.stringify({ body: body })
+    });
+    toast('Reply sent to ' + (res.sentTo || replyingTo.email) + '.', 'ok');
+    closeReplyModal();
+    loadContactMessages();
+  } catch (err) {
+    // The server leaves the message unanswered when the send fails, so the
+    // console must not claim otherwise.
+    toast((err && err.error) || 'The reply could not be sent.', 'err');
+    btn.disabled = false; btn.textContent = 'Send reply';
   }
 }
 
@@ -3085,7 +3537,7 @@ async function loadStockWaitlist(){
     const body = await api('/api/admin/stock-waitlist');
     if (!body.waitlist.length) { tbody.innerHTML = '<tr><td colspan="6"><div class="empty">Nobody is waiting on a restock.</div></td></tr>'; return; }
     tbody.innerHTML = body.waitlist.map(function(w){
-      return '<tr><td>' + esc(w.name) + '</td>'
+      return '<tr><td>' + productLink(w.product_id, w.name) + '</td>'
         + '<td class="mono muted">' + esc(w.sku) + '</td>'
         + '<td class="muted">' + esc(w.variant_sku || '—') + '</td>'
         + '<td>' + esc(w.stock_qty) + '</td>'

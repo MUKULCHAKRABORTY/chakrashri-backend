@@ -120,6 +120,31 @@ jobs:
         # drifts silently; this is what that drift looked like.
         run: npm run test:frontend
 
+      - name: Email templates and scheduled jobs
+        # Added in the same commit as the suite, because [fe-44] fails the
+        # build otherwise — which is the whole point of that guard.
+        #
+        # These templates sit on money paths and none of them fails loudly: a
+        # template that throws is caught upstream and swallowed, and the first
+        # sign is a customer asking why they never heard anything. This is also
+        # the only check that a FAILED send releases its claim marker, which is
+        # the difference between a recovery email being retried and being lost.
+        # Needs nothing external: both the mail engine and the database are
+        # stubbed, and no message leaves the runner.
+        run: npm run test:emails
+
+      - name: Rendered contrast (WCAG AA)
+        # Measures what a person actually sees, on every route and in the
+        # admin console. Reading the CSS cannot answer this — a colour token
+        # is only readable relative to the surface behind it, which is why a
+        # section heading sat at 1.18:1 and the automatic BESTSELLER badge at
+        # 2.68:1 with every static check passing.
+        # A skip here would mean the chromium install above silently failed,
+        # and this suite would report success having rendered nothing at all.
+        env:
+          REQUIRE_BROWSER_TESTS: 'true'
+        run: npm run test:contrast
+
       - name: Drawer and category-ranking fuzz
         # Added in the same breath as the suite itself, because the comment
         # above is the record of what happens otherwise: a suite that exists,
@@ -131,6 +156,20 @@ jobs:
         # yet. It is the only thing checking that "top 15 by most sold" is a
         # total order rather than whatever the sort happened to return.
         run: npm run test:drawer
+
+      - name: Automatic badge maths
+        # "Bestseller" is a percentile over real sales now, not a field somebody
+        # typed. A percentile is exactly the kind of thing that looks right and
+        # is wrong at the edges — three orders in the whole shop, or everything
+        # selling identically — so it is exercised over those distributions.
+        run: npm run test:badges
+
+      - name: SEO audit
+        # Titles, canonicals and JSON-LD are written by JavaScript on every
+        # navigation here, so nothing about them is visible in the source. A
+        # canonical stuck on the home page tells Google every other page is a
+        # duplicate of it, and that is invisible until traffic disappears.
+        run: npm run seo:audit
 
       - name: Install Chromium for the browser regression tests
         run: npx playwright install --with-deps chromium
@@ -163,6 +202,26 @@ jobs:
         env:
           REQUIRE_BROWSER_TESTS: 'true'
         run: npm run test:browser-settings
+
+      - name: Admin inbox browser test
+        # Archiving, filtering and replying are all about what the rendered
+        # table CONTAINS and what the server RECEIVES. Static checks read the
+        # intent; only a browser shows that archive actually removes a row.
+        # A skip here would mean the chromium install above silently failed,
+        # and this suite would report success having rendered nothing at all.
+        env:
+          REQUIRE_BROWSER_TESTS: 'true'
+        run: npm run test:browser-inbox
+
+      - name: Admin order drawer and low-stock browser test
+        # Whether a low VARIANT appears at all is a property of the rendered
+        # table, not of the source: the product-level figure that hid it is a
+        # DB-derived sum, so only running it shows the row.
+        # A skip here would mean the chromium install above silently failed,
+        # and this suite would report success having rendered nothing at all.
+        env:
+          REQUIRE_BROWSER_TESTS: 'true'
+        run: npm run test:browser-orders
 
       - name: Database integration tests
         # These run against the live Postgres service above and cover the things

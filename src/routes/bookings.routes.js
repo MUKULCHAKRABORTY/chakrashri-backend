@@ -6,7 +6,7 @@ const db = require('../config/db');
 const { requireAuth, requireRole, requireCapability, CAPABILITIES: C } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/asyncHandler');
 const { validateUuidParam, handleValidation, isUuid } = require('../middleware/validate');
-const { sendBookingConfirmation, sendBookingStatusUpdate } = require('../utils/mailer');
+const { sendBookingConfirmation, sendBookingStatusUpdate, sendBookingPaymentReview } = require('../utils/mailer');
 const { createBookingWithPayment } = require('../utils/bookingPayments');
 const { timingSafeEqualHex } = require('../utils/crypto');
 const { verifyCapturedPayment, flagForReview, REASONS } = require('../utils/paymentVerification');
@@ -219,6 +219,30 @@ router.post(
           entityType, entityId: booking.id,
           reason: verification.reason, detail: verification.detail
         });
+      });
+      /* Told, not just recorded. Before this, a booking going to payment_review
+         left the customer on a screen saying "verifying" with nothing in
+         writing — and if they closed the tab, nothing at all. That is the
+         moment somebody pays a second time. fireAndForget because a mail
+         failure must never turn a successfully-received payment into an error
+         response. */
+      sendBookingPaymentReview({
+        // The account email. Neither booking table has a contact_email column —
+        // the booking captures a name and phone only — and requireAuth puts
+        // { id, role, email } on req.user, which is where every other booking
+        // email on this route gets its address.
+        email: req.user.email,
+        name: booking.contact_name,
+        // Derived from the same whitelisted bookingType this route already
+        // trusts, rather than a variable that belongs to another function.
+        type: bookingType === 'puja' ? 'puja' : 'astrology',
+        bookingId: booking.id,
+        amountPaise: Number(booking.amount_paise)
+      }).catch(function(err){
+        // Never let a mail failure turn a payment we HAVE received into an
+        // error response. The booking is already flagged for review in the
+        // database; the email is a courtesy on top of that.
+        logger.warn('Booking payment review email failed', { bookingId: booking.id, message: err.message });
       });
       return res.status(202).json({
         pending: true,

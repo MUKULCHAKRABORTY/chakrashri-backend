@@ -46,6 +46,7 @@
  *      node scripts/publish-catalog-if-changed.js --dry-run   (compare only)
  */
 const crypto = require('crypto');
+const { SEO_PRODUCT_FIELDS } = require('./seo-fields');
 
 const API_BASE = (process.env.API_BASE || 'https://chakrashri-api.onrender.com').replace(/\/+$/, '');
 // See the note in generate-product-pages.js: read the origin, never assume it.
@@ -100,20 +101,27 @@ async function fetchLiveCatalog() {
 }
 
 /**
- * A stable fingerprint of what a visitor would actually SEE.
+ * A stable fingerprint of what a CRAWLER would actually see.
  *
- * Only the fields the storefront renders are included. Anything else — a
- * timestamp, an internal counter, a column added later that nothing displays —
- * would make untouched catalogs look different and trigger pointless rebuilds.
- * Sorted by id so the API returning rows in a different order is not a change.
+ * Built from the one declared list in scripts/seo-fields.js rather than a
+ * hand-written array here. That array had already drifted from what the
+ * prerenderer reads: `subcategory` feeds the JSON-LD category path and the
+ * breadcrumb, and it was missing — so re-filing a product under a new
+ * subcategory changed nothing this function could see, no rebuild was
+ * triggered, and the deployed page kept the old category in its structured
+ * data indefinitely.
+ *
+ * Deriving it means a field can only be forgotten in ONE place, and `[fe-49]`
+ * fails the build if the prerenderer reads a field that is not declared.
+ *
+ * Anything not on the list — a timestamp, an internal counter, a column added
+ * later that nothing renders — is deliberately excluded: it would make
+ * untouched catalogs look different and trigger pointless rebuilds. Sorted by
+ * id so the API returning rows in a different order is not a change.
  */
 function fingerprint(products) {
   const shaped = (products || [])
-    .map((p) => [
-      p.id, p.slug, p.name, p.category, p.price_paise, p.mrp_paise,
-      p.stock_qty, p.badge, p.sku, p.short_desc, p.image_url,
-      p.rating, p.review_count, p.has_variants
-    ])
+    .map((p) => SEO_PRODUCT_FIELDS.map((f) => (p[f] === undefined ? null : p[f])))
     .sort((a, b) => String(a[0]).localeCompare(String(b[0])));
   return crypto.createHash('sha256').update(JSON.stringify(shaped)).digest('hex');
 }

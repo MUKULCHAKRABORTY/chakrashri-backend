@@ -27,6 +27,9 @@ module.exports = {
   resetTransporter: engine.resetTransporter,
 
   // ---- templates that existed before this change, signatures unchanged ---
+  sendBookingPaymentReview: templates.sendBookingPaymentReview,
+  sendBookingAbandoned: templates.sendBookingAbandoned,
+  sendContactReply: templates.sendContactReply,
   sendOrderConfirmation: templates.sendOrderConfirmation,
   sendBookingConfirmation: templates.sendBookingConfirmation,
   sendPasswordResetEmail: templates.sendPasswordResetEmail,
