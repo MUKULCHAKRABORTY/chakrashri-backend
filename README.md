@@ -3865,6 +3865,47 @@ Verified additive-only afterwards: sections 24, pages 14, modals 4, drawers 2
 homepage/site sections re-confirmed present, all onclick handlers resolve, all
 tags balanced, 54/54 tests pass.
 
+## Go-live readiness — the five things the gate cannot answer
+
+`verify:full` proves the code is correct. It says nothing about whether the
+system survives production. Those five questions, what is already true and what
+to run, live in **[GO-LIVE.md](GO-LIVE.md)**.
+
+`npm run check:config` is the automated part. It reviews configuration and
+secrets **without printing a single value** — every one is reduced to a length,
+a character-class count and an entropy estimate first, so the output is safe to
+paste into a ticket. It checks coverage (a variable the code reads with no
+fallback and `render.yaml` never declares), strength, and staleness (a test key,
+a localhost URL, a leftover placeholder).
+
+Two notes on the tool itself, because both are the kind of mistake that makes a
+checker worse than none:
+
+- It judged secrets by **character count** at first, and failed a 98-bit webhook
+  secret for being one character under an arbitrary sixteen. A 15-character
+  secret using all four character classes is stronger than a 32-character
+  lowercase one. It measures entropy now, and `minChars` survives only where the
+  *code itself* enforces a length, which is a fact rather than a heuristic.
+- It **scanned its own source** and reported a variable that exists nowhere,
+  because this file contains `process.env.X` inside a comment.
+
+Current result: 0 blocking, 1 advisory.
+
+The two items worth doing before real money moves, both under an hour:
+
+1. **Drill the restore.** Neon point-in-time restore has never been performed
+   here, so the recovery time is unknown and the procedure unrehearsed. An
+   untested backup is not a backup. GO-LIVE.md has the branch-based drill, which
+   never touches production data.
+2. **Add one external uptime monitor.** Business events already email you — new
+   order, payment under review, low stock, daily digest. Infrastructure failures
+   reach nobody: an unhandled 500 in production alerts no one at all.
+
+Verified while writing this: `npm run jobs:status` shows the external scheduler
+firing, last run 5.5 seconds, all three jobs green including
+`payment-reconcile`. That is the safety net for "customer paid, we never
+recorded it", and on the free plan nothing in `render.yaml` runs it.
+
 ## Three browser suites were listed in CI and could not fail there
 
 `[fe-44]` proves every suite is LISTED in the workflow. It said nothing about
