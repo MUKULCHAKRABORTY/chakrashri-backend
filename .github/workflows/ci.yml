@@ -83,6 +83,19 @@ jobs:
         # this line can be too early, so no future step has to remember.
         run: npx playwright install --with-deps chromium
 
+      - name: Build the generated artifacts the audits read
+        # sitemap.xml and product/ are BOTH gitignored, because both are build
+        # output. They exist on a developer's machine and in the Netlify deploy,
+        # and did not exist in CI - so the SEO audit failed on a missing sitemap
+        # and, more quietly, skipped 101 checks across 11 prerendered product
+        # pages because the directory was not there to look at. 390 checks on a
+        # laptop, 289 in CI, and nothing said so.
+        #
+        # Both read catalog.json, which IS committed, so neither needs a
+        # database. They run here, before anything that reads them, for the same
+        # reason chromium does: nothing downstream should have to remember.
+        run: npm run sitemap && npm run prerender
+
       - name: Syntax check every file
         # Runs FIRST because it is the cheapest check and catches the class of
         # bug that is invisible in a diff: a cron expression inside a block
@@ -215,6 +228,12 @@ jobs:
         # navigation here, so nothing about them is visible in the source. A
         # canonical stuck on the home page tells Google every other page is a
         # duplicate of it, and that is invisible until traffic disappears.
+        env:
+          # It sat ABOVE the chromium install and never set this, so in CI it
+          # printed SKIPPED and exited 0 — it has never actually run here. The
+          # first time it did, it failed on a missing sitemap that had been
+          # missing all along.
+          REQUIRE_BROWSER_TESTS: 'true'
         run: npm run seo:audit
 
       - name: Rendered contrast (WCAG AA)

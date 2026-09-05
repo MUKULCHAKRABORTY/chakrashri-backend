@@ -1637,6 +1637,48 @@ measurement artifact, not a defect. Measure layout with transitions disabled.
 npm test
 ```
 
+### The gate builds what it audits
+
+`sitemap.xml` and `product/` are both in `.gitignore`, because both are build
+output. They exist on a developer's machine and in the Netlify deploy, and did
+not exist in CI. One cause, two symptoms:
+
+| artifact | absent in CI | result |
+|---|---|---|
+| `sitemap.xml` | SEO audit reports a hard defect | build red |
+| `product/` | 101 checks across 11 prerendered pages skipped | build green |
+
+The second is the dangerous one. 390 checks on a laptop, 289 in CI, and a green
+tick either way — a suite that quietly measures less is indistinguishable from
+one that passes.
+
+Both generators read `catalog.json`, which **is** committed, so neither needs a
+database. `npm run sitemap` and `npm run prerender` now run inside `npm test` and
+as an early CI step, so a clean checkout audits a tree it actually built.
+
+Reproduced before fixing, by moving both artifacts aside and running the audit:
+289 checks, missing sitemap, exit 1 — byte for byte what CI printed.
+
+Two checks now guard the class, and both are derived rather than listed:
+
+- **`every generated artifact the gate reads is built before it is read`.** Every
+  rooted `.gitignore` entry is build output by definition. If a gate script reads
+  one, some earlier gate step must write it. A new artifact is covered the day it
+  is added.
+- **`and CI builds them too`.** `npm test` is one chain; CI enumerates its steps
+  by hand. Adding a generator to the chain does nothing for CI unless CI runs it.
+
+### A capability nobody switched on is not a safeguard
+
+`scripts/seo-audit.js` honours `REQUIRE_BROWSER_TESTS` correctly. Its CI step
+never set it. Sitting above the Chromium install, it therefore printed SKIPPED
+and exited 0 — **it had never actually run in CI**. The first time it did, it
+failed on a sitemap that had been missing all along.
+
+The existing check verified the *source* could be forced. It said nothing about
+whether the *step* forced it. It does now, and it found exactly one offender.
+Verified by removing the flag again and watching it fail.
+
 ### Chromium installs first, and that position is asserted
 
 The browser install used to sit two thirds of the way down the workflow, just

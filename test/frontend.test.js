@@ -4183,6 +4183,10 @@ section('[fe-44] The gate cannot quietly stop running a suite');
     assert.ok(needsBrowser.length >= 5,
       'expected several browser-driven gate scripts; found ' + needsBrowser.length);
 
+    /* Split on the step boundary. A plain string, because a regex assembled
+       through a generator loses its backslashes and a literal newline inside
+       a regex is a syntax error the file will not even parse with. */
+    const ciSteps = ci.split('\n      - name:');
     const problems = [];
     for (const { name, file } of needsBrowser) {
       /* A plain indexOf, not a built regex. Assembling a pattern from strings
@@ -4195,7 +4199,22 @@ section('[fe-44] The gate cannot quietly stop running a suite');
       if (at < installAt) problems.push(name + ' (' + file + ') runs BEFORE chromium is installed');
       const src = fs2.readFileSync(path.join(ROOT, file), 'utf8');
       if (!/REQUIRE_BROWSER_TESTS/.test(src)) {
-        problems.push(name + ' (' + file + ') can skip silently — no REQUIRE_BROWSER_TESTS');
+        problems.push(name + ' (' + file + ') has no way to be forced to run');
+      }
+      /* AND THE STEP MUST ACTUALLY SET IT. Checking only the source is what let
+         seo:audit through: the script honours the flag perfectly, and its CI
+         step never set it, so for months it printed SKIPPED and exited 0. A
+         capability nobody switches on is not a safeguard. */
+      /* Plain string matching, no assembled regex. Every attempt to build one
+         through a generator lost a backslash, and a half-escaped character
+         class is a file that will not parse. The name is checked against the
+         end of the line so that test:browser does not match the step for
+         test:browser-settings. */
+      const wanted = 'run: npm run ' + name;
+      const step = ciSteps.find((s) =>
+        s.includes(wanted + '\n') || s.trimEnd().endsWith(wanted));
+      if (step && !/REQUIRE_BROWSER_TESTS/.test(step)) {
+        problems.push(name + ' can skip silently in CI — its step does not set REQUIRE_BROWSER_TESTS');
       }
     }
     assert.deepStrictEqual(problems, [],
@@ -4216,6 +4235,92 @@ section('[fe-44] The gate cannot quietly stop running a suite');
     assert.ok(installIdx <= 1,
       'chromium installs at step ' + (installIdx + 1) + '; it belongs immediately after the '
       + 'dependencies so no later step can be too early. Steps: ' + steps.slice(0, 4).join(' | '));
+  });
+
+  test('every generated artifact the gate reads is built before it is read', () => {
+    /* THE DEFECT THIS EXISTS TO PREVENT, WHICH SHIPPED TWICE IN ONE HOUR.
+
+       sitemap.xml and product/ are both in .gitignore, because both are build
+       output. They exist on a developer's machine and in the Netlify deploy, and
+       did not exist in CI. Two different symptoms from one cause:
+
+         sitemap.xml   absent -> the SEO audit reported a hard defect and the
+                       build went red.
+         product/      absent -> the audit skipped 101 checks across 11
+                       prerendered pages WITHOUT SAYING SO. 390 checks on a
+                       laptop, 289 in CI, and a green tick either way.
+
+       The second is the dangerous one: a suite that quietly measures less is
+       indistinguishable from one that passes.
+
+       Derived, not listed. Every ROOTED .gitignore entry is build output by
+       definition; if a gate script reads one, some earlier gate step must
+       produce it. A new artifact is covered the day it is added. */
+    const fs2 = require('fs');
+    const ignoreSrc = read('.gitignore');
+    const artifacts = ignoreSrc.split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l.startsWith('/') && !l.startsWith('//'))
+      .map((l) => l.replace(/^\//, '').replace(/\/$/, ''));
+    assert.ok(artifacts.length >= 2,
+      'expected rooted build-output entries in .gitignore; found ' + artifacts.length);
+
+    const gate = pkg.scripts.test.split('&&').map((s) => s.trim().replace(/^npm run /, ''));
+    const fileFor = (name) => {
+      const cmd = pkg.scripts[name] || '';
+      const m = cmd.match(/node\s+(\S+\.js)/);
+      return m ? m[1] : null;
+    };
+
+    const problems = [];
+    for (const artifact of artifacts) {
+      // Who READS it, and who WRITES it, decided by reading the sources.
+      const readers = [], writers = [];
+      for (const name of gate) {
+        const rel = fileFor(name);
+        if (!rel) continue;
+        const full = path.join(ROOT, rel);
+        if (!fs2.existsSync(full)) continue;
+        const src = fs2.readFileSync(full, 'utf8');
+        if (!src.includes(artifact)) continue;
+        if (/writeFileSync|mkdirSync|createWriteStream/.test(src)) writers.push(name);
+        else readers.push(name);
+      }
+      if (!readers.length) continue;          // nothing in the gate depends on it
+
+      if (!writers.length) {
+        problems.push(artifact + ' is read by ' + readers.join(', ') +
+          ' but no gate step builds it — it will be absent in a clean checkout');
+        continue;
+      }
+      // And the build must come FIRST, in the gate and in CI alike.
+      const firstReader = Math.min(...readers.map((r) => gate.indexOf(r)));
+      const firstWriter = Math.min(...writers.map((w) => gate.indexOf(w)));
+      if (firstWriter > firstReader) {
+        problems.push(artifact + ' is built by ' + writers.join(', ') +
+          ' AFTER it is read by ' + readers.join(', '));
+      }
+    }
+    assert.deepStrictEqual(problems, [],
+      'generated artifacts must be built before they are audited:\n    ' + problems.join('\n    '));
+  });
+
+  test('and CI builds them too, since CI runs the steps itself', () => {
+    /* npm test is one chain; CI enumerates its steps by hand. Adding a generator
+       to the chain does nothing for CI unless CI also runs it, which is the same
+       drift [fe-44] was written for. */
+    const ci = read('.github/workflows/ci.yml').replace(/\r\n/g, '\n');
+    const gate = pkg.scripts.test.split('&&').map((s) => s.trim().replace(/^npm run /, ''));
+    for (const generator of ['sitemap', 'prerender']) {
+      assert.ok(gate.includes(generator),
+        generator + ' must be in npm test, or a clean checkout audits a tree it never built');
+      assert.ok(ci.indexOf('npm run ' + generator) > -1,
+        generator + ' runs in npm test but not in CI, so CI audits an incomplete tree');
+    }
+    const buildAt = ci.indexOf('npm run sitemap');
+    const seoAt = ci.indexOf('run: npm run seo:audit\n');
+    assert.ok(buildAt > -1 && seoAt > -1 && buildAt < seoAt,
+      'the artifacts must be built before the SEO audit reads them');
   });
 
   test('the drawer fuzz is a real file, and it is committed', () => {
