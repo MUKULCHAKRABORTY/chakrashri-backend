@@ -74,6 +74,16 @@ const fs = require('fs');
 
 const path = require('path');
 const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+/* The price tag's three treatments are chosen across a whole list, so the two
+   functions that do it carry state between them. Lifted verbatim rather than
+   stubbed: which treatment a card gets is part of what this suite renders, and a
+   stub would let the real rule rot while the harness stayed green. */
+function decl(re, what) {
+  const m = html.match(re);
+  if (!m) throw new Error('could not extract ' + what);
+  return m[0];
+}
+
 function fn(name) {
   const m = html.match(new RegExp(`function ${name}\\s*\\([\\s\\S]*?\\n\\}`));
   if (!m) throw new Error('could not extract ' + name);
@@ -109,6 +119,11 @@ const harness = `<!doctype html><html><body><div id="grid"></div><script>
   function notifyStock(id){ window.__calls.push('notify:'+id); }
   function quickAdjust(id,d){ window.__calls.push('cart:'+id+':'+d); }
   function openProduct(id){ window.__calls.push('navigate:'+id); }
+
+  ${decl(/const PRICE_ANIMS = \d+;/, 'PRICE_ANIMS')}
+  ${decl(/let _priceAnim = Object\.create\(null\);/, '_priceAnim')}
+  ${fn('assignPriceAnims')}
+  ${fn('priceAnimClass')}
 
   ${fn('quickAddHTML')}
   ${fn('productCardHTML')}

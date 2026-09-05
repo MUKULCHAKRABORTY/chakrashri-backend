@@ -357,6 +357,41 @@ p{ color: var(--text-soft); }
 .bg-ink h1,.bg-ink h2,.bg-ink h3{ color: var(--ivory); }
 .bg-ink p{ color: rgba(250,243,228,.72); }
 .bg-parchment{ background: var(--parchment); }
+
+/* THE SHELF.
+
+   A flat parchment fill put white cards on a light ground and neither won: the
+   cards had no edge to sit against, and the band had no reason to exist. This
+   gives the products a surface.
+
+   Three layers, none of them loud:
+     a warm gradient, lighter at the top where the heading sits and deepening
+     toward the floor, so the band reads as lit from above rather than filled;
+     a lattice of small oxblood dots, the same motif the Deal panel already
+     uses, masked to fade out at the edges so it never reaches a hard border;
+     a hairline of gold top and bottom, which is what actually separates the
+     band from the cream above and below it.
+
+   Every value is deliberately weak — .055 alpha on the dots, .22 on the rules.
+   The subject of this section is eleven photographs; the background's whole job
+   is to make them look placed rather than floating, and anything more assertive
+   would compete with the merchandise. */
+.bg-shelf{
+  position:relative; isolation:isolate;
+  background:
+    radial-gradient(125% 85% at 50% 0%, #FBF5E9 0%, var(--parchment) 46%, #EEDFC1 100%);
+  border-top:1px solid rgba(201,162,39,.22);
+  border-bottom:1px solid rgba(201,162,39,.22);
+}
+.bg-shelf::before{
+  content:''; position:absolute; inset:0; z-index:-1; pointer-events:none;
+  background-image:radial-gradient(circle, rgba(122,17,40,.055) 1.1px, transparent 1.1px);
+  background-size:26px 26px;
+  /* Masked so the lattice dissolves before it meets the gold rules; a pattern
+     that stops at a hard edge announces itself as a pattern. */
+  -webkit-mask-image:radial-gradient(125% 72% at 50% 42%, #000 28%, transparent 80%);
+          mask-image:radial-gradient(125% 72% at 50% 42%, #000 28%, transparent 80%);
+}
 .bg-indigo{ background: var(--indigo); color:#EDE6F5; }
 
 /* DARK SURFACES DECLARE THEIR TEXT ONCE, HERE.
@@ -445,6 +480,103 @@ p{ color: var(--text-soft); }
 /* Same correction, same reason: white on this gold was 3.88:1, ink is 4.69:1. */
 .badge-custom{ background: var(--gold-dk, #9C7E1C); color:var(--ink); }
 .badge-soft{ background:rgba(122,17,40,.08); color:var(--oxblood); }
+.badge{ gap:5px; }
+.b-ico{ width:12px; height:12px; flex-shrink:0; }
+.badge-hot{ background:linear-gradient(160deg, #E8552A, #B81E1E); color:#fff; }
+
+/* THE FLAME ACTUALLY BURNS.
+
+   Two paths, moving out of step. The outer body leans and stretches; the inner
+   core pulses faster and brighter. Fire is never symmetrical and never on a
+   single beat, so two loops at different periods read as flame where one loop
+   reads as a blinking icon. transform-origin sits at the base, because a flame
+   is anchored where it meets the fuel. */
+/* THE FLAME SITS BEHIND THE WORD, AND IS BIG ENOUGH TO BE FIRE.
+
+   At 12px beside the caption it was a speck doing an elaborate animation nobody
+   could see. Moved out of flow and centred behind the label it can be more than
+   twice that, and the badge does not grow to make room for it.
+
+   Kept below the text in the stacking order and held down in opacity, because
+   the label is white on a red gradient and a pale flame lifting that background
+   is the fastest way to lose the contrast the whole badge palette was fixed
+   for. test:contrast measures this. */
+.badge-hot{ position:relative; isolation:isolate; overflow:visible; }
+.badge-hot .b-flame{
+  position:absolute; left:50%; top:50%;
+  width:27px; height:27px; margin:-13.5px 0 0 -13.5px;
+  z-index:-1; opacity:.55; pointer-events:none;
+}
+.badge-hot .b-txt{ position:relative; z-index:1; }
+
+.b-flame{ overflow:visible; }
+.b-flame .fl-outer{ fill:#FFD9A0; transform-origin:50% 100%; animation:flOuter 1.15s ease-in-out infinite; }
+.b-flame .fl-inner{ fill:#FFF3D0; transform-origin:50% 100%; animation:flInner .72s ease-in-out infinite; }
+@keyframes flOuter{
+  0%,100%{ transform:scaleY(1) skewX(0deg); opacity:.95; }
+  35%    { transform:scaleY(1.12) skewX(-4deg); opacity:1; }
+  70%    { transform:scaleY(.94) skewX(3deg); opacity:.9; }
+}
+@keyframes flInner{
+  0%,100%{ transform:scaleY(.9) translateY(0); opacity:.75; }
+  50%    { transform:scaleY(1.15) translateY(-.4px); opacity:1; }
+}
+
+/* EACH BADGE MOVES LIKE THE THING IT NAMES.
+
+   Not one animation applied to all four. A shared pulse would say "look at me"
+   four times in the same voice and the row would read as decoration; a badge
+   that moves the way its own word moves reads as information. Restraint is the
+   point — these sit on a grid of ten, and anything emphatic at that count is
+   noise rather than emphasis.
+
+     hot          heat haze: the glow breathes and the tint shifts, slowly
+     bestseller   a shine crossing the face, the way light moves over metal
+     new          one quiet settle on arrival, then still — new is a fact, not
+                  an ongoing event, so it must not pulse forever
+     sale         a soft two-beat, the only one meant to nag, and gently */
+
+@keyframes bHot{
+  0%,100%{ box-shadow:0 0 0 0 rgba(232,85,42,0), 0 2px 8px rgba(184,30,30,.35); filter:saturate(1); }
+  50%    { box-shadow:0 0 14px 2px rgba(232,85,42,.45), 0 2px 8px rgba(184,30,30,.45); filter:saturate(1.18); }
+}
+.badge-hot{ animation:bHot 2.4s ease-in-out infinite; }
+
+/* The sweep is clipped to the badge and sits above its fill but below its text,
+   so the letters stay solid while the light passes behind them. */
+.badge-best{ position:relative; overflow:hidden; isolation:isolate; }
+.badge-best::after{
+  content:''; position:absolute; top:0; bottom:0; left:-70%; width:45%; z-index:-1;
+  background:linear-gradient(100deg, transparent, rgba(255,255,255,.75), transparent);
+  transform:skewX(-18deg); animation:bShine 3.6s ease-in-out infinite;
+}
+@keyframes bShine{ 0%,62%{ left:-70%; } 100%{ left:130%; } }
+
+@keyframes bNew{ from{ transform:translateY(-4px); opacity:0; } to{ transform:none; opacity:1; } }
+.badge-new{ animation:bNew .5s var(--ease) both; }
+
+@keyframes bSale{ 0%,88%,100%{ transform:scale(1); } 93%{ transform:scale(1.06); } }
+.badge-sale{ animation:bSale 4s ease-in-out infinite; }
+
+/* Limited: the number rolls in, once, and then holds. A count that keeps moving
+   is a count nobody believes. */
+.badge-limited{ background:linear-gradient(160deg, #C2410C, #8A2B08); color:#FFE9D6; }
+.badge-limited .b-txt{ display:inline-block; animation:bLimitRoll .85s cubic-bezier(.2,.8,.2,1) both; }
+@keyframes bLimitRoll{
+  0%  { transform:translateY(-70%); opacity:0; filter:blur(2px); }
+  55% { transform:translateY(6%);  opacity:1; filter:blur(0); }
+  75% { transform:translateY(-2%); }
+  100%{ transform:none; }
+}
+
+/* All four are ornament on top of a word that already reads. Remove them and
+   nothing is lost but the movement. */
+@media (prefers-reduced-motion:reduce){
+  .badge-hot, .badge-new, .badge-sale{ animation:none; }
+  .badge-best::after{ animation:none; display:none; }
+  .badge-limited .b-txt{ animation:none; }
+  .b-flame .fl-outer, .b-flame .fl-inner{ animation:none; }
+}
 
 .stars{ display:inline-flex; align-items:center; gap:2px; color: var(--gold); flex-shrink:0; }
 .stars svg{ width:14px; height:14px; }
@@ -867,11 +999,55 @@ p{ color: var(--text-soft); }
   .logo .word{ font-size:1.15rem; }
 }
 @media (max-width:420px){
-  .header-main .container{ gap:10px; }
-  .logo .word{ display:none; }
-  .logo .mark{ width:34px; height:34px; }
-  .mobile-toggle{ width:40px; height:40px; }
-  .header-actions .ha-btn{ width:40px; height:40px; }
+  .header-main .container{ gap:8px; }
+  /* THE NAME STAYS.
+
+     It was display:none below 420px, so on a 390px phone — which is most
+     phones — the header showed a lamp mark and nothing else. A shop that does
+     not say its own name at the top of the page is a shop the visitor cannot
+     name afterwards, and it is the one width where that matters most, because
+     it is also where the navigation is behind a hamburger.
+
+     It was hidden because it genuinely did not fit. So it is made to fit rather
+     than removed: the wordmark drops a size, and the "Sacred & Authentic" line
+     underneath goes instead. That tagline is the part nobody reads at this
+     width, and dropping it also shortens the header, which is the real win on
+     a small screen. */
+  .logo .word{ display:block; font-size:1.02rem; letter-spacing:0; }
+  .logo .word small{ display:none; }
+  .logo .mark{ width:30px; height:30px; }
+  /* 44px, NOT 40. These were shrunk to 40 to make the header fit, which bought
+     the space from the one budget that cannot be raided: 44x44 is the smallest
+     reliable target for a fingertip, and below it people miss and give up. At
+     320px four 44px buttons plus the wordmark did overflow the row — so the
+     space comes from the wordmark and the gaps instead, which cost nothing but
+     a little elegance. Measured at 320, 360 and 390: nothing escapes. */
+  .mobile-toggle{ width:44px; height:44px; }
+  .header-actions .ha-btn{ width:44px; height:44px; }
+  .header-actions .ha-btn svg{ width:20px; height:20px; }
+  /* The logo is a link, so its tap area is its box; the mark inside is
+     unchanged, only the area around it grows. */
+  .logo{ min-height:44px; align-items:center; }
+}
+
+@media (max-width:360px){
+  /* THE LAST FORTY PIXELS, AND WHERE THEY COME FROM.
+
+     At 320px the header row asks for 318px — a 44px menu button, the logo, and
+     three 44px actions — inside 272px of content once the container's 24px
+     gutters are taken. Something has to give, and it is not going to be the
+     touch targets.
+
+     So the gutters halve and the wordmark shrinks. The wordmark STAYS: it was
+     missing on mobile once already and putting it back was a deliberate
+     decision, so shrinking it is right and hiding it is not. Measured at 320px
+     after this: nothing escapes the viewport. */
+  .container{ padding:0 12px; }
+  .logo .word{ font-size:.76rem; letter-spacing:0; }
+  .logo .mark{ width:24px; height:24px; }
+  .logo{ gap:6px; }
+  .header-main .container{ gap:4px; }
+  .header-actions{ gap:0; }
   .header-actions .ha-btn svg{ width:19px; height:19px; }
 }
 
@@ -989,48 +1165,111 @@ p{ color: var(--text-soft); }
 .product-grid.cols-3{ grid-template-columns:repeat(3,1fr); }
 .product-grid.list-view{ grid-template-columns:1fr; }
 
-.p-card{ background:#fff; border-radius:var(--radius-md); overflow:hidden; border:1px solid var(--line); transition:box-shadow var(--dur), border-color var(--dur), transform var(--dur); position:relative; display:flex; flex-direction:column; }
+/* color is declared HERE, on the component, and that is not decoration.
+
+   a.p-name is `color:inherit`, so the card's text colour comes from whatever
+   contains it. Drop this white card onto the dark Deal of the Day panel — which
+   sets a light colour for its own prose — and every product title inherited
+   pale lavender ON WHITE and became unreadable. A card is a self-contained
+   thing; it must look the same on every surface it is placed on, so it states
+   its own colour rather than borrowing the room's. */
+.p-card{ background:#fff; color:var(--ink); border-radius:var(--radius-md); overflow:hidden; border:1px solid var(--line); transition:box-shadow var(--dur), border-color var(--dur), transform var(--dur); position:relative; display:flex; flex-direction:column; }
 .p-card:hover{ box-shadow:var(--shadow-md); border-color:var(--gold); transform:translateY(-4px); }
 .p-media{ position:relative; aspect-ratio:1/1; overflow:hidden; cursor:pointer; flex-shrink:0; }
 .p-media .ph{ width:100%; height:100%; display:flex; align-items:center; justify-content:center; position:relative; transition:transform .5s var(--ease); }
 .p-card:hover .p-media .ph{ transform:scale(1.06); }
-.p-media .ph svg{ width:46%; height:46%; position:relative; z-index:2; }
-.p-media .ph::after{ content:''; position:absolute; inset:10%; border:1px solid rgba(255,255,255,.35); border-radius:50%; }
-/* CORNER BRACKETS.
+/* A PRODUCT WITHOUT A PHOTOGRAPH STILL HAS TO LOOK LIKE SOMETHING.
 
-   Two gold rules per corner, drawn with a single conic-gradient border image on
-   a pseudo-element, that grow from nothing to a bracket on hover. It reads as a
-   frame being placed around the piece — which suits a shop selling temple
-   objects better than a glow would — and it costs one composited element with
-   no layout impact.
+   The glyph sat at 46% inside a single faint ring, which left most of a square
+   card empty and read as a failed image rather than a considered stand-in. Two
+   changes: the mark is larger, and it sits inside a pair of rings — one solid,
+   one dashed and inset — which is the yantra geometry the rest of the site is
+   built from. It now reads as a placeholder somebody drew rather than a hole
+   where a photograph should be.
 
-   Deliberately NOT a box-shadow or a border on the card itself: either would
-   change the card's geometry and shift the grid on hover. The pseudo-element is
-   position:absolute and inset, so nothing around it moves.
-
-   Honoured for reduced motion by removing the transition, not the effect: the
-   brackets still appear, they simply do not animate. */
-.p-card{ position:relative; }
-.p-card::after{
-  content:""; position:absolute; inset:0; pointer-events:none; z-index:4;
-  border-radius:inherit; opacity:0;
-  transition:opacity var(--dur) var(--ease);
-  background:
-    linear-gradient(var(--gold), var(--gold)) top left    / 14px 2px no-repeat,
-    linear-gradient(var(--gold), var(--gold)) top left    / 2px 14px no-repeat,
-    linear-gradient(var(--gold), var(--gold)) top right   / 14px 2px no-repeat,
-    linear-gradient(var(--gold), var(--gold)) top right   / 2px 14px no-repeat,
-    linear-gradient(var(--gold), var(--gold)) bottom left / 14px 2px no-repeat,
-    linear-gradient(var(--gold), var(--gold)) bottom left / 2px 14px no-repeat,
-    linear-gradient(var(--gold), var(--gold)) bottom right/ 14px 2px no-repeat,
-    linear-gradient(var(--gold), var(--gold)) bottom right/ 2px 14px no-repeat;
+   Still unmistakably not a photograph, which is the point. Nothing here should
+   let a product with no picture pass for one that has a good one. */
+.p-media .ph{
+  /* A halo under the mark, so the centre of the square is lit rather than
+     blank. Flat colour behind a thin outline is what made these read as an
+     image that failed to load. */
+  background-image:radial-gradient(circle at 50% 46%, rgba(255,255,255,.62) 0%, rgba(255,255,255,0) 58%);
 }
-.p-card:hover::after, .p-card:focus-within::after{ opacity:1; }
-@media (prefers-reduced-motion:reduce){ .p-card::after{ transition:none; } }
-/* A touch device has no hover, so the brackets would never appear at all.
-   There they are simply always on, at a lower strength. */
-@media (hover:none){
-  .p-card::after{ opacity:.45; }
+.p-media .ph svg{
+  width:66%; height:66%; position:relative; z-index:2;
+  /* The outline carried almost no weight against a pale ground. */
+  opacity:.9; filter:drop-shadow(0 1px 2px rgba(43,10,18,.10));
+}
+/* Two rings, the yantra geometry the rest of the site is built from: one solid
+   and bright, one dashed and inset. Together they give the square a centre and
+   a frame, which is the difference between a placeholder somebody drew and a
+   hole where a photograph should be. */
+.p-media .ph::after{
+  content:''; position:absolute; inset:7%; border:1px solid rgba(255,255,255,.6);
+  border-radius:50%;
+}
+.p-media .ph::before{
+  content:''; position:absolute; inset:19%; border:1px dashed rgba(122,17,40,.22);
+  border-radius:50%;
+}
+/* CARD ELEVATION.
+
+   The corner brackets that used to live here are gone. They were a decorative
+   frame on hover, and on a shop grid the thing that should change on hover is
+   the sense that the card is pickable — not that it has been ornamented.
+
+   A lift and a warmer border do that, and both are composited properties, so
+   nothing around the card moves. Reduced motion keeps the border and the
+   shadow and drops only the movement, because the border is the affordance and
+   the movement is the decoration. */
+.p-card{ position:relative; }
+
+/* THE GRID ARRIVES, IT DOES NOT APPEAR.
+
+   Cards rise a few pixels and fade in, one shortly after the last. The stagger
+   is the whole effect: a row that lands together reads as a page repaint, and
+   the same row landing left to right reads as a shelf being filled. It is 40ms
+   apart and 8px of travel — enough to notice, not enough to wait for.
+
+   It replays when the Featured tabs are switched, which is correct: that IS new
+   merchandise arriving, and the movement is what tells you the grid changed
+   rather than the page having quietly swapped underneath you.
+
+   `backwards` holds the start frame during the delay so nothing flashes at full
+   opacity first. Reduced motion removes the animation entirely rather than
+   shortening it — with no animation there is no fill, so the card simply renders
+   where it belongs. */
+@keyframes pCardIn{ from{ opacity:0; transform:translateY(8px); } to{ opacity:1; transform:none; } }
+.product-grid .p-card{ animation:pCardIn .42s var(--ease) backwards; }
+.product-grid .p-card:nth-child(1){ animation-delay:0ms; }
+.product-grid .p-card:nth-child(2){ animation-delay:40ms; }
+.product-grid .p-card:nth-child(3){ animation-delay:80ms; }
+.product-grid .p-card:nth-child(4){ animation-delay:120ms; }
+.product-grid .p-card:nth-child(5){ animation-delay:160ms; }
+.product-grid .p-card:nth-child(6){ animation-delay:200ms; }
+.product-grid .p-card:nth-child(7){ animation-delay:240ms; }
+.product-grid .p-card:nth-child(8){ animation-delay:280ms; }
+.product-grid .p-card:nth-child(9){ animation-delay:320ms; }
+.product-grid .p-card:nth-child(n+10){ animation-delay:360ms; }
+
+/* The add button grows into reach as the pointer arrives, instead of sitting at
+   full size waiting. Transform only, so it composites and never reflows the
+   photograph underneath it. */
+.p-atc button, .p-quick button{ transition:transform var(--dur) var(--ease), background var(--dur), color var(--dur); }
+.p-card:hover .p-quick button{ transform:scale(1.04); }
+.p-quick button:active, .p-atc button:active{ transform:scale(.94); }
+
+.p-card:hover, .p-card:focus-within{
+  transform:translateY(-3px);
+  border-color:var(--gold);
+  box-shadow:0 10px 28px rgba(43,10,18,.10), 0 2px 6px rgba(43,10,18,.06);
+}
+@media (prefers-reduced-motion:reduce){
+  .p-card{ transition:box-shadow var(--dur), border-color var(--dur); }
+  .p-card:hover, .p-card:focus-within{ transform:none; }
+  /* No animation at all, so no fill state either — the cards are simply there. */
+  .product-grid .p-card{ animation:none; }
+  .p-card:hover .p-quick button, .p-quick button:active, .p-atc button:active{ transform:none; }
 }
 
 /* The booking pages' service search. Deliberately the same shape as the
@@ -1072,9 +1311,34 @@ p{ color: var(--text-soft); }
 ============================================================ */
 /* #33 — Both controls sit lower on the image so they read as a pair anchored
    to the bottom edge rather than floating in the middle of the artwork. */
-.p-quickadd{ position:absolute; right:12px; bottom:-4px; z-index:4; }
-.qa-add{ width:52px; height:52px; border-radius:50%; background:#fff; color:var(--oxblood);
-  border:2px solid var(--oxblood); font-size:1.9rem; font-weight:700; line-height:1;
+/* THE BUTTON IS SIZED BY THE CARD, NOT BY THE WINDOW.
+
+   It was a flat 52px with one step down to 44px below 560px. A viewport
+   breakpoint is the wrong instrument for this: what decides whether the button
+   fits is the width of the CARD, and the same 390px phone gives a 160px card
+   while the same 1180px laptop gives a 260px one. At two across on a phone a
+   52px circle covered a third of the photograph.
+
+   cqi is a percentage of the card's own inline size, so one rule now holds at
+   every width and every column count, with a floor so it never drops below the
+   44px minimum touch target and a ceiling so it never grows past its old size.
+   No breakpoint, and nothing to keep in sync when the column counts change. */
+/* The container is the CARD, so both the photo's controls and the body's type
+   resolve against the same width. */
+.p-card{ container-type:inline-size; }
+/* CLEAR OF THE CROP, SO THE WHOLE CIRCLE IS VISIBLE.
+
+   This sat at bottom:-4px, four pixels below the photograph's box — and the box
+   is overflow:hidden, so the bottom of the circle and its two-pixel border were
+   sliced off. The button read as a half-moon rather than a button, at every
+   screen size. Positive inset now, matched to the discount chip on the other
+   side so the two sit on one line. */
+.p-quickadd{ position:absolute; right:6cqi; bottom:9px; z-index:4; }
+/* A step smaller at the top end. The floor stays at 44px, which is the minimum
+   touch target and not something to trade away for looks. */
+.qa-add{ width:clamp(44px, 22cqi, 46px); height:clamp(44px, 22cqi, 46px);
+  border-radius:50%; background:#fff; color:var(--oxblood);
+  border:2px solid var(--oxblood); font-size:clamp(1.4rem, 8.4cqi, 1.62rem); font-weight:700; line-height:1;
   display:flex; align-items:center; justify-content:center; box-shadow:0 4px 14px rgba(43,10,18,.2);
   position:relative; overflow:hidden; isolation:isolate;
   transition:transform .2s var(--ease), color .25s ease, border-color .25s ease; }
@@ -1089,7 +1353,8 @@ p{ color: var(--text-soft); }
 
 .qa-stepper{ display:flex; align-items:center; background:#fff; border:1.5px solid var(--oxblood);
   border-radius:var(--radius-full); box-shadow:0 3px 10px rgba(43,10,18,.16); overflow:hidden; }
-.qa-btn{ width:38px; height:46px; color:var(--oxblood); font-size:1.45rem; font-weight:700; line-height:1;
+.qa-btn{ width:clamp(32px, 17cqi, 38px); height:clamp(38px, 20cqi, 46px);
+  color:var(--oxblood); font-size:clamp(1.1rem, 7cqi, 1.45rem); font-weight:700; line-height:1;
   display:flex; align-items:center; justify-content:center; transition:background .15s; }
 .qa-btn:hover{ background:var(--parchment); }
 .qa-btn:active{ background:var(--gold-lt); }
@@ -1098,10 +1363,6 @@ p{ color: var(--text-soft); }
   font-size:.72rem; font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
 
 /* Discount tag — mirrored to the left of the stepper */
-.p-discount{ position:absolute; left:12px; bottom:6px; z-index:4; display:inline-flex; align-items:center; gap:3px;
-  padding:6px 11px 6px 8px; border-radius:var(--radius-full); font-size:.8rem; font-weight:800; color:#fff;
-  background:linear-gradient(135deg, #2e9e5b, #1f7d45); box-shadow:0 3px 10px rgba(31,125,69,.4); }
-.p-discount svg{ width:13px; height:13px; }
 
 /* Four distinct treatments, chosen per product, so a grid doesn't repeat one
    effect down the whole page. */
@@ -1149,12 +1410,10 @@ p{ color: var(--text-soft); }
 }
 
 @media (max-width:560px){
-  .p-quickadd{ right:8px; bottom:-2px; }
-  .qa-add{ width:44px; height:44px; font-size:1.6rem; border-width:2px; }
-  .qa-btn{ width:32px; height:38px; font-size:1.25rem; }
+  /* Sizes are container-driven now, so no viewport step-down here. Only the
+     count keeps a breakpoint: it is text, and text does not scale with cqi. */
+  .p-quickadd{ bottom:7px; }
   .qa-count{ min-width:24px; font-size:.9rem; }
-  .p-discount{ left:8px; bottom:5px; padding:4px 9px 4px 6px; font-size:.72rem; }
-  .p-discount svg{ width:11px; height:11px; }
 }
 @media (prefers-reduced-motion: reduce){
   .dt-pulse,.dt-glow,.dt-bounce{ animation:none; }
@@ -1162,18 +1421,295 @@ p{ color: var(--text-soft); }
   .cart-shake{ animation:none; }
 }
 .p-atc button svg{ width:15px; height:15px; }
-.p-body{ padding:18px 18px 20px; flex:1; display:flex; flex-direction:column; }
-.p-cat{ font-size:.68rem; color:var(--text-mute); text-transform:uppercase; letter-spacing:.08em; margin-bottom:6px; }
-.p-name{ font-size:.92rem; font-weight:700; color:var(--ink); margin-bottom:8px; line-height:1.4; cursor:pointer; transition:color var(--dur); }
+/* A COMPACT BODY, SO TWO ROWS FIT ON A SCREEN.
+
+   Measured before this change: 213px of photo and 194px of text made a 409px
+   card, and two rows plus the section heading came to 841px against a 794px
+   laptop viewport. The second row was always below the fold. Everything below
+   trims text, never the photograph — the photograph is the product. */
+/* Padding trimmed by the two pixels the larger name adds back, so the card
+   stays at the height that let two rows fit on a laptop screen. */
+.p-body{ padding:11px 14px 13px; flex:1; display:flex; flex-direction:column; gap:5px; }
+.p-meta{ display:flex; align-items:center; justify-content:space-between; gap:10px; min-height:16px; }
+/* Truncates rather than wrapping: a two-line category would put the rating on
+   its own line and undo the row. */
+.p-cat{ font-size:clamp(.6rem, 3.9cqi, .68rem); color:var(--text-mute); text-transform:uppercase;
+        letter-spacing:.08em; margin:0; overflow:hidden; text-overflow:ellipsis;
+        white-space:nowrap; min-width:0; }
+/* TWO LINES, ALWAYS.
+
+   A one-word name and a four-word name used to produce cards of different
+   heights, so prices sat at different heights across a row and the eye had
+   nothing to scan along. Reserving two lines whether or not they are used costs
+   a few pixels on short names and makes every price in the row line up, which
+   is what every shop grid worth copying does. Longer names ellipsize rather
+   than push the price down. */
+/* NAME SIZE IS CONTINUOUS, NOT STEPPED.
+
+   Adding a pixel per breakpoint means the name is right at four widths and
+   wrong at every width in between, and it needs a new rule the day a column
+   count changes. cqi is a percentage of the card's own width, so the name grows
+   and shrinks with the card it sits in — smoothly, at every width, including the
+   ones nobody thought to write a breakpoint for.
+
+   Clamped at both ends: never smaller than .88rem, which is the floor for
+   comfortable reading, and never larger than 1.04rem, past which a two-line name
+   starts to crowd the price. Raised one step from .8/.95 — the floor, the rate
+   and the ceiling all moved together, so it stays continuous rather than
+   growing only at four fixed sizes. */
+.p-name{
+  font-size:clamp(.88rem, 5.9cqi, 1.04rem); font-weight:700; color:var(--ink);
+  line-height:1.34; cursor:pointer; transition:color var(--dur);
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
+  overflow:hidden; min-height:2.7em; margin:0;
+}
 .p-name:hover{ color:var(--oxblood); }
-.p-material{ font-size:.76rem; color:var(--text-mute); margin-bottom:10px; }
-.p-rating{ display:flex; align-items:center; gap:6px; margin-bottom:10px; }
-.p-rating .cnt{ font-size:.74rem; color:var(--text-mute); }
-.p-price{ margin-top:auto; display:flex; align-items:baseline; gap:9px; }
-.p-price .now{ font-family:var(--f-display); font-size:1.18rem; color:var(--oxblood); font-weight:600; }
-.p-price .was{ font-size:.85rem; color:var(--text-mute); text-decoration:line-through; }
-.p-stock-out{ position:absolute; inset:0; background:rgba(250,243,228,.82); display:flex; align-items:center; justify-content:center; z-index:4; }
-.p-stock-out span{ background:var(--ink); color:var(--ivory); padding:8px 18px; border-radius:var(--radius-full); font-size:.74rem; font-weight:700; letter-spacing:.06em; text-transform:uppercase; }
+/* Kept in the markup for the list view, which has the room for it and is the
+   one place a material genuinely helps someone comparing two malas. */
+.p-material{ display:none; }
+.p-rating{ display:flex; align-items:center; gap:5px; margin:0; flex-shrink:0; }
+.p-score{ display:inline-flex; align-items:center; gap:4px; }
+/* A hard-stopped gradient clipped to the glyph: everything left of the score is
+   gold, everything right of it is the hairline grey. */
+.p-star{
+  font-size:.92rem; line-height:1;
+  background:linear-gradient(90deg, var(--gold) var(--fill), var(--line) var(--fill));
+  -webkit-background-clip:text; background-clip:text; color:transparent;
+}
+/* Without background-clip the glyph would be transparent — invisible, not
+   degraded. A whole gold star is the honest fallback. */
+@supports not ((-webkit-background-clip:text) or (background-clip:text)){
+  .p-star{ background:none; color:var(--gold); }
+}
+.p-score .rv{ font-size:.76rem; font-weight:700; color:var(--ink); font-variant-numeric:tabular-nums; }
+/* Nothing to say, so say nothing. "No reviews yet" occupied a whole line on a
+   new shop's every card to report an absence. The category beside it holds the
+   row's height, so hiding this shifts nothing. */
+.no-rating{ display:none; }
+/* ONE rule for the review count. There were three: .p-score .cnt at .72rem,
+   .p-rating .cnt at .74rem overriding it at equal specificity, and a third at
+   .68rem inside a 560px block. Three sizes for one number, and which you got
+   depended on source order rather than on anything anyone decided. */
+.p-score .cnt, .p-rating .cnt{
+  font-size:clamp(.68rem, 5.2cqi, .74rem); color:var(--text-mute);
+  font-variant-numeric:tabular-nums;
+}
+/* THE PRICE SITS ON SOMETHING, AND ONLY WHEN THERE IS A SAVING.
+
+   A discounted price and a full price were set identically, so the one piece of
+   information a shopper is actually hunting for had no more weight than the
+   category above it. The chip appears ONLY on .has-off — a product at full price
+   gets no decoration, because there is nothing to celebrate and a chip on every
+   card is wallpaper rather than emphasis.
+
+   The border is a conic gradient rotating behind the chip, masked to a one-pixel
+   ring so only the edge shows. It is slow — nine seconds for a full turn — so it
+   reads as light moving across metal rather than as something demanding a click.
+   The fill underneath is a flat warm tint; the sparkle is the edge only. */
+.p-price{ margin-top:auto; display:flex; align-items:baseline; gap:8px; padding-top:2px; }
+.p-price.has-off{
+  position:relative; isolation:isolate;
+  /* The sheen below travels across the chip and must be cut off at its rounded
+     edge, not allowed to run on into the card. */
+  overflow:hidden;
+  padding:6px 11px; margin-top:auto; border-radius:var(--radius-full);
+  background:linear-gradient(180deg, #FFF6E4, #FBEBCB);
+  align-self:flex-start;
+}
+/* THE RING IS STATIC, AND THAT IS THE FIX.
+
+   This was a conic gradient with `animation:rotate` on the pseudo-element, which
+   is the trick everyone reaches for. It does not work: rotating the ELEMENT
+   rotates the ring with it, so a 102x38 chip turned through 257 degrees became
+   103px tall and the gold edge came out of the chip as a diagonal streak across
+   the whole card — on every discounted product on the page.
+
+   Rotating the gradient instead of the box needs an @property registered angle,
+   which is not something to depend on for decoration. So the ring stays put and
+   the movement is a highlight travelling underneath it, clipped by the chip's
+   own overflow. Same read, and nothing can escape the box. */
+.p-price.has-off::before{
+  content:''; position:absolute; inset:0; z-index:-1; border-radius:inherit; padding:1.2px;
+  background:linear-gradient(135deg, #E8CE72, #8C6E14 28%, #F3E3AE 52%, #C9A227 74%, #8C6E14);
+  /* Mask the fill away so only the 1.2px ring is painted. */
+  -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+          mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite:xor; mask-composite:exclude;
+}
+/* THREE TREATMENTS, SO A GRID DOES NOT REPEAT ONE DOWN THE PAGE.
+   Which tag gets which is decided in assignPriceAnims(); the rule there is that
+   no two cards near each other may share one. */
+
+/* 1 — a highlight sweeps across the face. Long pause, short pass: a highlight
+       that crosses constantly is a loading bar, one that catches the light every
+       few seconds is a price tag. */
+.p-price.pa-1::after{
+  content:''; position:absolute; top:0; bottom:0; left:-45%; width:38%; z-index:-1;
+  background:linear-gradient(100deg, transparent, rgba(255,255,255,.85), transparent);
+  transform:skewX(-18deg);
+  animation:priceSheen 5.5s ease-in-out infinite;
+}
+@keyframes priceSheen{ 0%, 62%{ left:-45%; } 100%{ left:125%; } }
+
+/* 2 — the tag rocks: the left corner lifts as the right drops, then back the
+       other way. Under a degree either side, because this sits next to a price
+       and has to stay readable — a tag that visibly wobbles reads as broken. */
+.p-price.pa-2{ transform-origin:50% 50%; animation:priceRock 2.2s ease-in-out infinite; }
+/* Four stops rather than two, and a little lift with each tilt, so it reads as a
+   shake rather than a metronome. Still under two degrees: this sits beside a
+   price somebody has to read. */
+@keyframes priceRock{
+  0%, 100%{ transform:rotate(-1.7deg) translateY(-0.7px); }
+  25%     { transform:rotate(0.9deg)  translateY(0.6px); }
+  50%     { transform:rotate(1.7deg)  translateY(0.7px); }
+  75%     { transform:rotate(-0.9deg) translateY(-0.6px); }
+}
+
+/* 3 — a bright point runs continuously round the border.
+
+   The ANGLE of the gradient is animated, not the element. An earlier attempt
+   span the pseudo-element itself, which turns the ring with it: a 102x38 chip
+   rotated through 257 degrees became 103px tall and the gold edge came out of
+   the chip as a diagonal streak across the whole card. Registering the angle as
+   a custom property is what makes a conic gradient animatable at all; where
+   @property is unsupported the comet simply sits still on the ring, which is a
+   static bright point rather than a broken one. */
+@property --comet{ syntax:'<angle>'; initial-value:0deg; inherits:false; }
+/* A HEAD WITH A TAIL BEHIND IT, NOT A BRIGHT SMUDGE.
+
+   The gradient turns clockwise, so a stop at a LARGER angle leads and a smaller
+   one trails. The tail is therefore the long fade from 8deg up to the head at
+   46deg, and it cuts off sharply just past it — a comet is bright at the front
+   and fades behind, and reversing that reads as a smear.
+
+   The ring is thicker on this treatment alone, because a one-pixel edge cannot
+   carry a highlight; the drop-shadow is what makes the head actually glow
+   rather than merely being pale. */
+.p-price.pa-3::before{
+  padding:1.9px;
+  background:
+    conic-gradient(from var(--comet),
+      rgba(255,244,200,0)   0deg,
+      rgba(255,231,150,.18) 8deg,
+      rgba(255,238,175,.45) 26deg,
+      rgba(255,247,214,.80) 39deg,
+      #FFFFFF               46deg,
+      rgba(255,245,205,.42) 50deg,
+      rgba(255,244,200,0)   58deg),
+    linear-gradient(135deg, #E8CE72, #8C6E14 28%, #F3E3AE 52%, #C9A227 74%, #8C6E14);
+  filter:drop-shadow(0 0 2.5px rgba(255,238,175,.95));
+  animation:cometRun 3.4s linear infinite;
+}
+@keyframes cometRun{ to{ --comet:360deg; } }
+
+/* The gold edge stays in all three; only the movement goes. A static gold ring
+   is still a gold ring, so nothing is lost but the motion. */
+@media (prefers-reduced-motion:reduce){
+  .p-price.pa-1::after{ animation:none; display:none; }
+  .p-price.pa-2{ animation:none; transform:none; }
+  .p-price.pa-3::before{ animation:none; }
+}
+/* The chip sits bottom-left of the photo, opposite the add button, so the two
+   read as a pair anchored to the same edge. */
+.p-discount{
+  position:absolute; left:6cqi; bottom:9px; z-index:4;
+  display:inline-flex; align-items:center; gap:3px;
+  padding:5px 10px 5px 7px; border-radius:var(--radius-full);
+  font-size:clamp(.7rem, 4.4cqi, .8rem); font-weight:800; color:#fff; letter-spacing:.01em;
+}
+.p-discount svg{ width:12px; height:12px; }
+
+/* under 25% — stated, not sold */
+.dt-low { background:#2F8A57; box-shadow:0 2px 8px rgba(47,138,87,.32); }
+
+/* 25-49% — a slow breath */
+.dt-mid { background:linear-gradient(135deg, #2E9E5B, #1F7D45); box-shadow:0 3px 10px rgba(31,125,69,.40);
+          animation:dtBreathe 3.2s ease-in-out infinite; }
+@keyframes dtBreathe{ 0%,100%{ transform:scale(1); } 50%{ transform:scale(1.045); } }
+
+/* 50-74% — light crossing the face */
+.dt-high{ background:linear-gradient(135deg, #F0A02A, #D2691E); box-shadow:0 3px 12px rgba(210,105,30,.45);
+          position:absolute; overflow:hidden; isolation:isolate; }
+.dt-high::after{
+  content:''; position:absolute; top:0; bottom:0; left:-60%; width:42%; z-index:-1;
+  background:linear-gradient(100deg, transparent, rgba(255,255,255,.7), transparent);
+  transform:skewX(-18deg); animation:dtSweep 2.8s ease-in-out infinite;
+}
+@keyframes dtSweep{ 0%,58%{ left:-60%; } 100%{ left:130%; } }
+
+/* 75%+ — the only tier allowed to be emphatic */
+.dt-max { background:linear-gradient(135deg, #C0202E, #7A1128); box-shadow:0 4px 14px rgba(122,17,40,.5);
+          animation:dtUrgent 1.9s ease-in-out infinite; }
+@keyframes dtUrgent{
+  0%,100%{ transform:scale(1) translateY(0); box-shadow:0 4px 14px rgba(122,17,40,.5); }
+  50%    { transform:scale(1.07) translateY(-1px); box-shadow:0 6px 20px rgba(192,32,46,.62); }
+}
+
+/* Every tier keeps its colour and its number; only the movement goes. The
+   colour is the information, so removing motion loses nothing. */
+@media (prefers-reduced-motion:reduce){
+  .dt-mid, .dt-max{ animation:none; }
+  .dt-high::after{ animation:none; display:none; }
+}
+
+/* THE CATEGORY IS BACK ON A PHONE, BECAUSE THE REASON IT WENT HAS GONE.
+
+   It was hidden below 767px when the rating was five stars and a count: those
+   took 65 of the ~130px a two-across card gives you, so the category truncated
+   to "IDOL…" and "SPH…" — a label so cut down it named nothing.
+
+   The rating is now ONE star with a percentage fill plus a count, around 45px,
+   and the category fits beside it with room to spare. Keeping the old rule after
+   the thing it worked around was replaced is how a phone quietly ends up showing
+   less than a desktop for no present reason. Measured, not assumed: at 390px the
+   pair occupies about 120px of 147px available.
+
+   It still truncates rather than wrapping — a two-line category would push the
+   rating onto its own row and undo the alignment the whole body depends on, and
+   min-width:0 on both is what lets the ellipsis actually engage inside a flex
+   row instead of the row overflowing. */
+
+/* THE LAST 50 PIXELS OF PHONE.
+
+   From 414px up every category fits beside its rating with room to spare. Below
+   that the longest two — "Idols & Murtis" and "Sri Yantras" — were still losing
+   their tails, and the thing forcing it was not the card width but this label's
+   own floor: at a 175px card the cqi term is about 7px, so the .6rem floor takes
+   over and stops it shrinking any further.
+
+   So the floor drops and the tracking tightens, and only here. Letter-spacing is
+   the cheaper of the two: at .08em a fourteen-character label spends eleven
+   pixels on air alone, which is most of the shortfall. Between them the label
+   fits at 360px, which is the narrowest phone worth designing for. */
+@media (max-width:413px){
+  .p-cat{ font-size:clamp(.56rem, 4.2cqi, .68rem); letter-spacing:.02em; }
+}
+/* The selling price is the one number somebody is hunting for, so it is a step
+   larger and properly bold. The struck-through MRP is deliberately left where it
+   was: raising both together would restore the very sameness this fixes. */
+.p-price .now{ font-family:var(--f-display); font-size:clamp(1.14rem, 7.8cqi, 1.42rem); color:var(--oxblood); font-weight:800; }
+/* Container-relative, so the phone step-down lives here rather than in a second
+   rule at a viewport breakpoint. The floor is the size the old .82/.75 phone
+   overrides produced, so nothing moves; there is simply one rule now. */
+.p-price .was{ font-size:clamp(.75rem, 6cqi, .85rem); color:var(--text-mute); text-decoration:line-through; }
+/* The veil belongs over the PHOTO, not over the whole card.
+
+   inset:0 laid a cream wash across the price and the name as well, which is why
+   a sold-out product looked faded rather than sold out — the two read very
+   differently, and one of them looks like a rendering fault. Worse, the pill
+   centred on the whole card landed exactly on the Notify Me button and the two
+   overlapped into "OUT OF S…".
+
+   Now it covers the square image only, matching .p-media's aspect-ratio, and
+   sits above centre so the Notify Me bar below stays clear. The name and price
+   underneath remain at full strength: a customer deciding whether to wait for
+   restock still needs to read them. */
+.p-stock-out{
+  position:absolute; top:0; left:0; right:0; aspect-ratio:1/1;
+  background:rgba(250,243,228,.78); display:flex; align-items:flex-start;
+  justify-content:center; padding-top:34%; z-index:4; pointer-events:none;
+}
+.p-stock-out span{ background:var(--ink); color:var(--ivory); padding:8px 18px; border-radius:var(--radius-full); font-size:.74rem; font-weight:700; letter-spacing:.06em; text-transform:uppercase; box-shadow:0 4px 14px rgba(43,10,18,.3); }
 
 /* list view variant */
 .product-grid.list-view .p-card{ flex-direction:row; }
@@ -1181,7 +1717,7 @@ p{ color: var(--text-soft); }
 .product-grid.list-view .p-body{ padding:22px 26px; }
 /* .p-desc was removed when the duplicate product name was fixed; list view
    now gives the material line more room instead. */
-.product-grid.list-view .p-material{ font-size:.85rem; color:var(--text-soft); margin:8px 0 12px; }
+.product-grid.list-view .p-material{ display:block; font-size:.85rem; color:var(--text-soft); margin:8px 0 12px; }
 .product-grid.list-view .p-atc{ position:static; transform:none; margin-top:14px; }
 .product-grid.list-view .p-atc button{ border-radius:var(--radius-full); width:auto; padding:12px 26px; }
 
@@ -1203,9 +1739,28 @@ p{ color: var(--text-soft); }
    So each breakpoint hides the remainder rather than showing it. This trims
    only when the cards are actually there: with seven products in the shop there
    is no ninth child to hide and the rule does nothing. */
+/* THE COLUMN COUNT IS WHAT DECIDES THE CARD'S HEIGHT.
+
+   The photograph is square, so a card is as tall as it is wide plus its body.
+   Dropping a column therefore does not just widen the cards, it makes them
+   markedly TALLER — at 1024px, three across gave a 309px card and a 454px row,
+   and two rows needed 932px against a 768px screen. The second row was below the
+   fold on exactly the machines most likely to be looking.
+
+   Each step now happens one size later, which keeps the cards narrow enough that
+   two rows survive at every laptop width. Measured, at the viewport heights
+   those machines actually have:
+
+     1440x900   5 across   card 227x360   two rows 744
+     1180x720   5 across   card 210x345   two rows 714
+     1024x768   4 across   card 225x365   two rows 754
+      900x700   3 across   card 268x406   two rows 836   (a tall tablet; scrolls)
+
+   The trim bands below move with these. They must, or a width ends up with the
+   wrong remainder rule and shows a stub row. */
 #featuredGrid{ grid-template-columns:repeat(5,1fr); }
-@media (max-width:1180px){ #featuredGrid{ grid-template-columns:repeat(4,1fr); } }
-@media (max-width:1024px){ #featuredGrid{ grid-template-columns:repeat(3,1fr); } }
+@media (max-width:1100px){ #featuredGrid{ grid-template-columns:repeat(4,1fr); } }
+@media (max-width:900px){ #featuredGrid{ grid-template-columns:repeat(3,1fr); } }
 @media (max-width:767px){ #featuredGrid{ grid-template-columns:repeat(2,1fr); } }
 
 /* Trimming the ragged tail, in bands that CANNOT OVERLAP.
@@ -1218,10 +1773,10 @@ p{ color: var(--text-soft); }
    below 1024px, which is where it would have been least likely to be noticed.
 
    Bounded bands need no undo. Each width has exactly one rule, or none. */
-@media (min-width:1025px) and (max-width:1180px){
+@media (min-width:901px) and (max-width:1100px){
   #featuredGrid > :nth-child(n+9){ display:none; }    /* 4 across: 8, not 4+4+2 */
 }
-@media (min-width:768px) and (max-width:1024px){
+@media (min-width:768px) and (max-width:900px){
   #featuredGrid > :nth-child(n+10){ display:none; }   /* 3 across: 9, not 3+3+3+1 */
 }
 /* At 2 across all ten cards make five clean rows, so mobile gets no rule. */
@@ -1229,27 +1784,29 @@ p{ color: var(--text-soft); }
 @media (max-width:1180px){ .product-grid{ grid-template-columns:repeat(3,1fr); } }
 @media (max-width:860px){ .product-grid, .product-grid.cols-3{ grid-template-columns:repeat(2,1fr); } .product-grid.list-view .p-card{ flex-direction:column; } .product-grid.list-view .p-media{ width:100%; aspect-ratio:1/1; } }
 
-/* Mobile product grid: tighter gaps and padding so two columns read as a
-   compact, attractive grid rather than a stretched-out column of large
-   cards. Type sizes step down proportionally so nothing wraps awkwardly
-   in the narrower card. */
+/* THREE BLOCKS SET THE SAME PROPERTIES, AND THE LAST ONE WON.
+
+   There were three overlapping phone blocks here — 560px, 380px and 480px, in
+   that source order — each re-declaring the card's type sizes and body padding.
+   Because 480px was written LAST, it beat both of the others at every width it
+   matched, which made the 380px block entirely dead code and silently capped the
+   product name at .84rem on every phone.
+
+   That is why raising the name to clamp(.88rem, 5.9cqi, 1.04rem) appeared to do
+   nothing below 480px: the container query was correct and simply outranked.
+   Every type size now comes from ONE container-relative rule up in the card's
+   own section, and what survives here is the only thing that is genuinely about
+   the VIEWPORT rather than about the card: how far apart the columns sit.
+
+   The bodies keep a single tighter padding on phones, in one place, which the
+   height-budget test measures alongside the base. */
 @media (max-width:560px){
   .product-grid, .product-grid.cols-3{ gap:12px; }
   .p-body{ padding:10px 10px 12px; }
-  .p-cat{ font-size:.6rem; margin-bottom:3px; letter-spacing:.06em; }
-  .p-name{ font-size:.82rem; margin-bottom:4px; line-height:1.3; }
-  .p-rating{ margin-bottom:4px; gap:4px; }
-  .p-rating .cnt{ font-size:.68rem; }
-  .p-material{ font-size:.68rem; margin-bottom:6px; }
-  .p-price .now{ font-size:1rem; }
-  .p-price .was{ font-size:.75rem; }
 }
 @media (max-width:380px){
   .product-grid, .product-grid.cols-3{ gap:9px; }
-  .p-body{ padding:8px 8px 10px; }
-  .p-name{ font-size:.78rem; }
 }
-@media (max-width:480px){ .p-body{ padding:14px; } .p-name{ font-size:.84rem; } }
 
 /* ============================================================
    BREADCRUMB
@@ -1399,6 +1956,20 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
 
 @media (max-width:980px){
   .shop-layout{ grid-template-columns:1fr; }
+  /* A GRID ITEM WILL NOT SHRINK BELOW ITS CONTENT UNLESS TOLD TO.
+
+     min-width defaults to auto on a grid item, so this column could never be
+     narrower than the widest thing inside it — the toolbar's sort menu and view
+     toggle side by side, about 339px including padding. On a 360px phone that
+     is 312px of room for 339px of column, and the whole shop pushed 5px past the
+     screen edge. It was 3px before the view toggle grew to a 44px touch target,
+     which is how a marginal overflow becomes a visible one.
+
+     min-width:0 lets the column shrink, and the toolbar then wraps as it was
+     always meant to. Both halves are needed: without the wrap the controls would
+     simply be clipped instead. */
+  .shop-main{ min-width:0; }
+  .toolbar-right{ flex-wrap:wrap; }
   .shop-sidebar{ display:none; }
   /* THE FILTER DRAWER.
 
@@ -1784,7 +2355,39 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
 .pay-icons{ display:flex; gap:8px; flex-wrap:wrap; }
 .pay-icons span{ font-size:.68rem; font-weight:700; letter-spacing:.03em; background:rgba(250,243,228,.08); border:1px solid rgba(201,162,39,.25); color:rgba(250,243,228,.75); padding:7px 11px; border-radius:5px; }
 @media (max-width:980px){ .footer-grid{ grid-template-columns:1fr 1fr; row-gap:var(--sp-7); } }
-@media (max-width:560px){ .footer-grid{ grid-template-columns:1fr; } .footer-bottom{ flex-direction:column; text-align:center; } }
+/* Above the phone breakpoint the toggle is not a control at all: no pointer,
+   no chevron, no collapsing. The heading simply looks like a heading. */
+.fc-toggle{
+  display:flex; align-items:center; justify-content:space-between; gap:12px;
+  width:100%; background:none; border:0; padding:0; margin:0;
+  font:inherit; color:inherit; text-align:left; cursor:default;
+}
+.fc-chev{ width:16px; height:16px; display:none; flex-shrink:0; transition:transform .25s var(--ease); }
+
+@media (max-width:560px){
+  .footer-grid{ grid-template-columns:1fr; row-gap:0; }
+  .footer-bottom{ flex-direction:column; text-align:center; }
+
+  .fc-collapsible{ border-bottom:1px solid rgba(201,162,39,.16); }
+  .fc-collapsible h4, .fc-collapsible .h4{ margin:0; }
+  .fc-toggle{ cursor:pointer; padding:16px 0; min-height:44px; }
+  .fc-chev{ display:block; }
+  .fc-collapsible.open .fc-chev{ transform:rotate(180deg); }
+
+  /* 0fr to 1fr, which animates where height:auto cannot. It needs exactly ONE
+     child to collapse against, so the list is wrapped in its own row rather
+     than being the row — a sibling would fall into an implicit auto track and
+     the section would never close. */
+  .fc-body{
+    display:grid; grid-template-rows:0fr;
+    transition:grid-template-rows .28s var(--ease);
+  }
+  .fc-collapsible.open .fc-body{ grid-template-rows:1fr; }
+  /* The single child. min-height:0 is what actually lets a grid item shrink
+     below its content; without it the row collapses and the list does not. */
+  .fc-body > ul{ min-height:0; overflow:hidden; }
+  .fc-collapsible.open .fc-body > ul{ padding-bottom:16px; }
+}
 
 /* ============================================================
    AI CHAT WIDGET
@@ -2399,7 +3002,67 @@ a.p-name:hover{ text-decoration:none; }
 a.p-media:focus-visible, a.p-name:focus-visible{ outline:2px solid var(--oxblood); outline-offset:3px; border-radius:4px; }
 
 /* BIZ-04 — the honest empty state, in place of five hollow stars. */
-.no-rating{ font-size:.74rem; color:var(--text-mute); font-style:italic; }
+/* Not italic. An italic line is emphasis, and "no reviews yet" is the one
+   thing on the card that deserves none — it competed with the product name for
+   attention while saying nothing a shopper wants. Quieter, upright, and the
+   same height as a star row so the price below it still lines up. */
+.no-rating{ font-size:.72rem; color:var(--text-mute); letter-spacing:.01em; }
+/* ============================================================
+   TOUCH TARGETS
+   ============================================================
+   Every control at 767px and below must be at least 44x44 CSS pixels. That is
+   not a style preference: below it a fingertip covers more than the control and
+   people miss, tap the thing next to it, and decide the site is broken.
+
+   Found by measuring rather than by reading — scripts/responsive-audit.js
+   renders all eight routes at eight widths and reports every control under the
+   minimum. These were the ones that failed: the shop's view toggle at 32px, the
+   footer's social buttons at 38, the filter button and pagination at 40, the
+   featured tabs at 42, the sort menu at 37, and every footer link at 19.
+
+   Stated ONCE here rather than sprinkled through the component blocks, so there
+   is one place to look and nothing to keep in sync. Only min-height is used
+   where the control has its own padding, so nothing is resized on a desktop and
+   no layout below is disturbed.
+
+   AND IT SITS AT THE END OF THE STYLESHEET ON PURPOSE. Written earlier it lost:
+   .footer-social, .view-toggle and .pagination all declare their sizes further
+   down the file, and at equal specificity the later rule wins, so three of these
+   silently did nothing. Same trap as the card's three phone blocks. Anything
+   whose job is to override every component must come after every component. */
+@media (max-width:767px){
+  .tab-btn,
+  .mobile-filter-btn,
+  .btn-sm,
+  .qa-notify,
+  .shop-toolbar select{ min-height:44px; }
+
+  /* The logo is a link, so its tap area is its own box. The mark inside is
+     untouched; only the area around it grows. */
+  .logo{ min-height:44px; align-items:center; }
+
+  .view-toggle button,
+  .pagination button,
+  .testi-nav button,
+  .footer-social a, .footer-social button{ width:44px; height:44px; }
+  .view-toggle{ padding:3px; }
+
+  /* Footer links were 19px of text with the gap doing the spacing. The gap goes
+     and the link owns the height instead, so the row a finger lands on is the
+     row that is actually a link. Total height per row barely changes. */
+  /* A breadcrumb link was 20px of text. It gets a real row to land on, and the
+     bar gives back most of its padding so the strip barely grows: 56px before,
+     60px now. inline-flex would have been blockified to flex here anyway, since
+     .breadcrumb is itself a flex container. */
+  .breadcrumb-bar{ padding:8px 0; }
+  .breadcrumb a{ display:flex; align-items:center; min-height:44px; }
+
+  .footer-col ul{ gap:0; }
+  .footer-col ul li a{ display:flex; align-items:center; min-height:44px; }
+  .dev-credit{ display:inline-flex; align-items:center; padding:5px 0; }
+}
+
+
 </style>
 </head>
 <body>
@@ -2569,27 +3232,35 @@ a.p-media:focus-visible, a.p-name:focus-visible{ outline:2px solid var(--oxblood
   </style>
   <svg viewBox="0 0 500 500" aria-hidden="true">
     <defs>
-      <path id="awakenPetal" d="M250 82 C 238 60, 234 38, 250 22 C 266 38, 262 60, 250 82 Z" fill="none" stroke="#C9A227" stroke-width="1.6"/>
+      <path id="awP8" d="M207.1 146.5 Q212.3 118.8 250 91.0 Q287.7 118.8 292.9 146.5 A112 112 0 0 0 207.1 146.5 Z"/>
+      <path id="awP16" d="M219.0 94.1 Q222.7 63.5 250 33.0 Q277.3 63.5 281.0 94.1 A159 159 0 0 0 219.0 94.1 Z"/>
     </defs>
-    <g class="awaken-spin" opacity=".9">
-      <circle cx="250" cy="250" r="232" fill="none" stroke="#C9A227" stroke-width="1.2"/>
-      <use href="#awakenPetal" transform="rotate(0 250 250)"/><use href="#awakenPetal" transform="rotate(30 250 250)"/>
-      <use href="#awakenPetal" transform="rotate(60 250 250)"/><use href="#awakenPetal" transform="rotate(90 250 250)"/>
-      <use href="#awakenPetal" transform="rotate(120 250 250)"/><use href="#awakenPetal" transform="rotate(150 250 250)"/>
-      <use href="#awakenPetal" transform="rotate(180 250 250)"/><use href="#awakenPetal" transform="rotate(210 250 250)"/>
-      <use href="#awakenPetal" transform="rotate(240 250 250)"/><use href="#awakenPetal" transform="rotate(270 250 250)"/>
-      <use href="#awakenPetal" transform="rotate(300 250 250)"/><use href="#awakenPetal" transform="rotate(330 250 250)"/>
-      <circle cx="250" cy="250" r="178" fill="none" stroke="#C9A227" stroke-width="1.2"/>
+    <g class="awaken-spin">
+      <g fill="none" stroke="#FADFA4" stroke-width="1.72" stroke-linejoin="round" opacity=".92"><use href="#awP16" transform="rotate(0.00 250 250)"/><use href="#awP16" transform="rotate(22.50 250 250)"/><use href="#awP16" transform="rotate(45.00 250 250)"/><use href="#awP16" transform="rotate(67.50 250 250)"/><use href="#awP16" transform="rotate(90.00 250 250)"/><use href="#awP16" transform="rotate(112.50 250 250)"/><use href="#awP16" transform="rotate(135.00 250 250)"/><use href="#awP16" transform="rotate(157.50 250 250)"/><use href="#awP16" transform="rotate(180.00 250 250)"/><use href="#awP16" transform="rotate(202.50 250 250)"/><use href="#awP16" transform="rotate(225.00 250 250)"/><use href="#awP16" transform="rotate(247.50 250 250)"/><use href="#awP16" transform="rotate(270.00 250 250)"/><use href="#awP16" transform="rotate(292.50 250 250)"/><use href="#awP16" transform="rotate(315.00 250 250)"/><use href="#awP16" transform="rotate(337.50 250 250)"/></g>
+      <g fill="none" stroke="#FADFA4" stroke-width="1.95" stroke-linejoin="round"><use href="#awP8" transform="rotate(0.00 250 250)"/><use href="#awP8" transform="rotate(45.00 250 250)"/><use href="#awP8" transform="rotate(90.00 250 250)"/><use href="#awP8" transform="rotate(135.00 250 250)"/><use href="#awP8" transform="rotate(180.00 250 250)"/><use href="#awP8" transform="rotate(225.00 250 250)"/><use href="#awP8" transform="rotate(270.00 250 250)"/><use href="#awP8" transform="rotate(315.00 250 250)"/></g>
+      <g fill="none" stroke="#F0D08A" stroke-width="1.72">
+        <circle cx="250" cy="250" r="217"/>
+        <circle cx="250" cy="250" r="159"/>
+        <circle cx="250" cy="250" r="112"/>
+      </g>
     </g>
-    <g fill="none" stroke="#E3C878" stroke-width="1.6" stroke-linejoin="round" opacity=".95">
-      <polygon points="250,100 379.9,325 120.1,325"/>
-      <polygon points="250,400 120.1,175 379.9,175"/>
-      <polygon points="250,145 340.93,302.5 159.07,302.5"/>
-      <polygon points="250,355 159.07,197.5 340.93,197.5"/>
-      <polygon points="250,188 303.7,281 196.3,281"/>
-      <polygon points="250,312 196.3,219 303.7,219"/>
+    <g fill="none" stroke="#EAC578" stroke-width="1.03" opacity=".16">
+      <circle cx="250" cy="250" r="228"/>
+      <circle cx="250" cy="250" r="236"/>
+      <circle cx="250" cy="250" r="244"/>
     </g>
-    <circle class="awaken-bindu" cx="250" cy="250" r="5.5" fill="#F1E2C8"/>
+    <g fill="none" stroke="#FFF1CB" stroke-width="2.07" stroke-linejoin="round">
+      <polygon points="250,148.00 164.81,306.10 335.19,306.10"/>
+      <polygon points="250,170.44 186.17,329.56 313.83,329.56"/>
+      <polygon points="250,193.90 152.70,280.60 347.30,280.60"/>
+      <polygon points="250,219.40 148.51,260.20 351.49,260.20"/>
+      <polygon points="250,352.00 164.81,193.90 335.19,193.90"/>
+      <polygon points="250,329.56 186.17,170.44 313.83,170.44"/>
+      <polygon points="250,306.10 152.70,219.40 347.30,219.40"/>
+      <polygon points="250,280.60 148.51,239.80 351.49,239.80"/>
+      <polygon points="250,267.34 203.08,228.58 296.92,228.58"/>
+    </g>
+    <circle class="awaken-bindu" cx="250" cy="250" r="4" fill="#FFFAF0"/>
   </svg>
   <!-- One span per letter so each can rise in turn. The letters are hidden from
        assistive tech and the wrapper carries the whole phrase, so a screen reader
@@ -2849,29 +3520,35 @@ a.p-media:focus-visible, a.p-name:focus-visible{ outline:2px solid var(--oxblood
           <div class="hero-badge-float hb-2"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg> Same‑Day Priest Booking</div>
           <svg viewBox="0 0 500 500" aria-label="Sri Yantra">
             <defs>
-              <path id="petalShape" d="M250 82 C 238 60, 234 38, 250 22 C 266 38, 262 60, 250 82 Z" fill="none" stroke="currentColor" stroke-width="1.1"/>
+              <path id="hrP8" d="M207.1 146.5 Q212.3 118.8 250 91.0 Q287.7 118.8 292.9 146.5 A112 112 0 0 0 207.1 146.5 Z"/>
+              <path id="hrP16" d="M219.0 94.1 Q222.7 63.5 250 33.0 Q277.3 63.5 281.0 94.1 A159 159 0 0 0 219.0 94.1 Z"/>
             </defs>
-            <g class="yantra-outer" stroke="var(--gold-lt)" opacity=".85">
-              <circle cx="250" cy="250" r="232" fill="none" stroke-width="1"/>
-              <g color="var(--gold-lt)">
-                <use href="#petalShape" transform="rotate(0 250 250)"/><use href="#petalShape" transform="rotate(30 250 250)"/>
-                <use href="#petalShape" transform="rotate(60 250 250)"/><use href="#petalShape" transform="rotate(90 250 250)"/>
-                <use href="#petalShape" transform="rotate(120 250 250)"/><use href="#petalShape" transform="rotate(150 250 250)"/>
-                <use href="#petalShape" transform="rotate(180 250 250)"/><use href="#petalShape" transform="rotate(210 250 250)"/>
-                <use href="#petalShape" transform="rotate(240 250 250)"/><use href="#petalShape" transform="rotate(270 250 250)"/>
-                <use href="#petalShape" transform="rotate(300 250 250)"/><use href="#petalShape" transform="rotate(330 250 250)"/>
+            <g class="yantra-outer">
+              <g fill="none" stroke="#FADFA4" stroke-width="1.5" stroke-linejoin="round" opacity=".92"><use href="#hrP16" transform="rotate(0.00 250 250)"/><use href="#hrP16" transform="rotate(22.50 250 250)"/><use href="#hrP16" transform="rotate(45.00 250 250)"/><use href="#hrP16" transform="rotate(67.50 250 250)"/><use href="#hrP16" transform="rotate(90.00 250 250)"/><use href="#hrP16" transform="rotate(112.50 250 250)"/><use href="#hrP16" transform="rotate(135.00 250 250)"/><use href="#hrP16" transform="rotate(157.50 250 250)"/><use href="#hrP16" transform="rotate(180.00 250 250)"/><use href="#hrP16" transform="rotate(202.50 250 250)"/><use href="#hrP16" transform="rotate(225.00 250 250)"/><use href="#hrP16" transform="rotate(247.50 250 250)"/><use href="#hrP16" transform="rotate(270.00 250 250)"/><use href="#hrP16" transform="rotate(292.50 250 250)"/><use href="#hrP16" transform="rotate(315.00 250 250)"/><use href="#hrP16" transform="rotate(337.50 250 250)"/></g>
+              <g fill="none" stroke="#FADFA4" stroke-width="1.7" stroke-linejoin="round"><use href="#hrP8" transform="rotate(0.00 250 250)"/><use href="#hrP8" transform="rotate(45.00 250 250)"/><use href="#hrP8" transform="rotate(90.00 250 250)"/><use href="#hrP8" transform="rotate(135.00 250 250)"/><use href="#hrP8" transform="rotate(180.00 250 250)"/><use href="#hrP8" transform="rotate(225.00 250 250)"/><use href="#hrP8" transform="rotate(270.00 250 250)"/><use href="#hrP8" transform="rotate(315.00 250 250)"/></g>
+              <g fill="none" stroke="#F0D08A" stroke-width="1.5">
+                <circle cx="250" cy="250" r="217"/>
+                <circle cx="250" cy="250" r="159"/>
+                <circle cx="250" cy="250" r="112"/>
               </g>
-              <circle cx="250" cy="250" r="178" fill="none" stroke-width="1"/>
             </g>
-            <g fill="none" stroke="var(--gold-lt)" stroke-width="1.3" stroke-linejoin="round" opacity=".95">
-              <polygon points="250,100 379.9,325 120.1,325"/>
-              <polygon points="250,400 120.1,175 379.9,175"/>
-              <polygon points="250,145 340.93,302.5 159.07,302.5"/>
-              <polygon points="250,355 159.07,197.5 340.93,197.5"/>
-              <polygon points="250,188 303.7,281 196.3,281"/>
-              <polygon points="250,312 196.3,219 303.7,219"/>
+            <g fill="none" stroke="#EAC578" stroke-width="0.9" opacity=".16">
+              <circle cx="250" cy="250" r="228"/>
+              <circle cx="250" cy="250" r="236"/>
+              <circle cx="250" cy="250" r="244"/>
             </g>
-            <circle class="yantra-bindu" cx="250" cy="250" r="5.5" fill="var(--gold-lt)"/>
+            <g fill="none" stroke="#FFF1CB" stroke-width="1.8" stroke-linejoin="round">
+              <polygon points="250,148.00 164.81,306.10 335.19,306.10"/>
+              <polygon points="250,170.44 186.17,329.56 313.83,329.56"/>
+              <polygon points="250,193.90 152.70,280.60 347.30,280.60"/>
+              <polygon points="250,219.40 148.51,260.20 351.49,260.20"/>
+              <polygon points="250,352.00 164.81,193.90 335.19,193.90"/>
+              <polygon points="250,329.56 186.17,170.44 313.83,170.44"/>
+              <polygon points="250,306.10 152.70,219.40 347.30,219.40"/>
+              <polygon points="250,280.60 148.51,239.80 351.49,239.80"/>
+              <polygon points="250,267.34 203.08,228.58 296.92,228.58"/>
+            </g>
+            <circle class="yantra-bindu" cx="250" cy="250" r="5.5" fill="#FFFAF0"/>
           </svg>
         </div>
       </div>
@@ -2898,7 +3575,7 @@ a.p-media:focus-visible, a.p-name:focus-visible{ outline:2px solid var(--oxblood
     </div>
   </section>
 
-  <section class="section tight bg-parchment">
+  <section class="section tight bg-shelf">
     <div class="container">
       <div class="section-head split reveal">
         <div>
@@ -3960,9 +4637,15 @@ a.p-media:focus-visible, a.p-name:focus-visible{ outline:2px solid var(--oxblood
           <button type="button" aria-label="Pinterest" title="Pinterest — coming soon" onclick="return false;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M9.5 17c1-3.5 1.8-6.3 1.8-6.3M12 10.7a2.3 2.3 0 104.5-.7c0-1.7-1.5-3-3.5-3-2.3 0-4 1.7-4 3.8 0 1 .4 1.9 1 2.4"/></svg></button>
         </div>
       </div>
-      <div class="footer-col">
-        <h2 class="h4">Shop</h2>
-        <ul>
+      <div class="footer-col fc-collapsible" data-fc="shop">
+        <h2 class="h4">
+          <button type="button" class="fc-toggle" aria-expanded="false" aria-controls="fcListShop"
+                  onclick="toggleFooterCol(this)">
+            <span>Shop</span>
+            <svg class="fc-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+          </button>
+        </h2>
+        <ul id="fcListShop">
           <li><a href="/shop?category=lingam" onclick="openShopWithCategory('lingam'); return false;">Sphatik Lingams</a></li>
           <li><a href="/shop?category=yantra" onclick="openShopWithCategory('yantra'); return false;">Sri Yantras</a></li>
           <li><a href="/shop?category=idols" onclick="openShopWithCategory('idols'); return false;">Idols &amp; Murtis</a></li>
@@ -3971,9 +4654,15 @@ a.p-media:focus-visible, a.p-name:focus-visible{ outline:2px solid var(--oxblood
           <li><a href="/shop?category=books" onclick="openShopWithCategory('books'); return false;">Spiritual Books</a></li>
         </ul>
       </div>
-      <div class="footer-col">
-        <h2 class="h4">Company</h2>
-        <ul>
+      <div class="footer-col fc-collapsible" data-fc="company">
+        <h2 class="h4">
+          <button type="button" class="fc-toggle" aria-expanded="false" aria-controls="fcListCompany"
+                  onclick="toggleFooterCol(this)">
+            <span>Company</span>
+            <svg class="fc-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+          </button>
+        </h2>
+        <ul id="fcListCompany">
           <li><a href="/about" onclick="navigateTo('about'); return false;">About Us</a></li>
           <li><a href="/puja" onclick="navigateTo('puja'); return false;">Puja Booking</a></li>
           <li><a href="/astrology" onclick="navigateTo('astrology'); return false;">Astrology</a></li>
@@ -4029,8 +4718,8 @@ a.p-media:focus-visible, a.p-name:focus-visible{ outline:2px solid var(--oxblood
             <circle cx="250" cy="250" r="178" fill="none" stroke="currentColor" stroke-width="6"/>
           </g>
           <g fill="none" stroke="currentColor" stroke-width="8" stroke-linejoin="round">
-            <polygon points="250,100 379.9,325 120.1,325"/>
-            <polygon points="250,400 120.1,175 379.9,175"/>
+            <polygon points="250,148.00 164.81,306.10 335.19,306.10"/>
+            <polygon points="250,352.00 164.81,193.90 335.19,193.90"/>
           </g>
           <circle class="wait-bindu" cx="250" cy="250" r="26" fill="currentColor"/>
         </svg>
@@ -4220,7 +4909,7 @@ a.p-media:focus-visible, a.p-name:focus-visible{ outline:2px solid var(--oxblood
 /* ---------- Category icon paths (reused for product placeholders) ---------- */
 const CAT_ICON_PATHS = {
   lingam:    '<path d="M24 8c-5.5 6.5-8.5 11.5-8.5 16.5a8.5 8.5 0 0017 0C32.5 19.5 29.5 14.5 24 8z"/><path d="M9 35c4-3.3 9.5-5 15-5s11 1.7 15 5"/><ellipse cx="24" cy="37.5" rx="15.5" ry="3.2"/>',
-  yantra:    '<circle cx="24" cy="24" r="19"/><polygon points="24,9 35.5,30.5 12.5,30.5"/><polygon points="24,39 12.5,17.5 35.5,17.5"/><circle cx="24" cy="24" r="1.8" fill="currentColor"/>',
+  yantra:    '<circle cx="24" cy="24" r="19"/><polygon points="24.00,9.00 11.47,32.25 36.53,32.25"/><polygon points="24.00,39.00 11.47,15.75 36.53,15.75"/><polygon points="24.00,35.70 14.61,12.30 33.39,12.30"/><circle cx="24" cy="24" r="1.8" fill="currentColor"/>',
   idols:     '<path d="M18 15a2 2 0 114 0v1.4a6 6 0 01-4 0z" transform="translate(3 -2)"/><circle cx="24" cy="15" r="5"/><path d="M14 38c0-8 4.5-14 10-14s10 6 10 14"/><path d="M9 37.5c2-1.5 4-2.3 5.5-2.3M39 37.5c-2-1.5-4-2.3-5.5-2.3"/>',
   malas:     '<circle cx="24" cy="20" r="14" stroke-dasharray="2.3 4.6"/><circle cx="24" cy="6" r="2.6" fill="currentColor" stroke="none"/><path d="M24 34v9"/><circle cx="24" cy="45.5" r="1.6" fill="currentColor" stroke="none"/>',
   bracelets: '<circle cx="24" cy="24" r="15" stroke-dasharray="3.4 3.4"/>',
@@ -4607,11 +5296,30 @@ function catLabel(key){
 // style — previously any value other than exactly 'bestseller'/'new' was
 // silently replaced with the hardcoded text "Sale", discarding whatever the
 // admin actually typed.
-function badgeInfo(badge){
+function badgeInfo(badge, product){
   const key = String(badge || '').trim().toLowerCase();
+  if(key === 'limited'){
+    const n = Math.max(1, Number(product && product.stockQty) || 1);
+    return {
+      cssClass:'badge-limited', text:'Only ' + n + ' left',
+      // The roll starts a little above the truth and settles on it.
+      countTo:n
+    };
+  }
   if(key === 'bestseller') return { cssClass:'badge-best', text:'Bestseller' };
   if(key === 'new') return { cssClass:'badge-new', text:'New' };
   if(key === 'sale') return { cssClass:'badge-sale', text:'Sale' };
+  /* Hot earns its own class rather than falling into badge-custom, because it
+     is the one word here that describes a temperature and can move like one. */
+  /* A flame, not a word describing one. The glyph is what carries the meaning
+     at this size; the label is the caption. */
+  if(key === 'hot') return {
+    cssClass:'badge-hot', text:'Hot',
+    icon:'<svg class="b-ico b-flame" viewBox="0 0 24 24" aria-hidden="true">' +
+      '<path class="fl-outer" d="M12 2c.6 3.2-1.4 4.6-2.8 6.2C7.6 10 6.5 11.6 6.5 14a5.5 5.5 0 0011 0c0-2.2-1-3.6-2.2-5.2C14 7 13.4 5.4 13.6 4c-.6.9-1.3 1.5-1.6 1.9C11.7 4.6 11.8 3.2 12 2z"/>' +
+      '<path class="fl-inner" d="M12 12c.3 1.5-.6 2.2-1.2 2.9-.5.6-.9 1.2-.9 2a2.1 2.1 0 004.2 0c0-.9-.4-1.5-1-2.2-.5-.6-.9-1.4-.8-2.1-.1.2-.2.3-.3.4z"/>' +
+    '</svg>'
+  };
   // Badges are stored lowercase (see migration 012), so anything custom must
   // be title-cased here or "certified" shows where "Certified" is intended.
   return { cssClass:'badge-custom', text: titleCaseTerm(key) };
@@ -5383,6 +6091,118 @@ let chatOpen = false;
 let testiIndex = 0;
 
 /* ---------- Utilities ---------- */
+/* The two long footer columns collapse on a phone, and only on a phone.
+
+   Shop and Company are seven links each. Stacked in one column on a 390px
+   screen they push the contact details and the copyright about two full screens
+   down, and the footer stops being somewhere anyone scrolls to.
+
+   Above 560px nothing changes: the toggle is not a button there, the list is
+   always open, and there is no chevron. That is done in CSS rather than by
+   swapping markup, so the same DOM serves both and there is no width at which
+   the two versions can disagree.
+
+   Closed by default on a phone. A footer's job at that width is to be short
+   enough to scroll past, and the person who wants Shipping & Returns will open
+   the section they expect it in. */
+/* HELD IN A VARIABLE ON PURPOSE.
+
+   A MediaQueryList that nothing references can be collected, and its change
+   listener goes with it — so the accordion set itself up correctly on load and
+   then never heard about a single resize after that. Caught by widening from a
+   phone to a tablet and finding the heading still announcing itself as an
+   expanded button at a width where nothing collapses. Keeping the object alive
+   here keeps the listener alive with it. */
+const FOOTER_COLLAPSE_MQ = window.matchMedia('(max-width:560px)');
+
+function toggleFooterCol(btn){
+  /* Above the breakpoint the heading is a heading, not a control. Clicking it
+     must do nothing at all, or a stray tap on a tablet would set a class whose
+     only effect arrives later, when the window is narrowed. */
+  if(!FOOTER_COLLAPSE_MQ.matches) return;
+  const col = btn.closest('.footer-col');
+  if(!col) return;
+  syncFooterCol(col, !col.classList.contains('open'));
+}
+
+/* Open and closed in one place, so the class, the ARIA state and the tab order
+   can never disagree. */
+function syncFooterCol(col, open){
+  const btn = col.querySelector('.fc-toggle');
+  const body = col.querySelector('.fc-body');
+  col.classList.toggle('open', open);
+  if(btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  /* overflow:hidden hides the links from the eye but NOT from the Tab key: a
+     keyboard user would tab into seven invisible links and watch focus vanish.
+     inert takes them out of the tab order and off the accessibility tree, which
+     is the part CSS cannot do. */
+  if(body) body.inert = !open;
+}
+
+/* Below the breakpoint each column is an accordion; above it, it is a plain
+   heading over a plain list. Both states are driven from here rather than from
+   CSS alone, because "collapsed" is a fact about the accessibility tree and a
+   media query cannot reach it — a desktop visitor would otherwise hear
+   "Shop, collapsed, button" over a list that is fully visible. */
+function syncFooterCols(){
+  const phone = FOOTER_COLLAPSE_MQ.matches;
+  document.querySelectorAll('.fc-collapsible').forEach(function(col){
+    const btn = col.querySelector('.fc-toggle');
+    if(phone){
+      /* Closed on arrival. A footer's job at this width is to be short enough
+         to scroll past; whoever wants Shipping & Returns opens the section they
+         expect it in. Re-opening on every resize would also be wrong, so an
+         already-open column is left alone. */
+      syncFooterCol(col, col.classList.contains('open'));
+      if(btn) btn.removeAttribute('aria-hidden');
+    } else {
+      col.classList.remove('open');
+      const body = col.querySelector('.fc-body');
+      if(body) body.inert = false;
+      /* No expanded state to report, because nothing is collapsed. */
+      if(btn){ btn.removeAttribute('aria-expanded'); btn.setAttribute('tabindex', '-1'); }
+    }
+    if(phone && btn) btn.removeAttribute('tabindex');
+  });
+}
+
+/* The 0fr-to-1fr collapse animates only when the grid has exactly ONE child to
+   collapse against; a list has one row per link, and they would fall into
+   implicit auto tracks and never close. So the list gets a wrapper — done here
+   rather than in the markup so the two columns cannot drift apart, and so the
+   footer degrades to plain nested lists for anything that never runs this. */
+function initFooterCols(){
+  document.querySelectorAll('.fc-collapsible > ul').forEach(function(ul){
+    const body = document.createElement('div');
+    body.className = 'fc-body';
+    ul.parentNode.insertBefore(body, ul);
+    body.appendChild(ul);
+  });
+  syncFooterCols();
+  /* TWO SIGNALS, BECAUSE ONE OF THEM CANNOT BE PROVEN HERE.
+
+     matchMedia's change event is the right signal and the cheap one — it also
+     covers a page zoom, which does not always resize the window. But it does not
+     fire under the viewport emulation this was tested through, so relying on it
+     alone would have meant shipping on "it should work in a real browser",
+     which is the assumption that produced the bug above.
+
+     resize fires in cases the change event misses, so the behaviour is actually
+     verifiable. Debounced on a TIMER rather than on requestAnimationFrame: a
+     backgrounded or hidden tab stops handing out frames, so an rAF debounce
+     silently never runs there — which is exactly how this was first written, and
+     it made the accordion look broken at every width until the debounce itself
+     turned out to be the thing that was stuck. syncFooterCols is idempotent, so
+     running it once too often costs nothing. */
+  FOOTER_COLLAPSE_MQ.addEventListener('change', syncFooterCols);
+  let pending = 0;
+  window.addEventListener('resize', function(){
+    clearTimeout(pending);
+    pending = setTimeout(syncFooterCols, 120);
+  });
+}
+document.addEventListener('DOMContentLoaded', initFooterCols);
+
 function formatINR(n){ return '₹' + Math.round(n).toLocaleString('en-IN'); }
 function qs(sel, root){ return (root||document).querySelector(sel); }
 function qsa(sel, root){ return Array.from((root||document).querySelectorAll(sel)); }
@@ -5407,13 +6227,32 @@ function validateField(id, type){
    those stars beside "0 reviews" — a rating not derived from real customer
    feedback, which India's CCPA guidance on fake reviews and BIS IS 19000:2022
    both treat as misleading, and which customers read as fake anyway. */
+/* ONE STAR, FILLED TO THE SCORE.
+
+   Five stars is 65px of a card that has about 130px of text width on a phone,
+   and it spends all of it saying something a single number says better. A star
+   filled to 92% next to "4.6" carries the same meaning in a fifth of the room,
+   which is why every large shop reads this way on a card and saves the five-star
+   row for the product page where there is space to earn it.
+
+   The fill is a gradient hard-stopped at the score and clipped to the glyph, so
+   a 4.6 shows a genuinely 92%-filled star rather than rounding to five whole
+   ones. aria-label carries the real value, because a clipped gradient says
+   nothing to a screen reader. */
 function ratingBlockHTML(rating, reviewCount){
   const count = Number(reviewCount || 0);
   const value = Number(rating);
   if(!count || !(value > 0)){
     return '<span class="no-rating">No reviews yet</span>';
   }
-  return starsHTML(value) + '<span class="cnt">(' + count + ')</span>';
+  const pct = Math.max(0, Math.min(100, (value / 5) * 100));
+  const shown = (Math.round(value * 10) / 10).toFixed(1);
+  return '<span class="p-score" role="img" aria-label="Rated ' + shown + ' out of 5 from '
+      + count + ' review' + (count === 1 ? '' : 's') + '">' +
+      '<span class="p-star" style="--fill:' + pct.toFixed(1) + '%" aria-hidden="true">\u2605</span>' +
+      '<span class="rv">' + shown + '</span>' +
+      '<span class="cnt">(' + count + ')</span>' +
+    '</span>';
 }
 
 function starsHTML(rating){
@@ -6439,36 +7278,12 @@ function cartQtyForProduct(productId){
 /* Discount tag: only rendered when there is a real saving. The percentage is
    derived from MRP vs selling price rather than stored, so it can never drift
    out of step with a price change. */
-function discountTagHTML(p){
-  if(!(p.mrp > p.price)) return '';
-  const pct = Math.round((1 - p.price / p.mrp) * 100);
-  if(pct < 1) return '';
-  // Rotate through animation styles by product id so a grid doesn't show the
-  // same effect repeated down the page.
-  const styles = ['dt-pulse','dt-glow','dt-sweep','dt-bounce'];
-  const idx = Math.abs(hashCode(String(p.id))) % styles.length;
-  return '<div class="p-discount ' + styles[idx] + '">' +
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>' +
-    '<span>' + pct + '%</span></div>';
-}
 
 /* A plain 31-multiplier hash has poor LOW-BIT distribution: for similar-length
    strings the last bits repeat, so `hash % 4` kept selecting the same bucket
    and every product showed an identical animation. The xorshift finisher below
    avalanches the high bits down into the low ones, which is what makes a small
    modulo actually spread. */
-function hashCode(str){
-  let h = 2166136261; // FNV-1a offset basis
-  for(let i = 0; i < str.length; i++){
-    h ^= str.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  // Final avalanche so the low bits depend on the whole hash
-  h ^= h >>> 15; h = Math.imul(h, 2246822507);
-  h ^= h >>> 13; h = Math.imul(h, 3266489909);
-  h ^= h >>> 16;
-  return h >>> 0;
-}
 
 /* Adjusts quantity straight from the card. Stock is re-checked here so a
    customer cannot click past the available quantity, and the same message
@@ -6601,13 +7416,86 @@ function productHref(p){
   return p && p.slug ? pathForRoute('product', p.slug) : pathForRoute('product', p && p.id);
 }
 
+/* THE SAVING, SIZED TO ITS OWN NUMBER.
+
+   This used to rotate through four animations by hashing the product id, which
+   meant the style was random: a 5% saving could draw the loudest treatment on
+   the grid while a 70% saving sat still. The decoration and the number
+   disagreed, and the decoration is louder.
+
+   Four tiers now, chosen by how big the saving actually is, so the treatment IS
+   the information:
+
+     under 25%   a flat green chip. A real saving, stated, not sold.
+     25-49%      deeper green, and it breathes — slow, once every few seconds.
+     50-74%      amber to orange, with a light sweeping across it.
+     75%+        oxblood to red, a firmer pulse and a lift. The only tier that
+                 is allowed to be emphatic, because it is the only one that
+                 earns it.
+
+   A grid where the loudest chip is always the best deal can be scanned by
+   colour alone, which is what the rotation prevented. */
+function discountTagHTML(p){
+  if(!(p.mrp > p.price)) return '';
+  const pct = Math.round((1 - p.price / p.mrp) * 100);
+  if(pct < 1) return '';
+  const tier = pct >= 75 ? 'dt-max' : pct >= 50 ? 'dt-high' : pct >= 25 ? 'dt-mid' : 'dt-low';
+  return '<div class="p-discount ' + tier + '">' +
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true">' +
+      '<path d="M12 5v14M6 13l6 6 6-6"/></svg>' +
+    '<span>' + pct + '%</span></div>';
+}
+
+/* WHICH TAG GETS WHICH TREATMENT.
+
+   "Assign randomly" and "neighbours must not look the same" pull against each
+   other, and random loses: with three treatments, two cards side by side land on
+   the same one time in three, and a fresh draw on every re-render would change a
+   price tag's animation while somebody is looking at it.
+
+   So the starting point is a hash of the product id — stable for that product,
+   and irregular enough that the grid never reads as a mechanical 1-2-3 repeat —
+   and then it steps forward until it clashes with neither of the two cards
+   before it. Two back covers the card to the left in every grid this site uses,
+   and the card directly above on the two-across phone layout. With three
+   treatments and at most two to avoid, a free one always exists, so this cannot
+   loop or fall through to a duplicate. */
+const PRICE_ANIMS = 3;
+let _priceAnim = Object.create(null);
+
+function assignPriceAnims(list){
+  _priceAnim = Object.create(null);
+  const taken = [];
+  list.forEach(function(p, i){
+    const s = String(p.id || p.name || i);
+    let h = 0;
+    for(let k = 0; k < s.length; k++) h = (h * 31 + s.charCodeAt(k)) >>> 0;
+    let v = h % PRICE_ANIMS;
+    for(let step = 0; step < PRICE_ANIMS && (v === taken[i - 1] || v === taken[i - 2]); step++){
+      v = (v + 1) % PRICE_ANIMS;
+    }
+    taken[i] = v;
+    _priceAnim[String(p.id)] = v + 1;
+  });
+}
+
+/* Falls back to the first treatment rather than to none, so a card rendered
+   outside the grid still gets a finished-looking tag. */
+function priceAnimClass(p){ return ' pa-' + (_priceAnim[String(p.id)] || 1); }
+
 function productCardHTML(p, idx){
   const wished = wishlist.indexOf(p.id) > -1;
   // effectiveBadge, not p.badge: a card anywhere in the shop shows the same
   // computed truth as the Featured tabs, or the two disagree on the same page.
   const autoBadge = effectiveBadge(p);
-  const badgeHTML = autoBadge ? ('<span class="badge ' + badgeInfo(autoBadge).cssClass + '">' + escapeHtml(badgeInfo(autoBadge).text) + '</span>') : '';
+  const bi = autoBadge ? badgeInfo(autoBadge, p) : null;
+  /* bi.icon is SVG this file authored — never a product field — so it is the one
+     thing here that is inserted unescaped. bi.text still goes through escapeHtml
+     because a custom badge is typed by a person. */
+  const badgeHTML = bi ? ('<span class="badge ' + bi.cssClass + '">'
+    + (bi.icon || '') + '<span class="b-txt">' + escapeHtml(bi.text) + '</span></span>') : '';
   const wasHTML = p.mrp > p.price ? ('<span class="was">' + formatINR(p.mrp) + '</span>') : '';
+  const offPct = p.mrp > p.price ? Math.round((1 - p.price / p.mrp) * 100) : 0;
   return '' +
   '<div class="p-card" data-id="' + p.id + '">' +
     (!p.stock ? '<div class="p-stock-out"><span>Out of Stock</span></div>' : '') +
@@ -6622,14 +7510,30 @@ function productCardHTML(p, idx){
       quickAddHTML(p) +
     '</a>' +
     '<div class="p-body">' +
-      '<div class="p-cat">' + escapeHtml(catPath(p)) + '</div>' +
+      /* Category left, rating right, on ONE row.
+
+         They were two stacked rows, and between them plus the material line the
+         body ran to 194px against a 213px photo — a card 409px tall, so two
+         rows of products did not fit on a laptop screen and the second row was
+         never seen without scrolling. Every large shop puts these facing each
+         other across one line for exactly this reason. */
+      '<div class="p-meta">' +
+        '<span class="p-cat">' + escapeHtml(catPath(p)) + '</span>' +
+        '<span class="p-rating">' + ratingBlockHTML(p.rating, p.reviews) + '</span>' +
+      '</div>' +
       '<a class="p-name" href="' + productHref(p) + '" onclick="openProduct(\'' + p.id + '\'); return false;">' + escapeHtml(p.name) + '</a>' +
-      '<div class="p-rating">' + ratingBlockHTML(p.rating, p.reviews) + '</div>' +
       // Material instead of shortDesc here: shortDesc falls back to the
       // product NAME when a product has no description set, which is what
       // made the name appear twice on every card.
       (p.material ? '<div class="p-material">' + escapeHtml(p.material) + '</div>' : '') +
-      '<div class="p-price"><span class="now">' + formatINR(p.price) + '</span>' + wasHTML + '</div>' +
+      /* The saving sits with the price, which is the number it modifies, and
+         is right-aligned so a row of cards reads as one column of percentages.
+         It used to be a pill on the photo — the fourth thing competing for the
+         same image, alongside the badge, the wishlist controls and the add
+         button, one in each corner. */
+      '<div class="p-price' + (p.mrp > p.price ? ' has-off' + priceAnimClass(p) : '') + '">' +
+        '<span class="now">' + formatINR(p.price) + '</span>' + wasHTML +
+      '</div>' +
     '</div>' +
   '</div>';
 }
@@ -6675,6 +7579,8 @@ function renderGridInto(containerId, list){
     '</div>';
     return;
   }
+  // Decided across the whole list, because the rule is about neighbours.
+  assignPriceAnims(list);
   el.innerHTML = list.map(function(p,i){ return productCardHTML(p,i); }).join('');
 }
 
@@ -6795,8 +7701,53 @@ function isBestseller(p){
 /* What this product's badge should say. An explicit admin badge wins; otherwise
    bestseller outranks new, because "people are buying this" is the stronger
    reason to look at something than "it arrived recently". */
+/* THREE STATES, BECAUSE TWO WAS NOT ENOUGH.
+
+   Blank used to mean "compute one", and anything typed meant "use this". There
+   was no way to say NOTHING. A product could qualify as a bestseller on real
+   sales and the seller had no means of taking the badge off it — which is a
+   normal commercial decision: a line being discontinued, a piece whose supply
+   just became unreliable, a product they would rather not draw the eye to this
+   week. The only workaround was to type a different badge, which is a lie.
+
+     blank        the shop decides, on the maths below
+     "none"       no badge at all, whatever the maths says
+     anything     exactly that, whatever the maths says
+
+   "hide" and "off" are accepted for the middle case too. A seller reaching for
+   the idea should not have to guess this project's spelling of it. */
+const BADGE_SUPPRESSED = ['none', 'hide', 'off', 'no', 'hidden'];
+
+function badgeIsSuppressed(p){
+  return !!(p && p.badge && BADGE_SUPPRESSED.indexOf(String(p.badge).trim().toLowerCase()) > -1);
+}
+
+/* LIMITED — and the number is real.
+
+   The obvious build is a counter that ticks down on a timer, and it is a lie:
+   nothing is selling while the visitor watches, and a number that falls on its
+   own is a number that will still be falling tomorrow on an empty shop. It is
+   also the single most recognisable dark pattern in retail, and this shop sells
+   temple objects to people who are trusting it.
+
+   So the count is the ACTUAL remaining stock, and the animation is the digits
+   arriving at it — a short roll down to the true figure when the card appears,
+   which reads as urgency because the figure genuinely is low, and stops.
+   Scarcity that is real does not need to be performed twice. */
+const LIMITED_STOCK_MAX = 5;
+
+function isLimited(p){
+  const n = Number(p && p.stockQty);
+  return !!(p && p.stock && Number.isFinite(n) && n > 0 && n <= LIMITED_STOCK_MAX);
+}
+
 function effectiveBadge(p){
+  if(badgeIsSuppressed(p)) return '';
   if(p && p.badge) return p.badge;
+  /* Scarcity outranks social proof. "Bestseller" builds interest and "Only 2
+     left" closes, and a product that is both should say the one with a
+     deadline on it. */
+  if(isLimited(p)) return 'limited';
   if(isBestseller(p)) return 'bestseller';
   if(isNewArrival(p)) return 'new';
   return '';

@@ -697,6 +697,83 @@ section('[sec-12] The settings 015 seeds are actually editable, and admin_alert_
 }
 
 // ============================================================
+// [sec-N] Unknown-origin reporting must not become its own problem
+// ============================================================
+section('[sec-N] A log written per request is a denial of service on the log');
+{
+  const { createOriginReporter } = require('../src/utils/originReporter');
+
+  test('an origin is reported the first time it is seen', () => {
+    const r = createOriginReporter({ now: () => 1000 });
+    const due = r.report('https://evil.example');
+    assert.ok(due, 'the first sighting must be reported');
+    assert.equal(due.origin, 'https://evil.example');
+    assert.equal(due.suppressed, 0);
+  });
+
+  test('and stays quiet for the rest of the window', () => {
+    /* The live symptom: one misconfigured client produced several hundred
+       warnings in a couple of minutes, and on a plan with limited log retention
+       that pushes real errors out of the window entirely. */
+    let clock = 1000;
+    const r = createOriginReporter({ intervalMs: 60000, now: () => clock });
+    assert.ok(r.report('https://a.example'), 'first is reported');
+    for (let i = 0; i < 500; i++) {
+      clock += 100;                                   // still inside the minute
+      assert.equal(r.report('https://a.example'), null, 'repeat #' + i + ' must be silent');
+    }
+  });
+
+  test('then reports again, carrying what it swallowed', () => {
+    let clock = 1000;
+    const r = createOriginReporter({ intervalMs: 60000, now: () => clock });
+    r.report('https://a.example');
+    for (let i = 0; i < 7; i++) { clock += 1000; r.report('https://a.example'); }
+    clock += 60000;
+    const due = r.report('https://a.example');
+    assert.ok(due, 'a new window must report');
+    assert.equal(due.suppressed, 7, 'and must say how many it held back');
+  });
+
+  test('two different origins do not silence each other', () => {
+    const r = createOriginReporter({ now: () => 1000 });
+    assert.ok(r.report('https://a.example'));
+    assert.ok(r.report('https://b.example'), 'a second origin is its own case');
+  });
+
+  test('THE ONE THAT MATTERS: an attacker cannot grow the map without bound', () => {
+    /* Origin is attacker-controlled and can be different on every request. Left
+       unbounded, the thing added to stop a log flood becomes a slower memory
+       leak with exactly the same cause. */
+    let clock = 1000;
+    const r = createOriginReporter({ intervalMs: 60000, maxTracked: 500, now: () => clock });
+    for (let i = 0; i < 50000; i++) {
+      clock += 1;                                     // all inside one window
+      r.report('https://' + i + '.example');
+    }
+    assert.ok(r.tracked() <= 500,
+      `tracked ${r.tracked()} origins against a cap of 500`);
+  });
+
+  test('and a steady stream of one origin does not grow it either', () => {
+    let clock = 1000;
+    const r = createOriginReporter({ intervalMs: 1000, now: () => clock });
+    for (let i = 0; i < 5000; i++) { clock += 500; r.report('https://same.example'); }
+    assert.equal(r.tracked(), 1, 'one origin is one entry, however long it goes on');
+  });
+
+  test('the caller decides what to do with it, so nothing is logged in here', () => {
+    /* report() returns the payload rather than writing it. That is what lets the
+       window and the cap be tested with a fake clock instead of by booting the
+       server and reading its output. */
+    const src = require('fs').readFileSync(
+      require('path').join(__dirname, '..', 'src', 'utils', 'originReporter.js'), 'utf8');
+    assert.ok(!/logger|console\./.test(src),
+      'the reporter must stay free of the logger, or it can only be tested through it');
+  });
+}
+
+// ============================================================
 // Runner
 // ============================================================
 (async () => {

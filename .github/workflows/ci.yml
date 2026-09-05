@@ -152,6 +152,46 @@ jobs:
         # selling identically — so it is exercised over those distributions.
         run: npm run test:badges
 
+      - name: Sri Yantra geometry
+        # The mark on the hero, the awakening screen, the checkout spinner and
+        # the shop's own Sri Yantra icon are all generated from one table, so a
+        # bad edit to it is wrong in four places at once. The first version of
+        # this figure passed a check that asserted the same misunderstanding the
+        # code had, so these measure the emitted points: which way each triangle
+        # actually faces, that the ink is centred on the bindu, and that nothing
+        # escapes the innermost girdle and cuts through the lotus.
+        run: npm run test:yantra
+
+      - name: Invisible characters
+        # A regex backreference written as backslash-one through a non-raw
+        # Python string is an OCTAL escape: it produces U+0001, not a backslash
+        # and a one. That shipped in the preview server and was invisible to
+        # everything - sed printed nothing, grep matched around it, the file
+        # parsed, and the regex simply never matched. The symptom appeared three
+        # layers away. This also covers bidi overrides, which make source read
+        # differently from how it runs.
+        run: npm run check:chars
+
+      - name: CSS conflicts
+        # The product card once carried three overlapping phone blocks - 560px,
+        # 380px and 480px, in that order - each re-declaring its type sizes.
+        # Because 480px was written last it beat both of the others, which made
+        # the 380px block dead code and capped the product name at .84rem on
+        # every phone. Valid CSS, passing tests, and a size nobody chose. This
+        # fails on a wider max-width written after a narrower one, on overlapping
+        # min/max bands, and on any rule that can never win at any width.
+        run: npm run css:conflicts
+
+      - name: Responsive audit
+        # Eight routes at eight widths from 320px to 1440px, measured in a real
+        # browser: nothing may scroll sideways, no control may fall below the
+        # 44x44 minimum for a fingertip, no button may clip its own label, and
+        # no two controls may overlap. It starts its own preview server, because
+        # over file:// the catalog cannot be fetched and every grid comes back
+        # empty - an audit of the product card with no cards on the page would
+        # pass on a site where every one of them was broken.
+        run: npm run audit:responsive
+
       - name: SEO audit
         # Titles, canonicals and JSON-LD are written by JavaScript on every
         # navigation here, so nothing about them is visible in the source. A

@@ -16,9 +16,15 @@ function grab(name) {
 }
 
 const consts = html.match(/const NEW_ARRIVAL_DAYS[\s\S]*?const MIN_SELLING_PRODUCTS = \d+;/)[0];
-const src = consts + '\nlet _bestsellerCut = { src: null, value: null };\n'
+const limitedMax = html.match(/const LIMITED_STOCK_MAX = \d+;/)[0];
+const suppressed = html.match(/const BADGE_SUPPRESSED = \[[^\]]*\];/)[0];
+const src = consts + '\n' + limitedMax + '\n' + suppressed
+  + '\nlet _bestsellerCut = { src: null, value: null };\n'
   + grab('bestsellerThreshold') + '\n' + grab('isBestseller') + '\n' + grab('isNewArrival')
-  + '\nreturn { bestsellerThreshold, isBestseller, isNewArrival };';
+  + '\n' + grab('isLimited') + '\n' + grab('badgeIsSuppressed') + '\n' + grab('effectiveBadge')
+  + '\n' + grab('badgeInfo') + '\n' + grab('discountTagHTML')
+  + '\nreturn { bestsellerThreshold, isBestseller, isNewArrival, isLimited,'
+  + ' effectiveBadge, badgeInfo, discountTagHTML };';
 
 const mk = (P) => new Function('PRODUCTS', src)(P);
 
@@ -81,6 +87,76 @@ expect('a future-dated row is bad data, not a new arrival',
 expect('a missing date is not new', a.isNewArrival({ createdAt: null }), false);
 expect('an unparseable date is not new', a.isNewArrival({ createdAt: 'not-a-date' }), false);
 expect('no product at all does not throw', a.isNewArrival(null), false);
+
+
+// ---------------------------------------------------------------------------
+console.log('\nWhich badge wins, and why:\n');
+{
+  // Ten sellers, so the percentile has a real distribution to work from.
+  const shop = [];
+  for (let i = 0; i < 10; i++) shop.push({ id: 'p' + i, unitsSold: i * 3, stock: true, stockQty: 50, createdAt: daysAgo(400) });
+  const b = mk(shop);
+  const base = { stock: true, stockQty: 50, unitsSold: 0, createdAt: daysAgo(400) };
+  const with_ = (o) => Object.assign({}, base, o);
+
+  expect('a typed badge beats every computation',
+    b.effectiveBadge(with_({ badge: 'Certified', stockQty: 2, unitsSold: 999 })), 'Certified');
+
+  /* The third state. Blank means "decide for me" and a word means "use this",
+     and without a way to say NOTHING a seller could not take a badge off a
+     product the maths had badged — an ordinary decision for a line being
+     discontinued. */
+  for (const word of ['none', 'hide', 'off', 'no', 'hidden', 'NONE', ' Hide ']) {
+    expect('suppressed by "' + word.trim() + '"',
+      b.effectiveBadge(with_({ badge: word, stockQty: 1, unitsSold: 999 })), '');
+  }
+
+  /* Scarcity outranks social proof: "Bestseller" builds interest, "Only 2 left"
+     closes, and a product that is both should say the one with a deadline. */
+  expect('low stock outranks bestseller',
+    b.effectiveBadge(with_({ stockQty: 2, unitsSold: 999 })), 'limited');
+  expect('bestseller outranks new when stock is healthy',
+    b.effectiveBadge(with_({ unitsSold: 999, createdAt: daysAgo(1) })), 'bestseller');
+  expect('new when it is only new', b.effectiveBadge(with_({ createdAt: daysAgo(1) })), 'new');
+  expect('nothing when it is nothing', b.effectiveBadge(base), '');
+}
+
+console.log('\nLimited shows the REAL count, and never invents one:\n');
+{
+  const b = mk([]);
+  expect('five in stock is limited', b.isLimited({ stock: true, stockQty: 5 }), true);
+  expect('six is not', b.isLimited({ stock: true, stockQty: 6 }), false);
+  expect('sold out is out of stock, not limited', b.isLimited({ stock: false, stockQty: 0 }), false);
+  /* The one that matters. A counter ticking down on a timer is the most
+     recognisable dark pattern in retail, and this shop sells temple objects to
+     people who are trusting it. No stock figure means no scarcity claim. */
+  expect('an unknown quantity is NOT limited — scarcity is never invented',
+    b.isLimited({ stock: true, stockQty: null }), false);
+  expect('the label states the true number', b.badgeInfo('limited', { stockQty: 3 }).text, 'Only 3 left');
+}
+
+console.log('\nThe discount tier follows the SIZE of the saving:\n');
+{
+  const b = mk([]);
+  const tier = (pct) => {
+    const m = b.discountTagHTML({ mrp: 100, price: 100 - pct }).match(/dt-(\w+)/);
+    return m ? m[1] : 'none';
+  };
+  /* It used to hash the product id, so a 5% saving could draw the loudest
+     treatment on the grid while a 70% one sat still. The decoration and the
+     number disagreed, and the decoration is louder. Now the treatment IS the
+     information, and the grid can be scanned by colour alone. */
+  expect('5% is stated, not sold', tier(5), 'low');
+  expect('24% still low', tier(24), 'low');
+  expect('25% starts to breathe', tier(25), 'mid');
+  expect('49% still mid', tier(49), 'mid');
+  expect('50% catches the light', tier(50), 'high');
+  expect('74% still high', tier(74), 'high');
+  expect('75% is the only tier allowed to be emphatic', tier(75), 'max');
+  expect('90% still max', tier(90), 'max');
+  expect('no saving renders nothing', b.discountTagHTML({ mrp: 100, price: 100 }), '');
+  expect('a saving that rounds to zero renders nothing', b.discountTagHTML({ mrp: 1000, price: 999 }), '');
+}
 
 console.log(failed ? '\n  ' + failed + ' FAILED\n' : '\n  the badge maths holds on every distribution\n');
 process.exit(failed ? 1 : 0);

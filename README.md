@@ -1630,10 +1630,278 @@ measurement artifact, not a defect. Measure layout with transitions disabled.
 | `[fe-52]` | **no write behind a read grant** — all 28 mutating endpoints, checked structurally |
 | `test:contrast` | **what a person can actually read** — every text node, every route, measured in a browser |
 | `[fe-53]` | **no test re-derives its subject** — and no exported query ships an unresolved `${...}` |
+| `test:yantra` | **the Sri Yantra is one** — four up, five down, nothing touching the girdle, measured on the emitted points |
+| `test:frontend` FOOTER | **the phone footer cannot disagree with itself** — collapse, tab order and ARIA state all from one function |
 
 ```bash
 npm test
 ```
+
+### An invisible character that three tools could not see
+
+`npm run check:chars` scans every text file for stray control, zero-width and
+bidirectional-override characters. It is in `npm test` and CI, first in the
+chain, because everything after it can be corrupted this way.
+
+It exists because of a defect it found. A regex backreference written as
+backslash-one through a **non-raw** Python string is an octal escape: it produces
+`U+0001`, not a backslash and a one. That shipped in the preview server. `sed`
+printed nothing where it sat, `grep` matched around it, `node --check` parsed the
+file, and the regex simply never matched anything. The symptom surfaced three
+layers away, as a page serving two conflicting API bases — the injected local one
+and the original production one, with production winning because it came later.
+
+The fix removed the backreference entirely rather than escaping it correctly:
+spelling both quote styles out cannot be corrupted that way.
+
+The scan also covers bidi overrides (`U+202A`–`U+202E`, `U+2066`–`U+2069`), which
+make source **read** differently from how it **runs** — the basis of the Trojan
+Source class of attack. Verified by planting a `U+0001` in a throwaway file and
+watching the check fail, then pass once removed.
+
+### The admin console was still calling production
+
+The preview rewrite handled `index.html` and every prerendered product page,
+which **assign** the API base. `admin.html` does not — it reads the global and
+falls back to the production URL if nothing set it:
+
+```js
+const API_BASE = window.__API_BASE__ || 'https://chakrashri-api.onrender.com';
+```
+
+So the one page that talks to the database with staff credentials was the one
+page still reaching the live service from a local preview. The server now
+replaces the assignment where there is one and defines the global immediately
+after `<head>` where there is not. Verified across five page types: home, shop,
+cart, a prerendered product page and the admin console — one assignment each,
+none pointing at production.
+
+The check for which branch to take does the replace and compares the result,
+rather than calling `.test()` first. A global regex carries `lastIndex` between
+calls, so testing then replacing is the standard way to make a match silently
+begin halfway through a file.
+
+### The origin reporter is its own module, with its own tests
+
+The CORS suppression window and its cap on tracked origins moved into
+`src/utils/originReporter.js`. Inline in `server.js` they could only be tested by
+booting the server and reading log output; as a module with an injectable clock
+they are ordinary unit tests, seven of them in the security suite.
+
+The cap is not an optimisation. `Origin` is attacker-controlled and can differ on
+every request, so without a bound the fix for a log flood becomes a slower memory
+leak with the same cause. That test was verified by removing the prune and
+watching it fail: 50,000 distinct origins in one window must leave at most 500
+tracked.
+
+### The preview server does not call production
+
+`index.html` hard-codes `window.__API_BASE__` to the Render service, and the
+preview server used to serve that file verbatim. So every local preview called
+the live API. Auditing a design change across eight routes at eight widths is 64
+page loads, each firing several requests: the production log filled with
+hundreds of cross-origin warnings from `localhost`, real queries ran against the
+real database, and on a plan with limited log retention any genuine error was
+pushed out of the window by the noise.
+
+The preview server now rewrites the base to itself and answers `/api/` with an
+immediate 503. The storefront already falls back to `catalog.json` when the API
+is unreachable, which is exactly what a design preview wants. Set
+`PREVIEW_API=live` to opt back in deliberately.
+
+Measured after the change: API base `http://localhost:<port>`, **zero** requests
+to `onrender.com`, 14 product cards rendered from the snapshot, and 8 API
+requests total that stay flat for twelve seconds — no retry loop.
+
+The responsive audit also stopped waiting on `networkidle`. Product photographs
+are hot-linked from a dozen third-party hosts and some never finish, so the
+network is never idle; every route would have timed out and been recorded as
+"unreachable" rather than as a failure, quietly auditing nothing at all. It now
+waits for `domcontentloaded` plus a fixed settle, and an unreachable route is
+reported loudly with the reason.
+
+### "Blocked cross-origin request" blocked nothing
+
+The CORS handler calls `callback(null, false)` for an unknown origin. That does
+not refuse the request — it tells the `cors` package to omit the
+`Access-Control-Allow-Origin` header. The request then runs normally and returns
+**200**; it is the browser that refuses to hand the response to the page.
+
+That is the correct behaviour, but a log line reading "Blocked cross-origin
+request" beside a 200 sends whoever is reading it looking for a rejection that
+never happened. It now says what actually occurred.
+
+It was also unbounded: one misconfigured client produced several hundred lines in
+a few minutes. The same origin is now reported once a minute with a count of what
+it did in between, and the map that tracks it is capped — otherwise the fix for a
+log flood becomes a slower memory leak with the same cause, since an attacker can
+mint unlimited distinct `Origin` values.
+
+### Every control works down to 320px, and a check that proves it
+
+`npm run audit:responsive` renders eight routes at eight widths from 320px to
+1440px in a real browser and fails on five things: the page scrolling sideways,
+any element escaping the viewport, any control below 44x44 CSS pixels at 767px
+and under, a button clipping its own label, and two controls overlapping. It is
+in `npm test` and CI, and it starts its own preview server so it needs no setup.
+
+It could not use the `file://` trick the contrast suite uses. The catalog is
+fetched, and a `file://` page cannot fetch, so every grid comes back empty — an
+audit of the product card that runs with no cards on the page would pass on a
+site where every one of them was broken.
+
+It found, and these are now fixed:
+
+| control | was | now |
+|---|---|---|
+| shop view toggle | 32x32 | 44x44 |
+| footer social buttons | 38x38 | 44x44 |
+| header actions and menu | 40x40 | 44x44 |
+| filter button, pagination, carousel arrows | 40 | 44 |
+| featured tabs | 42 | 44 |
+| sort menu | 37 | 44 |
+| footer links | 19 tall | 44 |
+| breadcrumb links | 20 tall | 44 |
+
+Two overflows came with them. At 320px the header asked for 318px of controls
+inside 272px of content, so the gutters halve and the wordmark shrinks — the
+wordmark stays, because it was missing on mobile once already and putting it back
+was deliberate. And the shop column could not shrink below its toolbar's
+min-content, because `min-width` defaults to `auto` on a grid item: 339px of
+column in 312px of room, pushing the whole shop 5px past the screen. It was 3px
+before the view toggle grew to a real touch target, which is how a marginal
+overflow becomes a visible one.
+
+The touch-target rules sit at the END of the stylesheet on purpose. Written
+earlier they lost: `.footer-social`, `.view-toggle` and `.pagination` all declare
+their sizes further down the file, and at equal specificity the later rule wins,
+so three of them silently did nothing — the same trap as the card's three phone
+blocks, in a different neighbourhood. Those selectors are now watched by
+`css:conflicts` too.
+
+Verified by putting a defect back: the view toggle returned to 32px and the audit
+failed on it at three widths, then passed again once restored.
+
+### One rule per property, and a check that enforces it
+
+`npm run css:conflicts` fails the build when the same property is declared twice
+in a way where **source order** decides the winner. It is in `npm test` and CI.
+
+It exists because of a defect it would have caught. The product card carried
+three overlapping phone blocks — `max-width:560px`, then `380px`, then `480px`,
+in that order — each re-declaring the card's type sizes. Because the 480px block
+was written last it beat both of the others at every width it matched. That made
+the 380px block dead code, and it silently capped the product name at `.84rem` on
+every phone. Raising the name to `clamp(.88rem, 5.9cqi, 1.04rem)` appeared to do
+nothing below 480px; the rule was correct and simply outranked. Valid CSS,
+passing tests, and a size nobody chose.
+
+The three blocks are now one. Every type size comes from a single
+container-relative rule in the card's own section, and what remains at a viewport
+breakpoint is the only thing that is genuinely about the viewport rather than the
+card: how far apart the columns sit.
+
+The check reports three things and fails on the last two:
+
+| | |
+|---|---|
+| base plus overrides, descending | fine, listed for information |
+| a wider `max-width` written after a narrower one | fails — order decides |
+| overlapping `min`/`max` bands, or a rule that can never win | fails — ambiguous or dead |
+
+A descending cascade is correct CSS and is not flagged. It was verified by
+handing it the original three-block defect and watching it fail, then the same
+rules correctly ordered and watching it pass.
+
+### What the phone shows
+
+The card hid its category below 767px. That was right when the rating was five
+stars and a count, which took 65 of the ~130px a two-across card gives, so the
+category truncated to "IDOL…" — a label so cut down it named nothing. The rating
+is now one star with a percentage fill, around 45px, and both fit.
+
+Keeping a workaround after the thing it worked around has been replaced is how a
+phone quietly ends up showing less than a desktop for no present reason. Measured
+across eight widths: no clipping at 414px and above; at 390px and 360px the
+longest label ellipsizes, which still names the category. The narrowest phones
+buy that space back from tracking rather than by hiding the label.
+
+### Two rows on one screen, at every laptop width
+
+The photograph is square, so a card is as tall as it is wide plus its body, and
+dropping a column makes cards markedly **taller** rather than merely wider. At
+1024px three across gave a 309px card and a 454px row: two rows needed 932px
+against a 768px screen, so the second row sat below the fold on exactly the
+machines most likely to be looking. Each column step now happens one size later.
+
+| screen | across | card | two rows |
+|---|---|---|---|
+| 1440x900 | 5 | 227x360 | 744 |
+| 1180x720 | 5 | 207x340 | 704 |
+| 1024x768 | 4 | 226x355 | 734 (was 932) |
+| 768x1024 | 3 | 224x353 | 730 |
+
+The remainder-trimming bands moved with the steps, and the test derives them from
+the same numbers rather than restating them, so moving a step cannot leave a band
+behind hiding cards at a width that had room for them.
+
+### The price tag has three treatments
+
+A discounted price sits in a chip with a gold edge, and the chip carries one of
+three movements: a highlight sweeping the face, a slow rock where the left corner
+lifts as the right drops, or a bright point running the border.
+
+Which one a card gets is decided in `assignPriceAnims()` across the whole list,
+because the rule is about neighbours. Literal random cannot deliver it: with
+three treatments two cards side by side land on the same one time in three, and a
+fresh draw on every render would change a tag's animation while somebody is
+looking at it. So the starting point is a hash of the product id, and it steps
+forward until it clashes with neither of the two cards before it — enough to
+cover the card to the left in every grid here and the card above on the
+two-across phone layout.
+
+The border comet animates the gradient's **angle** through a registered custom
+property. Spinning the pseudo-element instead rotates the ring with it: a 102x38
+chip turned through 257 degrees becomes 103px tall, and the gold edge leaves the
+chip as a diagonal streak across the card. That shipped once.
+
+### The Sri Yantra is generated, not drawn
+
+`scripts/generate-yantra.js` builds the mark and `npm run yantra` prints it. Four
+places draw it — the awakening screen, the hero, the checkout spinner and the
+Sri Yantra category icon — and all four are spliced from that one file, each with
+its own element-id prefix, because three copies of the same `<use href="#petal">`
+in one document all resolve to the first and the other two render as nothing.
+
+What it replaced was three superimposed Stars of David: six triangles in mirrored
+pairs. A Sri Yantra has **nine** — four pointing up and five pointing down — and
+nine cannot be split into pairs, which is why pairs can never produce one. On a
+shop that sells Sri Yantras this was the one graphic that had to be right.
+
+`npm run test:yantra` measures the emitted points rather than the table that
+produced them. An earlier version of this check restated the table and so passed
+on a figure that was visibly wrong, with every triangle built upside down.
+
+**What is exact:** the counts, the directions, the symmetry about the vertical
+axis, the sixteen base endpoints lying on one circle, and the clearance between
+the triangles and the innermost girdle. **What is not:** the placement that makes
+every edge meet in a perfect triple intersection. That problem has no closed form
+and is solved numerically in the literature; this is the classical proportion
+fitted to it. Said plainly because a shop selling these should not overclaim one.
+
+The lotus took five attempts, and only the last one was about the curve. A petal
+drawn with crossing control points loops; one pointed at both ends is a leaf; one
+widened to close the gaps points inward; one narrowed to clear its neighbours is
+a fence. Underneath all four was the proportion: eight petals around a small
+circle each own a wide arc, so on a shallow band a petal is squat whatever shape
+it is given. Deepening the two bands to 58 and 66 units is what let a petal be
+wide enough to overlap its neighbours — those crossings near the base are what
+makes a ring read as a lotus — and still be taller than it is broad.
+
+Each placement passes the radius its OWN pulse keyframes rest at, because those
+keyframes set `r` outright. A single radius in the generator is invisible while
+the animation runs and wrong the moment it stops, which is what a visitor on
+reduced motion sees.
 
 Every guard in `[fe-28]`–`[fe-31]` was verified by **reintroducing the original
 defect and watching the test fail**, then restoring. A test that has never failed

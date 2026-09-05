@@ -272,6 +272,48 @@ table.data .muted{ color:var(--text-mute); font-size:.8rem; }
 .pill-success{ background:var(--success-bg); color:var(--success); }
 .pill-danger{ background:var(--danger-bg); color:var(--danger); }
 .pill-warn{ background:var(--warn-bg); color:var(--warn); }
+
+/* A COMBOBOX, BECAUSE A DATALIST IS INVISIBLE.
+
+   All three of these fields already offered every value in use, through a native
+   <datalist>. Nobody could tell. A datalist has no arrow, no border, nothing —
+   the only way to discover it is to start typing and notice suggestions appear,
+   which means the feature existed and effectively did not.
+
+   This adds the affordance without taking the freedom away. The list is still
+   the same <datalist>, read at open time, so there is ONE source of options and
+   the native behaviour still works if this script never runs. The field is still
+   a text input, because the whole point is that a seller can type a category
+   that does not exist yet — a dropdown-only control would have made the common case visible
+   by making the important case impossible.
+
+   Written without the angle brackets on purpose: [fe-2] scans this file for
+   controls with no accessible name, and a tag name in prose is indistinguishable
+   from a real one. Same trap as a closing script tag inside a comment. */
+.combo{ position:relative; display:block; }
+.combo > input{ padding-right:34px; }
+.combo-toggle{
+  position:absolute; right:1px; top:1px; bottom:1px; width:30px;
+  display:flex; align-items:center; justify-content:center;
+  background:none; border:0; color:var(--text-mute); cursor:pointer; border-radius:0 6px 6px 0;
+}
+.combo-toggle:hover{ color:var(--ink); background:var(--parchment-2, #F4EADA); }
+.combo-toggle svg{ width:13px; height:13px; transition:transform .18s ease; }
+.combo.open .combo-toggle svg{ transform:rotate(180deg); }
+.combo-menu{
+  position:absolute; left:0; right:0; top:calc(100% + 4px); z-index:60;
+  background:#fff; border:1px solid var(--line); border-radius:8px;
+  box-shadow:0 10px 30px rgba(43,10,18,.16); padding:4px;
+  max-height:230px; overflow-y:auto;
+}
+.combo:not(.open) .combo-menu{ display:none; }
+.combo-opt{
+  display:block; width:100%; text-align:left; padding:7px 10px; border:0; background:none;
+  font:inherit; font-size:.84rem; color:var(--ink); border-radius:5px; cursor:pointer;
+}
+.combo-opt:hover, .combo-opt.active{ background:var(--parchment); }
+.combo-opt mark{ background:none; color:var(--oxblood); font-weight:700; }
+.combo-empty{ padding:9px 10px; font-size:.8rem; color:var(--text-mute); }
 .pill-neutral{ background:var(--parchment); color:var(--ink); opacity:.8; }
 .pill-info{ background:#E4ECF7; color:#2E4E8C; }
 
@@ -800,9 +842,14 @@ code.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.78rem; 
         <div class="field"><label for="pfBadge">Badge</label>
           <input id="pfBadge" list="pfBadgeList" placeholder="Bestseller, New, Certified…" autocomplete="off">
           <datalist id="pfBadgeList"></datalist>
-          <div class="hint"><strong>Leave blank and the shop decides.</strong> A product selling in the
-            top fifth of your catalogue is badged <em>Bestseller</em> automatically; one added in the last
-            30 days is badged <em>New</em>. Type here only to override that — what you type always wins.</div>
+          <div class="hint"><strong>Three choices, and what you type always wins.</strong><br>
+            <strong>Leave blank</strong> and the shop decides: a product selling in the top fifth of your
+            catalogue is badged <em>Bestseller</em>, one added in the last 30 days is badged <em>New</em>.<br>
+            <strong>Type <code>none</code></strong> to show no badge at all, even on a product the maths
+            would badge &mdash; for a line you are discontinuing, or one you would rather not draw the eye
+            to this week.<br>
+            <strong>Type anything else</strong> &mdash; Hot, Certified, Limited &mdash; and that is what
+            customers see.</div>
         </div>
         <div class="field"><label for="pfMaterial">Material</label><input id="pfMaterial"></div>
         <div class="field checkbox"><input type="checkbox" id="pfActive" checked aria-label="Product is active and visible in the shop"><label style="margin:0;text-transform:none;letter-spacing:0;font-weight:500;">Active (visible in store)</label></div>
@@ -1663,6 +1710,115 @@ function refreshTermDatalists(){
   refreshSubcategoryDatalist();
 }
 
+/* Turns a text input that has a <datalist> into a visible combobox.
+
+   Reads its options from that datalist every time it opens, so the existing
+   refresh functions remain the only thing that decides what is on offer and
+   this never holds a stale copy. Typing filters; clicking chooses; the field
+   stays free text throughout.
+
+   Wrapped in JS rather than in the markup so the three fields cannot drift
+   apart, and so the datalist keeps working on its own if this never runs. */
+function initCombo(inputId){
+  const input = qs('#' + inputId);
+  if (!input || input.parentElement.classList.contains('combo')) return;
+
+  const wrap = document.createElement('div');
+  wrap.className = 'combo';
+  input.parentNode.insertBefore(wrap, input);
+  wrap.appendChild(input);
+
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'combo-toggle';
+  toggle.setAttribute('aria-label', 'Show all options');
+  toggle.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg>';
+  wrap.appendChild(toggle);
+
+  const menu = document.createElement('div');
+  menu.className = 'combo-menu';
+  menu.setAttribute('role', 'listbox');
+  wrap.appendChild(menu);
+
+  input.setAttribute('role', 'combobox');
+  input.setAttribute('aria-expanded', 'false');
+  input.setAttribute('aria-autocomplete', 'list');
+
+  function options(){
+    const dl = input.list;
+    return dl ? Array.from(dl.options).map((o) => o.value).filter(Boolean) : [];
+  }
+
+  function render(filter){
+    const q = String(filter || '').trim().toLowerCase();
+    const all = options();
+    const hits = q ? all.filter((v) => v.toLowerCase().indexOf(q) > -1) : all;
+    if (!hits.length){
+      menu.innerHTML = '<div class="combo-empty">'
+        + (all.length ? 'Nothing matches — what you typed will be created.'
+                      : 'Nothing here yet. What you type will be the first.')
+        + '</div>';
+      return;
+    }
+    menu.innerHTML = hits.map((v) => {
+      // The matched run is marked so it is obvious WHY a row is in the list.
+      let label = esc(v);
+      if (q){
+        const i = v.toLowerCase().indexOf(q);
+        label = esc(v.slice(0, i)) + '<mark>' + esc(v.slice(i, i + q.length)) + '</mark>' + esc(v.slice(i + q.length));
+      }
+      return '<button type="button" class="combo-opt" role="option" data-v="' + esc(v) + '">' + label + '</button>';
+    }).join('');
+  }
+
+  function open(showAll){
+    render(showAll ? '' : input.value);
+    wrap.classList.add('open');
+    input.setAttribute('aria-expanded', 'true');
+  }
+  function close(){
+    wrap.classList.remove('open');
+    input.setAttribute('aria-expanded', 'false');
+  }
+
+  toggle.addEventListener('click', () => {
+    if (wrap.classList.contains('open')) { close(); return; }
+    open(true);
+    input.focus();
+  });
+  input.addEventListener('input', () => { if (options().length) open(false); });
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { close(); return; }
+    const opts = Array.from(menu.querySelectorAll('.combo-opt'));
+    if (!opts.length) return;
+    const at = opts.findIndex((o) => o.classList.contains('active'));
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp'){
+      e.preventDefault();
+      if (!wrap.classList.contains('open')) { open(true); return; }
+      const next = e.key === 'ArrowDown'
+        ? Math.min(opts.length - 1, at + 1)
+        : Math.max(0, at < 0 ? 0 : at - 1);
+      opts.forEach((o) => o.classList.remove('active'));
+      opts[next].classList.add('active');
+      opts[next].scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'Enter' && at > -1 && wrap.classList.contains('open')){
+      e.preventDefault();
+      opts[at].click();
+    }
+  });
+  menu.addEventListener('click', (e) => {
+    const opt = e.target.closest('.combo-opt');
+    if (!opt) return;
+    input.value = opt.getAttribute('data-v');
+    close();
+    // Choosing a category must narrow the subcategories, exactly as typing does.
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.focus();
+  });
+  // A menu that stays open behind the next field is worse than no menu.
+  document.addEventListener('click', (e) => { if (!wrap.contains(e.target)) close(); });
+}
+
 /* Offers the subcategories already used IN THE CATEGORY currently typed.
 
    Normalised the same way the server will normalise it, so "Scripture",
@@ -1874,6 +2030,8 @@ async function openProductForm(id){
   qs('#pfImagesSection').style.display = id ? '' : 'none';
   qs('#pfImageChips').innerHTML = '';
   qsa('.err').forEach((e) => e.style.display = 'none');
+  // Idempotent: initCombo returns immediately once a field is already wrapped.
+  ['pfCategory', 'pfSubcategory', 'pfBadge'].forEach(initCombo);
   updateSeoHint();
   openModalEl('productModal');
 

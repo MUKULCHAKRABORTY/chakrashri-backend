@@ -4499,22 +4499,47 @@ section('[fe-48] Checkout in two panes, service search, badges, booking mail');
       'counted from paid orders only, like the category ranking');
   });
 
-  test('FEATURED: five across on desktop, three on tablet, mobile untouched', () => {
-    // Measured: 1440 -> 5, 1024 -> 3, 768 -> 3 (iPad portrait), 375 -> 2, and
-    // the shop grid stayed at 4 throughout.
+  test('FEATURED: the column steps and the trim bands cannot disagree', () => {
+    /* THE PHOTOGRAPH IS SQUARE, so a card is as tall as it is wide plus its
+       body, and dropping a column makes cards markedly TALLER rather than just
+       wider. At 1024px three across gave a 309px card and a 454px row: two rows
+       needed 932px against a 768px screen, so the second row sat below the fold
+       on exactly the machines most likely to be looking. Each step now happens
+       one size later. Measured, at real viewport heights:
+
+         1440x900  5 across  card 227x360  two rows 744  fits
+         1180x720  5 across  card 207x340  two rows 704  fits
+         1024x768  4 across  card 226x355  two rows 734  fits   (was 932)
+          768x1024 3 across  card 224x353  two rows 730  fits    */
     assert.match(html, /#featuredGrid\{ grid-template-columns:repeat\(5,1fr\); \}/);
-    assert.match(html, /@media \(max-width:1024px\)\{[\s\S]{0,120}?#featuredGrid\{ grid-template-columns:repeat\(3,1fr\); \}/);
-    assert.match(html, /@media \(max-width:767px\)\{[\s\S]{0,120}?#featuredGrid\{ grid-template-columns:repeat\(2,1fr\); \}/);
+    assert.match(html, /@media \(max-width:1100px\)\{ #featuredGrid\{ grid-template-columns:repeat\(4,1fr\); \} \}/);
+    assert.match(html, /@media \(max-width:900px\)\{ #featuredGrid\{ grid-template-columns:repeat\(3,1fr\); \} \}/);
+    assert.match(html, /@media \(max-width:767px\)\{ #featuredGrid\{ grid-template-columns:repeat\(2,1fr\); \} \}/);
+
     /* Ten cards divide by five and by two but not by four or three, so the two
-       middle widths trim their remainder instead of showing a stub row. */
-    assert.match(html, /@media \(min-width:1025px\) and \(max-width:1180px\)\{\s*#featuredGrid > :nth-child\(n\+9\)\{ display:none; \}/,
-      'four across shows eight, not 4+4+2');
-    assert.match(html, /@media \(min-width:768px\) and \(max-width:1024px\)\{\s*#featuredGrid > :nth-child\(n\+10\)\{ display:none; \}/,
-      'three across shows nine, not 3+3+3+1');
+       middle widths trim their remainder rather than showing a stub row. The
+       bands MUST line up with the column steps: a trim rule that outlives its
+       column count hides cards at a width that had room for them. Derived from
+       the same numbers rather than retyped, so moving a step cannot leave a band
+       behind. */
+    const step4 = Number(html.match(/@media \(max-width:(\d+)px\)\{ #featuredGrid\{ grid-template-columns:repeat\(4,1fr\)/)[1]);
+    const step3 = Number(html.match(/@media \(max-width:(\d+)px\)\{ #featuredGrid\{ grid-template-columns:repeat\(3,1fr\)/)[1]);
+    const step2 = Number(html.match(/@media \(max-width:(\d+)px\)\{ #featuredGrid\{ grid-template-columns:repeat\(2,1fr\)/)[1]);
+    assert.ok(step4 > step3 && step3 > step2, 'the steps must descend');
+
+    const band4 = html.match(/@media \(min-width:(\d+)px\) and \(max-width:(\d+)px\)\{\s*#featuredGrid > :nth-child\(n\+9\)\{ display:none; \}/);
+    const band3 = html.match(/@media \(min-width:(\d+)px\) and \(max-width:(\d+)px\)\{\s*#featuredGrid > :nth-child\(n\+10\)\{ display:none; \}/);
+    assert.ok(band4 && band3, 'both trim bands must exist');
+    assert.equal(Number(band4[2]), step4, 'the 4-across band must end where 4-across ends');
+    assert.equal(Number(band4[1]), step3 + 1, 'and begin one pixel above where 3-across starts');
+    assert.equal(Number(band3[2]), step3, 'the 3-across band must end where 3-across ends');
+    assert.equal(Number(band3[1]), step2 + 1, 'and begin one pixel above where 2-across starts');
+
     /* THE TRAP: an unbounded max-width chain needs display:revert to undo the
        previous step, and revert rolls back to the BROWSER default rather than to
        the author rule. .p-card is display:flex, so that would have made every
-       featured card display:block below 1024px. Bounded bands need no undo. */
+       featured card display:block below the first step. Bounded bands need no
+       undo, and these bands are bounded. */
     assert.ok(!/#featuredGrid > :nth-child\([^)]*\)\{ display:revert/.test(html),
       'revert would flatten .p-card from flex to block on tablet and mobile');
     // Scoped by id so the shop, related and wishlist grids are untouched.
@@ -4524,12 +4549,264 @@ section('[fe-48] Checkout in two panes, service search, badges, booking mail');
       'eight items under a five-wide grid leaves a ragged row of three');
   });
 
-  test('CARD: the corner brackets never move the grid, and show on touch', () => {
-    assert.match(html, /\.p-card::after\{[\s\S]{0,200}?position:absolute; inset:0; pointer-events:none/,
-      'a border or box-shadow on the card would change its geometry and shift the grid on hover');
-    assert.match(html, /@media \(hover:none\)\{\s*\.p-card::after\{ opacity:\.45; \}/,
-      'a touch device has no hover, so the brackets would otherwise never appear');
-    assert.match(html, /@media \(prefers-reduced-motion:reduce\)\{ \.p-card::after\{ transition:none; \} \}/);
+  test('CARD: a compact body, so two rows fit on one screen', () => {
+    /* MEASURED, NOT GUESSED. Before this: 213px of photo and 194px of text made
+       a 409px card, and two rows plus the section heading came to 841px against
+       a 794px laptop viewport — the second row was always below the fold. After:
+       a 127px body, a 341px card, and 732px for two rows. Every pixel came out
+       of text; the photograph was not touched, because the photograph is the
+       product. */
+    /* A BUDGET, NOT THREE MAGIC NUMBERS.
+       This used to assert padding:12px 14px 14px and gap:6px literally, so
+       raising the product name by one step — which had to buy those pixels back
+       out of the padding — failed a test that was never about padding. What has
+       to hold is the card's HEIGHT, so that is what is measured: the body's own
+       vertical chrome, whatever numbers produce it. */
+    const body = html.match(/\.p-body\{ padding:(\d+)px \d+px (\d+)px;[^}]*gap:(\d+)px; \}/);
+    assert.ok(body, 'the body must still declare its padding and gap in one rule');
+    const chrome = Number(body[1]) + Number(body[2]) + Number(body[3]);
+    assert.ok(chrome <= 30,
+      `the body's vertical chrome is ${chrome}px; above 30 the second row drops below a 794px fold`);
+    assert.match(html, /\.p-meta\{ display:flex;[^}]*justify-content:space-between/,
+      'category and rating share ONE row, facing each other');
+    assert.match(html, /\.p-name\{[\s\S]{0,400}?-webkit-line-clamp:2;/,
+      'two lines, clamped, so a long name cannot push the price down');
+    assert.match(html, /min-height:2\.7em; margin:0;/,
+      'and reserved, so a short name cannot pull it up either — prices align across a row');
+    /* The reserve is in em ON PURPOSE. It tracks the name's own size, so raising
+       the type does not need a second edit here and cannot silently start
+       clipping the second line. */
+    assert.match(html, /\.p-name\{[\s\S]{0,300}?font-size:clamp\(\.88rem, 5\.9cqi, 1\.04rem\)/,
+      'the name is one step up at every width, and still continuous rather than stepped');
+    /* The saving is back on the photograph, where it was, and now in four tiers
+       chosen by its own size rather than by hashing the product id — so the
+       loudest chip on the grid is always the best deal, and the grid can be
+       scanned by colour alone. */
+    assert.match(html, /\.p-discount\{[\s\S]{0,200}?left:6cqi;/,
+      'the chip is placed in card units, opposite the add button, so the two stay a pair');
+    for (const tier of ['dt-low', 'dt-mid', 'dt-high', 'dt-max']) {
+      assert.ok(html.indexOf('.' + tier) > -1, tier + ' must exist — four tiers, four treatments');
+    }
+    assert.ok(!/class="p-off"/.test(html),
+      'and it must not ALSO sit in the price row; saying the saving twice is worse than once');
+    assert.match(html, /\.no-rating\{ display:none; \}/,
+      '"No reviews yet" occupied a line on every card of a new shop to report an absence');
+    /* THE CATEGORY IS NO LONGER HIDDEN ON A PHONE.
+
+       It used to be, and the reason was sound at the time: the rating was five
+       stars and a count, which took 65 of the ~130px a two-across card gives,
+       so the category truncated to "IDOL…" — a label so cut down it named
+       nothing. The rating is now ONE star with a percentage fill, around 45px,
+       and both fit. Keeping the workaround after the thing it worked around was
+       replaced is how a phone quietly ends up showing less than a desktop for no
+       present reason. Measured: no clipping at 414px and above; at 390px and
+       360px the longest label ellipsizes, which still names the category. */
+    assert.ok(!/\.p-cat\{ display:none/.test(html),
+      'the category must not be hidden at any width — the desktop shows it, so a phone should too');
+    assert.match(html, /@media \(max-width:413px\)\{\s*\.p-cat\{ font-size:clamp\(\.56rem, 4\.2cqi, \.68rem\); letter-spacing:\.02em; \}/,
+      'the narrowest phones buy the space back from tracking rather than by hiding the label');
+  });
+
+  test('FOOTER: the phone accordion cannot drift out of agreement with itself', () => {
+    /* Shop and Company are thirteen links between them. Stacked on a 390px
+       screen they pushed the contact details and the copyright about two
+       screens down, so on a phone they collapse. Tablet and desktop are
+       untouched — the same markup serves all three, and which one you get is
+       decided in CSS and in one sync function, never by swapping DOM. */
+    assert.match(html, /@media \(max-width:560px\)\{[\s\S]{0,1200}?\.fc-body\{\s*display:grid; grid-template-rows:0fr;/,
+      'the collapse must exist only below 560px');
+
+    /* The 0fr-to-1fr trick animates only against ONE child. A <ul> has one per
+       link, and they would fall into implicit auto tracks and never close — so
+       the list is WRAPPED. The wrapper is built in JS so the two columns cannot
+       drift apart in the markup. */
+    assert.match(html, /\.fc-body > ul\{ min-height:0; overflow:hidden; \}/,
+      'the single collapsing child needs min-height:0, or the row will not shrink');
+    assert.match(grab('initFooterCols'), /createElement\('div'\)[\s\S]{0,200}?fc-body/,
+      'the wrapper is created at init, not written twice by hand');
+
+    /* overflow:hidden hides the links from the eye but NOT from the Tab key.
+       Without this a keyboard user tabs into thirteen invisible links and
+       watches focus disappear off the page. */
+    assert.match(grab('syncFooterCol'), /body\.inert = !open;/,
+      'a collapsed column must leave the tab order, which CSS alone cannot do');
+
+    /* "Collapsed" is a fact about the accessibility tree and a media query
+       cannot reach it, so above the breakpoint the ARIA state is removed rather
+       than left announcing "expanded" over a list nothing can collapse. */
+    const sync = grab('syncFooterCols');
+    assert.match(sync, /removeAttribute\('aria-expanded'\)/,
+      'no expanded state to report above the breakpoint, because nothing is collapsed');
+    assert.match(sync, /setAttribute\('tabindex', '-1'\)/,
+      'and the heading is not a tab stop there either');
+    assert.match(grab('toggleFooterCol'), /if\(!FOOTER_COLLAPSE_MQ\.matches\) return;/,
+      'a click on the heading above the breakpoint must do nothing at all');
+
+    /* A MediaQueryList that nothing references can be collected, and its change
+       listener goes with it. Held in a variable for exactly that reason. */
+    assert.match(html, /const FOOTER_COLLAPSE_MQ = window\.matchMedia/,
+      'the MediaQueryList is retained, or the change listener can be collected');
+
+    /* A hidden or backgrounded tab stops handing out frames, so an rAF debounce
+       silently never runs — the accordion then looks broken at every width and
+       the debounce is the last place anyone thinks to look. */
+    const init = grab('initFooterCols');
+    assert.ok(!/requestAnimationFrame/.test(init),
+      'the resize debounce must not be frame-aligned: a hidden tab never fires one');
+    assert.match(init, /setTimeout\(syncFooterCols/, 'debounced on a timer instead');
+    assert.match(init, /addEventListener\('resize'/,
+      'and resize is listened to as well as the media query');
+  });
+
+  test('PRICE TAG: three treatments, and no neighbour repeats one', () => {
+    /* The tag carries the one number a shopper is hunting for, so it is a step
+       larger and properly bold — and the struck-through MRP is deliberately left
+       alone, because raising both together restores the sameness this fixes. */
+    assert.match(html, /\.p-price \.now\{[^}]*font-size:clamp\(1\.14rem, 7\.8cqi, 1\.42rem\)[^}]*font-weight:800/,
+      'the selling price is a size up and bold');
+    /* THE RELATIONSHIP, NOT THE NUMBER. What has to hold is that the struck
+       MRP stays smaller than the selling price at EVERY width, which a pair of
+       literal sizes cannot promise once both are container-relative. Comparing
+       the MRP's ceiling against the selling price's floor does. */
+    const nowR = html.match(/\.p-price \.now\{[^}]*font-size:clamp\(([\d.]+)rem, [\d.]+cqi, ([\d.]+)rem\)/);
+    const wasR = html.match(/\.p-price \.was\{ font-size:clamp\(([\d.]+)rem, [\d.]+cqi, ([\d.]+)rem\)/);
+    assert.ok(nowR && wasR, 'both prices must be container-relative, from one rule each');
+    assert.ok(Number(wasR[2]) < Number(nowR[1]),
+      `the MRP tops out at ${wasR[2]}rem and the price starts at ${nowR[1]}rem; ` +
+      'the MRP must be smaller at every width, not merely at one');
+
+    for (const n of [1, 2, 3]) {
+      assert.ok(html.indexOf('.p-price.pa-' + n) > -1, 'treatment ' + n + ' must exist');
+    }
+    assert.match(html, /@keyframes priceSheen\{/, '1 — a highlight sweeps the face');
+    assert.match(html, /@keyframes priceRock\{/, '2 — the tag rocks, left up as right drops');
+    assert.match(html, /@keyframes cometRun\{ to\{ --comet:360deg; \} \}/,
+      '3 — a bright point runs the border');
+
+    /* The comet animates the gradient ANGLE. Spinning the pseudo-element
+       instead rotates the ring with it, and the gold edge comes out of the chip
+       as a diagonal streak across the card — which is exactly what shipped
+       before. A registered custom property is what makes this animatable. */
+    assert.match(html, /@property --comet\{ syntax:'<angle>';/,
+      'the comet needs a registered angle, not a rotated element');
+    assert.ok(!/\.p-price[^{]*::before\{[^}]*animation:[^}]*rotate/.test(html),
+      'nothing may rotate the ring itself');
+
+    // Every treatment must be removable, and the gold edge must survive it.
+    assert.match(html, /@media \(prefers-reduced-motion:reduce\)\{\s*\.p-price\.pa-1::after\{ animation:none; display:none; \}\s*\.p-price\.pa-2\{ animation:none; transform:none; \}\s*\.p-price\.pa-3::before\{ animation:none; \}/,
+      'all three stop under reduced motion, and only the movement is lost');
+
+    /* Random would put the same treatment on two cards side by side one time in
+       three, and would redraw the grid differently on every render. */
+    const assign = grab('assignPriceAnims');
+    assert.ok(!/Math\.random/.test(assign), 'the choice must be stable, not redrawn each render');
+    assert.match(assign, /taken\[i - 1\] \|\| v === taken\[i - 2\]/,
+      'it steps past the two cards before it, so no near neighbour can match');
+    assert.match(html, /assignPriceAnims\(list\);\s*el\.innerHTML = list\.map/,
+      'and it is decided across the whole list, because the rule is about neighbours');
+  });
+
+  test('PRICE TAG: the comet leads with its head, and the shake is a shake', () => {
+    /* A comet is bright at the front and fades behind. The gradient turns
+       clockwise, so a stop at a LARGER angle leads and a smaller one trails —
+       putting the bright end at the low angle would draw the tail in front,
+       which reads as a smear rather than as something moving. */
+    const comet = html.match(/\.p-price\.pa-3::before\{[\s\S]*?\n\}/);
+    assert.ok(comet, 'the comet treatment must still declare its ring');
+    /* Keep the leading dot in the capture: reading ".18" as 18 makes the dimmest
+       stop look like the brightest, and then this test measures the tail as the
+       head and passes on a comet pointing the wrong way. */
+    const stops = [...comet[0].matchAll(/(?:rgba\([^)]*,\s*(\.\d+|\d+(?:\.\d+)?)\)|(#FFFFFF))\s+(\d+)deg/g)]
+      .map((m) => ({ a: m[2] ? 1 : Number(m[1]), deg: Number(m[3]) }));
+    assert.ok(stops.length >= 5, 'a head and a tail need more than a couple of stops');
+    const brightest = stops.reduce((b, s) => (s.a > b.a ? s : b));
+    const tail = stops.filter((s) => s.deg < brightest.deg && s.a > 0);
+    assert.ok(tail.length >= 3, 'the tail must be a graded fade behind the head, not one stop');
+    assert.ok(stops.filter((s) => s.deg > brightest.deg && s.a > 0).length <= 1,
+      'and it must cut off just past the head, or the tail leads');
+    assert.match(comet[0], /filter:drop-shadow\(/,
+      'the head glows rather than merely being pale');
+    assert.match(comet[0], /padding:1\.9px;/,
+      'a one-pixel edge cannot carry a highlight, so this ring is thicker');
+
+    /* Two keyframes is a metronome. A shake needs to change direction more than
+       once and to lift as it tilts. */
+    const rock = html.match(/@keyframes priceRock\{[\s\S]*?\n\}/)[0];
+    assert.ok((rock.match(/transform:rotate/g) || []).length >= 4,
+      'the rock needs at least four stops to read as a shake');
+    assert.match(rock, /translateY/, 'and a little lift with each tilt');
+    const angles = [...rock.matchAll(/rotate\((-?\d*\.?\d+)deg\)/g)].map((m) => Math.abs(Number(m[1])));
+    assert.ok(Math.max(...angles) > 1.2, 'it was too subtle to notice at under a degree');
+    assert.ok(Math.max(...angles) < 3,
+      'and it sits beside a price somebody has to read, so it cannot go far');
+  });
+
+  test('HOT BADGE: the flame is behind the word, and large enough to be fire', () => {
+    /* At 12px beside the caption it was a speck doing an animation nobody could
+       see. Out of flow and centred, it can be more than twice that without the
+       badge growing to make room. */
+    const flame = html.match(/\.badge-hot \.b-flame\{[\s\S]*?\n\}/);
+    assert.ok(flame, 'the hot badge must place its flame explicitly');
+    assert.match(flame[0], /position:absolute;/, 'out of flow, so the badge does not widen');
+    const w = Number(flame[0].match(/width:(\d+)px/)[1]);
+    assert.ok(w >= 24, `the flame is ${w}px; below about 24 it reads as a speck again`);
+    assert.match(flame[0], /z-index:-1;/, 'behind the label');
+    assert.match(html, /\.badge-hot \.b-txt\{ position:relative; z-index:1; \}/,
+      'and the label explicitly in front of it');
+
+    /* The label is white on a red gradient. A pale flame lifting that background
+       is the fastest way to lose the contrast the badge palette was fixed for,
+       so the opacity is held down and test:contrast measures the result. */
+    const op = Number(flame[0].match(/opacity:\.?(\d+)/)[1]) / 100;
+    assert.ok(op > 0 && op <= 0.6,
+      `flame opacity is ${op}; above about .6 the white label starts to fail AA`);
+  });
+
+  test('ADD BUTTON: the whole circle is inside the crop', () => {
+    /* It sat at bottom:-4px inside a photo box that is overflow:hidden, so the
+       bottom of the circle and its 2px border were sliced off at every screen
+       size. The button read as a half-moon. */
+    const inset = html.match(/\.p-quickadd\{ position:absolute; right:6cqi; bottom:(-?\d+)px;/);
+    assert.ok(inset, 'the quick-add must still declare its own inset');
+    assert.ok(Number(inset[1]) > 2,
+      `bottom is ${inset[1]}px; anything at or below zero is clipped by .p-media's overflow`);
+    const small = html.match(/\.p-quickadd\{ bottom:(-?\d+)px; \}/);
+    assert.ok(small && Number(small[1]) > 2, 'and the phone override must clear the crop too');
+    // The chip on the other side sits on the same line, so the two read as a pair.
+    assert.match(html, /\.p-discount\{\s*position:absolute; left:6cqi; bottom:9px;/,
+      'the discount chip shares the button\'s baseline');
+
+    /* A step smaller at the top end, with the 44px floor untouched: that floor
+       is the minimum touch target, not a style choice. */
+    assert.match(html, /\.qa-add\{ width:clamp\(44px, 22cqi, 46px\); height:clamp\(44px, 22cqi, 46px\)/,
+      'smaller ceiling, same accessible floor');
+  });
+
+  test('CARD: the hover says pickable, not decorated', () => {
+    /* The corner brackets are gone. Four gold hairlines drawing themselves
+       around a card is ornament, and what should change on hover in a shop grid
+       is the sense that the card can be picked up. */
+    assert.ok(!/\.p-card::after/.test(html),
+      'the corner-bracket pseudo-element must not come back');
+    assert.match(html, /\.p-card:hover, \.p-card:focus-within\{\s*transform:translateY\(-3px\);/,
+      'a lift, and focus-within gets it too so a keyboard sees what a mouse sees');
+    // transform and box-shadow composite; neither reflows the grid around the card.
+    assert.match(html, /\.p-card\{ background:#fff; color:var\(--ink\);[^}]*transition:box-shadow[^}]*transform var\(--dur\)/,
+      'animating anything that affects layout would shift every neighbouring card');
+  });
+
+  test('CARD: the grid arrives staggered, and reduced motion removes it entirely', () => {
+    assert.match(html, /@keyframes pCardIn\{ from\{ opacity:0; transform:translateY\(8px\); \}/);
+    assert.match(html, /\.product-grid \.p-card\{ animation:pCardIn [^}]*backwards; \}/,
+      'backwards holds the start frame during the delay, or a card flashes at full opacity first');
+    // A stagger with one delay is not a stagger.
+    const delays = html.match(/\.product-grid \.p-card:nth-child\([^)]+\)\{ animation-delay:\d+ms; \}/g) || [];
+    assert.ok(delays.length >= 10, 'expected a delay per card in the row, found ' + delays.length);
+    /* Removed, not shortened. With no animation there is no fill either, so the
+       card renders where it belongs instead of holding an invisible start frame
+       — which is how a reduced-motion visitor ends up staring at an empty grid. */
+    assert.match(html, /@media \(prefers-reduced-motion:reduce\)\{[\s\S]{0,400}?\.product-grid \.p-card\{ animation:none; \}/);
+    assert.match(html, /@media \(prefers-reduced-motion:reduce\)\{[\s\S]{0,400}?\.p-card:hover, \.p-card:focus-within\{ transform:none; \}/);
   });
 
   // --------------------------------------------------------- booking emails
@@ -4799,8 +5076,26 @@ section('[fe-50] One rule, one place — the combinations this pass closed');
   test('ADMIN: the badge field no longer tells the seller the opposite', () => {
     assert.ok(!/Leave blank for no badge/.test(admin),
       'blank now means the shop computes one — the old hint was actively false');
-    assert.match(admin, /Leave blank and the shop decides/);
+    /* THREE states now, not two. Blank was "compute one" and anything typed was
+       "use this", with no way to say NOTHING — so a product the maths badged a
+       bestseller could not have the badge taken off it, which is an ordinary
+       commercial decision for a line being discontinued. */
+    assert.match(admin, /<strong>Leave blank<\/strong> and the shop decides/);
+    assert.match(admin, /<strong>Type <code>none<\/code><\/strong> to show no badge at all/,
+      'the suppression state has to be offered in the console, or it does not exist');
     assert.match(admin, /what you type always wins/);
+    // And the storefront has to honour it.
+    assert.match(html, /const BADGE_SUPPRESSED = \['none', 'hide', 'off', 'no', 'hidden'\];/,
+      'a seller reaching for the idea should not have to guess this project spelling of it');
+    /* Read from effectiveBadge itself rather than a fixed slice after the
+       constant: isLimited was later inserted between the two and the window
+       stopped reaching this line, which made the assertion silently test
+       nothing until it happened to fail. */
+    const eff = html.slice(html.indexOf('function effectiveBadge('), html.indexOf('function effectiveBadge(') + 700);
+    assert.match(eff, /if\(badgeIsSuppressed\(p\)\) return '';/,
+      'suppression must be checked BEFORE the typed badge and before the maths');
+    assert.match(eff, /if\(isLimited\(p\)\) return 'limited';[\s\S]{0,120}?if\(isBestseller\(p\)\)/,
+      'scarcity outranks social proof: the badge with a deadline on it wins');
     // And the table must not print a dash for a product the shop badges.
     const fn = admin.slice(admin.indexOf('function badgeCell('), admin.indexOf('function badgeCell(') + 1200);
     assert.match(fn, /if\(p\.badge\) return '<span class="pill pill-warn">'/);
@@ -4856,6 +5151,34 @@ section('[fe-50] One rule, one place — the combinations this pass closed');
     assert.strictEqual(adminDays, shopDays,
       'the console and the storefront would disagree about which products are New');
     assert.ok(!/86400000 <= 30/.test(admin), 'the window must not be inlined again');
+  });
+
+  test('ADMIN: category, subcategory and badge offer every value in use', () => {
+    /* All three already did, through a native <datalist>, and nobody could tell:
+       a datalist has no arrow and no border, so the only way to discover it is
+       to start typing and notice. The feature existed and effectively did not.
+
+       The combobox adds the affordance without taking the freedom away. It is
+       still a text input, because a seller must be able to type a category that
+       does not exist yet — a <select> would have made the common case visible by
+       making the important case impossible. */
+    const fn = admin.slice(admin.indexOf('function initCombo('), admin.indexOf('function initCombo(') + 4200);
+    assert.match(fn, /if \(!input \|\| input\.parentElement\.classList\.contains\('combo'\)\) return;/,
+      'idempotent, or opening the form twice wraps the field twice');
+    assert.match(fn, /const dl = input\.list;/,
+      'options come from the datalist, so the existing refresh functions stay the only source');
+    assert.match(fn, /input\.dispatchEvent\(new Event\('input', \{ bubbles: true \}\)\)/,
+      'choosing a category must narrow the subcategories exactly as typing does');
+    for (const key of ['Escape', 'ArrowDown', 'Enter']) {
+      assert.ok(fn.indexOf(key) > -1, 'keyboard: ' + key + ' must be handled');
+    }
+    // Wired for all three, once, where the form opens.
+    assert.match(admin, /\['pfCategory', 'pfSubcategory', 'pfBadge'\]\.forEach\(initCombo\);/);
+    // The fields stay free text.
+    for (const id of ['pfCategory', 'pfSubcategory', 'pfBadge']) {
+      assert.match(admin, new RegExp('<input id="' + id + '" list="' + id + 'List"'),
+        id + ' must remain an input with a datalist, never a select');
+    }
   });
 
   test('ADMIN: SEO guidance sits where a product is actually written', () => {

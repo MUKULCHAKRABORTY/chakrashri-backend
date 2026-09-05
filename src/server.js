@@ -114,6 +114,21 @@ const allowedOrigins = [
   ...String(process.env.ADDITIONAL_CLIENT_ORIGINS || '').split(',').map(normalizeOrigin)
 ].filter(Boolean);
 
+/* THE LOG LINE SAID "BLOCKED", AND NOTHING WAS BLOCKED.
+
+   callback(null, false) does not refuse the request. It tells the cors package
+   to omit the Access-Control-Allow-Origin header, and the request then runs
+   normally and returns 200 — it is the BROWSER that refuses to hand the response
+   to the page. That is the correct behaviour, but "Blocked cross-origin request"
+   next to a 200 sends whoever is reading the log looking for a rejection that
+   never happened.
+
+   The suppression window and the cap on tracked origins live in
+   utils/originReporter, where they can be tested with an injectable clock
+   instead of by booting the server and reading its output. */
+const { createOriginReporter } = require('./utils/originReporter');
+const originReporter = createOriginReporter();
+
 app.use(
   cors({
     origin(origin, callback) {
@@ -122,7 +137,13 @@ app.use(
       // enforce for a caller that is not a browser.
       if (!origin) return callback(null, true);
       if (allowedOrigins.includes(normalizeOrigin(origin))) return callback(null, true);
-      logger.warn('Blocked cross-origin request', { origin });
+      const due = originReporter.report(origin);
+      if (due) {
+        logger.warn('Cross-origin response sent without CORS headers — the browser will withhold it', {
+          origin: due.origin,
+          suppressed: due.suppressed || undefined
+        });
+      }
       return callback(null, false);
     },
     credentials: true,
