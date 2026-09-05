@@ -61,6 +61,1065 @@ npm run check:storefront
 Reports what a visitor would actually get. Add `npm run check:share` after a
 deploy to confirm the live site serves it. Both are read-only.
 
+## The product card, rebuilt around one control that changes state
+
+Every part of the storefront grid card was redrawn. The photograph carries a
+badge and two permanent controls, the body reads title, rating, price, button,
+and that button is the same rounded rectangle whether the basket is empty or
+not.
+
+### What is on the photograph
+
+| Element | Where | Notes |
+|---|---|---|
+| Badge | top left | one of seven grounds and one of four movements, dealt per product |
+| Wishlist | top right | permanent, not hover-revealed; 34px painted, 44px target on a phone |
+| Quick view | bottom right | same treatment, same gap from the edge |
+
+The badge's ground and movement are **dealt, not stored**. A hash of the product
+id picks one of each, then steps forward while it clashes with a neighbour: four
+back for the ground, because in a four-across grid the card directly above is
+four positions earlier in the list, and two back for the movement, because there
+are only four of those to go round. All seven grounds carry white text at 4.5:1
+or better, measured rather than chosen — the palest is `#B4560F` at 4.55:1 and
+the darkest `#2E1B45` at 13.79:1.
+
+The face is Barlow Condensed at 700. A badge has to be short and loud at once,
+and a condensed face gets the word into a strip with 2px of padding without
+shrinking the letters to nothing.
+
+### What is in the body
+
+Title, rating, price row, button. Category and subcategory came off; someone
+browsing a category does not need to be told which one they are in.
+
+The rating is a drawn star rather than the `*` glyph, with its inner radius at
+0.55 of the outer where the textbook figure is 0.382 — that is what makes the
+arms broad instead of spindly. Beside it the average is bold and the review
+count sits in dimmer brackets, the way every large shop writes it.
+
+The price row is one line at full body width: the selling price large and bold,
+then `MRP` with the old price struck through in a muted red, then the discount
+tag pushed to the right edge with a down arrow, the real percentage and the word
+`off`. Below 208px of card the tag drops to its own line, all of it, for every
+card in that grid, because the threshold is a **container** query on the card
+rather than a media query on the window.
+
+### One button, two states
+
+Empty, the whole rectangle adds. Once something is in the basket the same
+rectangle becomes a stepper, and all three of its parts are targets:
+
+| Press | What it does |
+|---|---|
+| minus, at the left end | removes one |
+| the cart, in the middle | adds one |
+| plus, at the right end | adds one |
+
+Two of the three add. Pressing the cart is what pressing the cart meant a moment
+earlier, when this was a single Add to Cart button, and a customer does not know
+the control changed shape underneath them. Only the minus takes away, so
+removing stays a deliberate press.
+
+The count rides on the cart icon's shoulder in a gold disc and pops — overshoot
+and settle — **only on the card that changed**. `syncAllQuickAddControls` reads
+each card's previous count off its own `data-qty` and asks for the animation
+only where the number went up, so a grid of eight does not flash eight badges
+when one thing is added.
+
+The plus and minus carry no ring. What they carry is a rounded wash the size of
+their real target, lit on hover: the click area is the whole end of the strip,
+top to bottom, and the wash is what says so. It is `currentColor` at 15%, which
+is white on the maroon ground and oxblood on the gold one, so one declaration
+covers both states.
+
+### The hover is the mark's own gold
+
+`#F0D08A` is the third band of the Sri Yantra this shop is built around — it
+comes out of `scripts/generate-yantra.js`, where it is the ring colour. Oxblood
+on it measures 7.27:1. The count inverts with the strip, or a gold badge on a
+gold ground would disappear. Notify Me, which takes the button's place when a
+product is out of stock, hovers to a light green with black text at 15.9:1.
+
+### The words go before the layout does
+
+`Add to Cart` is shown while the card is wider than 208px and hidden below it.
+That number is measured, not guessed:
+
+| Container | Room between the ends | The icon and the words want |
+|---|---|---|
+| 209.5px | 113.5px | 110px — shown |
+| 202.7px | 106.7px | 109.3px — hidden |
+
+The gap between icon and words closes from 9px to 7px under 240px so the tighter
+case is not living on three pixels. The alternative — shrinking the two ends to
+make room — would have taken the fingertip minimum away from the two things a
+customer is actually pressing, so the label goes instead. It ships in the markup
+either way and CSS decides, so the accessible name never changes with the
+viewport.
+
+### The flight to the cart
+
+The chip that flies from the button to the header cart takes 2.6 seconds along a
+Bezier with a decaying sine laid across its normal, which is what makes the path
+zigzag and settle rather than arc. It carries a feathered halo on a 1.05s cycle
+and rotates with the swing. `prefers-reduced-motion` turns all of it off.
+
+### One number places all three corners of the photograph
+
+The badge, the wishlist and the quick view are inset from the picture's edges by
+the same amount, or the corners stop reading as a set. That was three
+hand-written numbers in three rules and two media queries, and they had already
+drifted: on a phone the badge sat 9px in and both buttons sat 18px in, because
+the buttons grow to a 44px target there while the circle painted inside them
+does not, and nobody had subtracted the difference.
+
+The card now carries four custom properties and does the arithmetic itself:
+
+| Property | What it is |
+|---|---|
+| `--photo-gap` | how far the painted edge sits from the picture's edge |
+| `--photo-btn` | the target, which the pointer decides |
+| `--photo-disc` | the circle, which the design decides |
+| `--photo-pad` | half the difference, derived and never typed |
+
+A button is positioned at `gap - pad`, which lands its circle at exactly `gap`.
+Change the gap and all three corners move together. Raise the target for touch
+and nothing moves at all. Measured at ten widths from 320 to 1440, the badge and
+both circles now sit at 9px on a phone and 12px above it, to the pixel.
+
+### The question was the pointer, not the window
+
+Three rules asked `max-width: 767px` when what they needed to know was whether a
+finger was pointing at them. An iPad at 834px is a finger, and it was getting
+34px targets on the wishlist, the quick view and both ends of the stepper.
+
+Pulling on that thread found the same mistake in the site-wide touch-target
+block, which had been written as "every control at 767px and below". Measured on
+an 834px tablet, this is what a finger was being offered:
+
+| Control | Size on a tablet |
+|---|---|
+| Shop view toggle | 32 x 32 |
+| Pagination | 40 x 40 |
+| Footer social buttons | 38 x 38 |
+| Sort menu | 166 x 35 |
+| Filter button | 133 x 40 |
+| Footer and breadcrumb links | 38 x 20 |
+
+Every number that block exists to prevent, on a device it never looked at. All
+of them now use the site's own idiom for this, `(hover: none), (max-width:
+980px)` — the same pair the filter rows, the category chips and the service
+search already used, and now the card's `--photo-btn` as well, so a reader
+learns it once. The width catches a touch laptop that reports a hover it does
+not really have.
+
+The change only ever makes a target bigger, and it was measured before it was
+made: at 768, 834, 900 and 980 on four routes, no horizontal scroll and nothing
+escaping its container. A frontend assertion now pins the query, so the block
+cannot quietly go back to asking about the window.
+
+Widening the stepper's ends takes twenty pixels out of its middle, so the line
+where `Add to Cart` stops fitting moves with them, from 208px of card to 232px,
+inside the same query. Without that the words would have started truncating on
+any touch device wide enough to still be showing them.
+
+### Three fingertips do not fit on the narrowest card
+
+Two across on a 320px phone gives a 143.5px card, and the strip is the card less
+about 111px. With both ends at 44 the middle came out 32 wide — a small target
+between two large ones, which is the arrangement people mis-tap.
+
+The plus is what goes there, because it is the one redundant thing on the strip:
+the middle already adds, and it is the largest area. What is left is a minus at
+the left end and a large add everywhere else, with the cart padded back over the
+centre so it does not sit off to one side. It is `display: none`, so the control
+leaves the tab order with it rather than being offered to a keyboard and denied
+to a finger.
+
+### Two shop states the audit had never rendered
+
+The card's add control has two shapes and only the first was ever measured,
+because a freshly loaded page has an empty cart. The shop also has a list view
+behind its toggle and nothing had ever switched it on. Both gaps hid real
+defects:
+
+- **The list row capped two of the button's three shapes.** It named the button
+  and the out-of-stock notice, not the stepper the button becomes on the first
+  click, so a 1440px row grew a 644px banner the moment a customer pressed it.
+- **The out-of-stock wash was sized against the card, not the picture.** A 1/1
+  aspect ratio on a box pinned to the card's edges is the picture's box in a
+  grid and nothing like it in a list row: at 1440 it painted a 916px-tall wash
+  over the title, the price and the Notify Me button. It is a child of the
+  picture now with `inset: 0`, which needs no arithmetic and no breakpoint, and
+  it sits under the two corner controls instead of greying them out — wishlisting
+  something out of stock is how a customer asks to be told it is back.
+
+`scripts/responsive-audit.js` now adds an item and flips the toggle on the shop
+route, so both states are measured at every width. That took the run from 168
+route-and-width combinations to 184, and the very first pass found the 32px
+middle described above.
+
+### Two things this work broke, and what now stops them
+
+**Roughly 300 lines of card CSS fell inside a phone-only media query.** Removing
+an override deleted the block's contents and left its opening line behind. Every
+check passed: the syntax checker reads JavaScript, the conflict scanner read
+declarations, contrast and the responsive audit both measured a page that was
+merely wrong rather than broken. It was found by measuring one element — a star
+that computed to 209.5px wide — and asking why.
+
+`scripts/css-conflicts.js` now runs a `structure()` pass over every stylesheet
+before it scans for conflicts. It checks that braces balance, skipping comments
+and strings, and that **indentation agrees with nesting**: a rule written at
+column zero that the braces place inside a conditional block is an unclosed
+block, and it is named with its line number. Negative-tested by reintroducing
+the exact blunder, which now exits 1.
+
+**The title stopped being a finger-sized row.** The old `2.7em` reserve held two
+lines open so short-named cards ended level with the rest; the Add to Cart
+button's `margin-top:auto` does that properly now, so the reserve went — and
+went too far. A one-line title is 19px tall on a 320px phone and the responsive
+audit asks 24 of a text link, because that is the row a finger lands on. It
+failed the gate. There is a 26px floor there now: a minimum for the tap, not a
+reserve for the layout, so two-line names at 2.68em are untouched.
+
+### What was measured
+
+Nine widths from 320 to 1440, every card in every grid: no sideways scroll, no
+undersized target, no clipped label, no two neighbouring badges sharing a ground
+or a movement, and one price-row and one button layout per grid rather than a
+mixture. Then every page that renders a card — home, shop, wishlist, product —
+at six widths, checking that the badge and both circles share one inset, that
+nothing is clipped by the picture's crop, and that the out-of-stock wash is the
+size of the picture.
+
+`npm test` runs all of it: 366 frontend assertions, the card interaction suite
+in a real browser, 184 route-and-width combinations in the responsive audit, and
+the contrast suite measuring what each text node actually sits on.
+
+One thing worth knowing when previewing locally: `product/<slug>/index.html` is
+prerendered and embeds a copy of the stylesheet, so a product page keeps showing
+the old CSS until `npm run prerender` runs again. Netlify does that on every
+deploy and `npm test` does it before the tests, so it only bites a hand-run
+preview — it cost half an hour here, looking at a related-products rail that
+appeared not to have taken the fix.
+
+## The price became a sticker, the button inherited its chip, and bulk mail got its headers
+
+Two pieces of work. The product card's price and its add button traded places,
+and everything the price chip was wearing moved onto Buy Now. The subscriber
+update learned bold and links, and every message this application sends gained
+the headers a receiving mail server actually judges bulk mail on.
+
+### 8a. The price and the add button traded places
+
+| | Was | Now |
+|---|---|---|
+| **On the photograph** | badge, discount tag, **add button** | badge, discount tag, **price sticker** |
+| **In the card body** | **price chip**, Buy Now | **add button**, Buy Now |
+
+The price is where a shopper's eye lands first and where every large shop puts
+it. The two actions are now together on one row, which is what makes them read
+as a choice rather than as one control and one label.
+
+Two consequences fell out of the move and are worth stating:
+
+- **The add caption lost its dark pill.** It carried one because it floated over
+  a product photograph nobody chose for contrast, and gold on ink was the only
+  way to guarantee it could be read. On a surface this stylesheet owns, oxblood
+  measures 10.83:1 — and the pill was costing 16px of horizontal padding on a
+  row where two controls share 116px at 320px.
+- **The card got shorter.** 344px to 317px at 390px, because the tall two-part
+  add control replaced a one-line chip rather than adding to it.
+
+| What | Where |
+|---|---|
+| The sticker | `index.html` → `priceTagHTML` **(~line 7866)** |
+| The add control, now a row item | `.p-quickadd` **(~line 1572)**, `.qa-add-lbl` **(~line 1376)** |
+| Proof both halves of the swap happened | `test/browser-cards.test.js` — on the photo, in the body, and neither in both |
+
+### 8b. The sticker — a burst, not a pill
+
+Selling price on top, the price it replaced struck through in red underneath.
+That order is not decoration: it answers *what does this cost* before *what did
+it cost*.
+
+**Why a burst.** There are two real buttons on this card and a rounded pill is
+what both of them look like. A sticker has to read as a label applied to the
+picture, not as a third thing to press. The eleven spikes are deliberately
+**uneven** — a mechanical star reads as a rating widget, an uneven one reads as
+a price sticker.
+
+Three things the shape cost, each paid for explicitly:
+
+1. **`clip-path` removes everything outside the path, including a box-shadow.**
+   A shadow declared on the clipped element simply never appears. It lives on
+   the wrapper as a `filter: drop-shadow`, which follows the clipped silhouette
+   — so the sticker casts the shadow of its own spikes.
+2. **The usable area is the inner radius, not the box.** The padding looks
+   generous for the type size. It is not slack; it is what keeps the text inside
+   the star.
+3. **The points are percentages**, so a longer price makes a wider burst rather
+   than overflowing one.
+
+**It is always there now.** The chip it replaces appeared only when there was a
+discount, because a decoration on every card in the body is wallpaper. A price
+on the photograph is a different thing — the price is the one fact a card exists
+to state — so a product at full price simply gets one line instead of two.
+
+The struck price is `#C1121F`, which measures **5.29:1** against the deepest
+tone in the fill behind it where AA asks for 4.5. A lighter, prettier red fails
+for the people who most need to read the number.
+
+| What | Where |
+|---|---|
+| The shape, the fill, the padding | `index.html` → `.p-pricetag`, `.pt-burst` **(~line 1836)** |
+| The two prices | `.pt-now`, `.pt-was` **(~line 1859)** |
+| Proof, including the measured contrast and that the spikes really do vary | `test/frontend.test.js` → `[fe-56]` STICKER |
+
+A strikethrough is a visual convention and means nothing to a screen reader, so
+the word **was** is carried in a visually hidden span. Without it the reader
+hears two prices in a row with nothing to say which one is charged.
+
+### 8c. Buy Now wears what the price chip used to wear
+
+The warm fill, the masked gold ring and all three movements — the sheen, the
+rock, the comet — belonged to the price chip and moved here with it, **including
+the rule that came with them**: no two cards near each other may run the same
+movement. `assignPriceAnims()` is unchanged; only the element it is applied to.
+
+That is not decoration for its own sake. The price is a sticker on the
+photograph now, so Buy Now is the thing in the body that has to catch the eye,
+and it inherits the treatment that was already doing that job.
+
+**The hover is the one thing that could not simply move.** The old outlined
+button filled with solid oxblood; doing that to a gold chip would be a colour
+change big enough to read as a different control appearing. It deepens and
+lifts instead — same promise, same direction, in the material the button is now
+made of.
+
+| What | Where |
+|---|---|
+| The chip, the ring and the hover | `index.html` → `.p-buynow` **(~line 1586)** |
+| The three movements, now on the button | `.p-buynow.pa-1` / `.pa-2` / `.pa-3` |
+| Proof the neighbour rule survived the move | `test/browser-cards.test.js` — four cards, no two adjacent alike |
+
+### 8d. Two controls, one row, at every width
+
+The row used to hold the price and one button and was **allowed** to wrap. It
+holds two buttons now, and a card whose actions stack is taller than the card
+beside it, which breaks the grid's rhythm on exactly the screens where it shows
+most. So the row cannot wrap. Where space runs out, **the button gives**:
+
+- **"Buy Now" becomes "Buy"** below 190px of card. Both labels ship and a
+  container query picks one, so the accessible name comes from `aria-label` and
+  does not change with the viewport.
+- **And it takes what is left of the row.** Shrink-wrapped around "Buy" it came
+  out 42px wide next to a 44px circle — two round controls the same size, which
+  tells a customer nothing about which is which. Filling the remainder makes it
+  a pill again, and a pill beside a circle is a pair.
+
+Measured at 320, 360, 390, 480, 640, 768, 1024, 1280 and 1440:
+
+```
+wrapped rows        0 at every width
+controls escaping   0
+sticker off-image   0
+sticker over the discount tag   0
+```
+
+| What | Where |
+|---|---|
+| The row that cannot wrap | `index.html` → `.p-buyrow` **(~line 1561)** |
+| The label swap and the fill | `@container (max-width: 190px)` **(~line 1624)** |
+| Proof | `test/frontend.test.js` → `[fe-56]` and `[fe-55]` CARD |
+
+### 8e. Smaller stickers on a phone
+
+The badge and the discount tag are annotations **on** a photograph and their
+type was set for a desktop card. On a 144px card the badge ran to 78px and the
+discount tag to 55px — between them more than the width of the picture they
+annotate, and the price sticker has to share that bottom edge now.
+
+Type and padding come down at 767px. Neither is a control, so no touch minimum
+applies to either — which is exactly why these two are the ones that *can* come
+down, where Notify Me could only come down in width.
+
+### 8f. The subscriber update learned bold and links
+
+An owner writing to the whole list needs to emphasise a date and link to a
+product. The obvious way to allow that is a rich-text box that produces HTML,
+and it is the wrong way: it means accepting HTML from a form and sanitising it,
+and a sanitiser is a denylist of everything an attacker might try. On the one
+route in this application whose output every subscriber reads, that is the wrong
+shape of problem to take on.
+
+So the input stays **plain text** and carries two markers:
+
+```
+**bold**                        ->  <strong>bold</strong>
+[shop the malas](https://…)     ->  <a href="https://…">shop the malas</a>
+```
+
+and the HTML is *produced* by a function that can emit those two tags and
+nothing else. An admin who types `<script>` gets `<script>` shown to their
+subscribers as the text they typed, because every piece of their input is
+escaped on the way out — the tags are added *around* escaped text, never parsed
+out of it.
+
+**The URL is matched, not trusted.** The pattern admits `https?://` followed by
+characters that cannot terminate an attribute or a tag, so `javascript:`,
+`data:` and a quote that would break out of the href are simply not matches and
+the text is shown literally. That is a whitelist, which is the only kind of
+check worth having here. The test runs the pattern rather than reading it:
+
+| Input | Becomes |
+|---|---|
+| `[a](javascript:alert(1))` | the literal text, no link |
+| `[b](data:text/html,x)` | the literal text, no link |
+| `[c](https://ok.test/p)` | a link |
+
+The syntax is shown under the composer, because a syntax an owner cannot see is
+one they will not use — and the alternative to using it is pasting HTML that
+this route correctly refuses to interpret.
+
+| What | Where |
+|---|---|
+| The two markers and the parser | `src/routes/admin.routes.js` → `UPDATE_LINK_OR_BOLD`, `renderUpdateInline` **(~line 1176)** |
+| The plain-text half, built from the source | `renderUpdatePlain` |
+| Proof, by running the pattern | `test/frontend.test.js` → `[fe-56]` MAIL |
+
+The message title is now bold in the shell every template shares, so an update
+reads as an update rather than as a paragraph that happens to be first.
+
+### 8g. What a receiving mail server actually judges
+
+Round 19 fixed the DNS half of deliverability — SPF, DKIM and DMARC alignment —
+and this README records that as configuration. **The half that lives in code was
+never set at all:**
+
+| Missing | Why it matters |
+|---|---|
+| `List-Unsubscribe` + `List-Unsubscribe-Post` | Since **February 2024** Gmail and Yahoo require one-click unsubscribe on bulk mail. A marketing message without it is filtered on that basis alone. RFC 8058 needs *both* headers — the URL is not one-click without the POST header. |
+| A plain-text part | An HTML-only message is one of the oldest and most reliable spam signals there is, because very little legitimate mail is sent that way. Everything now goes `multipart/alternative`. |
+| `Reply-To` | Mail from an address that bounces on reply reads as one-way broadcast traffic. |
+
+The unsubscribe header is computed **inside `sendMail`, from the recipient** —
+not passed in by the caller. A header that every marketing email must carry
+cannot depend on each of twenty call sites remembering to supply it. A
+transactional message correctly gets none: offering to unsubscribe from an order
+confirmation is offering the wrong thing.
+
+The text part is the caller's own words where it has them — the subscriber
+update does, because the admin typed plain text in the first place — and a
+reduction of the HTML everywhere else. That reduction **keeps every link's
+URL**: in a text part a link that has lost its destination is a dead end.
+
+| What | Where |
+|---|---|
+| The headers, and why they are set here | `src/utils/email/engine.js` → `sendMail` **(~line 478)** |
+| The HTML reduction | `htmlToText` **(~line 193)** |
+| Proof, against a stubbed transport rather than a stubbed engine | `test/emails.test.js` → `[mail-5]` |
+
+`[mail-5]` stubs one layer lower than the rest of that file: the rest stub
+`sendMail`, which is right for asking what a template renders and useless for
+asking what is handed to SMTP. The headers are set *inside* `sendMail`, so they
+are invisible to a stub of it.
+
+**Still outside this repository, and unchanged:** DKIM alignment. If a received
+message's `signed-by` ever shows your provider instead of `chakrashri.com`,
+alignment is broken and mail is going to Spam regardless of any header above.
+Round 19 explains how to check it.
+
+```bash
+npm run email:log -- --failed    # why a message did not arrive
+```
+
+## The back office on a phone, and a card that says what its buttons do
+
+Seven things were reported. Six were in the admin console, and they had one
+cause between them: **no automated check had ever rendered `admin.html` at a
+phone width.** The responsive audit covered ten storefront routes at eight
+widths and the console at none, so the whole back office sat outside the gate.
+It is inside it now — 168 route/width combinations, up from 64 — and extending
+it found more than was reported.
+
+### 7a. A table was dragging the whole page sideways
+
+**Measured, not guessed:** at a 320px viewport the two dashboard cards sat at
+**404px**. A grid item's default `min-width` is `auto`, which means *never shrink
+below my content*, and both tables are wider than a phone. So the cards refused
+to shrink, the page scrolled sideways, and because the sidebar is positioned
+against the document rather than the viewport it shifted with the scroll and
+left a blank strip down the right — exactly as reported.
+
+`.table-wrap{overflow-x:auto}` could never have helped. The card **around** the
+wrapper was already too wide, so there was nothing left for it to clip.
+
+One declaration fixes the scrolling. It still leaves a four-column table to
+swipe, which is not readable on a 320px screen however it scrolls, so below
+640px **the two panels stop being tables**: each row becomes a block and each
+cell a label/value pair, with the label read from `data-label` on the cell.
+
+| What | Where |
+|---|---|
+| The grid children may shrink; the wrapper scrolls inside the card | `admin.html` → `.grid-2 > *, .grid-3 > *` **(~line 238)** |
+| The phone layout, and the label each cell carries | `table.data.stack-sm` **(~line 565)** |
+| Proof, including the two traps below | `test/frontend.test.js` → `[fe-55]` DASHBOARD |
+
+Two traps met on the way, both recorded in the CSS:
+
+- `display:block` on `tr` is an **author** rule and beats the browser's own
+  `[hidden]{display:none}`, so every collapsed variant row was visible the
+  moment the phone layout engaged. The disclosure looked broken while the markup
+  was correct.
+- A cell holding a name **and** a summary line put the summary under the
+  *label*, reading as though "3 variants low" were the field name.
+
+### 7b. Low Stock Alert — one row per product, opened to see its sizes
+
+The panel listed one row per low **variant**, repeating the base product name
+each time, so a dhoti in five sizes filled it with the word "Dhoti" and buried
+every other product that needed attention.
+
+It is now one row per product with a disclosure. The row says what is behind it
+before you open it — *"3 variants low · 1 out of stock"* — and opening it shows
+each size with its own option label, its own SKU and its own count, the same
+detail a standalone product row carries. A product with no variants keeps a
+plain row, because a chevron that opens nothing is worse than no chevron.
+
+Two details that matter more than they look:
+
+- **The worst variant decides the group.** One size out of stock is more urgent
+  than three sizes down to four, whatever the row counts, so that is what sorts
+  the list and what the group's pill shows.
+- **An open group survives a refresh.** The open set lives outside the render,
+  or pressing Refresh silently collapses a group somebody had opened to work
+  through.
+
+| What | Where |
+|---|---|
+| Grouping, the summary line, and the worst-first order | `admin.html` → `loadLowStock` **(~line 1980)** |
+| The disclosure, and the state that survives a refresh | `toggleLowStockGroup` **(~line 1969)** |
+| Styling | `.ls-*` **(~line 507)** |
+| Proof, in a real browser | `test/browser-orders.test.js` — collapsed, hidden, expands, worst first |
+
+### 7c. A product name now opens the product, not the form that edits it
+
+`productLink()` called `openProductForm()`, so a product name **anywhere** in the
+console — the dashboard, the product table, an order's line items, the restock
+waitlist — dropped whoever clicked it into an edit screen. That is the wrong
+destination for the overwhelmingly common intent: somebody reading an order
+wants to *see* what was bought, the way the customer saw it. Editing is what the
+Edit control on the row is for.
+
+Every one of them now opens the storefront's own product page in a new tab.
+
+**It takes a slug and checks.** Every call site passed the **id** before this
+change, and an id builds `/product/<uuid>` — a link that looks perfectly fine
+and 404s. A uuid-shaped value is refused and the name renders as plain text, so
+a missed call site is visibly unlinked rather than quietly broken, and `[fe-55]`
+additionally fails the build if any call site passes something that is not a
+slug.
+
+The slug had to come from somewhere: four admin queries now select it, and their
+`GROUP BY` clauses moved with them — the kind of break that only appears against
+a real database.
+
+| What | Where |
+|---|---|
+| The link, and the uuid guard | `admin.html` → `productLink` **(~line 2436)** |
+| The four queries that now carry the slug | `src/routes/admin.routes.js` — top-products, low-stock ×2, stock-waitlist |
+| Proof no call site passes an id | `test/frontend.test.js` → `[fe-55]` PRODUCT LINKS |
+
+### 7d. The inbox tabs, and an update sent to every subscriber
+
+**A selected tab looks selected.** `switchInboxTab` has toggled an `active`
+class since the inbox was built and **nothing in the file ever styled it**, so
+the console showed five identical buttons and the only way to tell which panel
+you were on was to read the table under it. One rule now covers both the inbox
+tabs and the review tabs, so they cannot drift apart. The message-status filter
+also stops appearing over panels it does nothing to.
+
+**Subscription update** is a new tab, and it connects something that already
+existed: `sendNewsletter` — marketing category, per-campaign dedupe, unsubscribe
+link, consent check — has been in the mail engine since it was built and
+**nothing had ever called it.** The subscriber list has been collecting
+confirmed addresses that nobody could write to.
+
+The composer says how many people it reaches before a word is typed, refuses to
+enable Send until both fields would pass the server's own validators, asks for
+confirmation naming that number, and afterwards reports what happened —
+including what was **skipped**, which is the figure that tells an owner the list
+is not what they think it is.
+
+Three things it does not do, each deliberate:
+
+- **It does not re-implement consent.** `sendMail` already refuses a suppressed
+  address, one with no marketing consent, and everything when the marketing
+  switch is off, and logs each outcome. A second copy of those rules is a second
+  place for them to drift.
+- **It does not trust the text.** The body is plain text an admin typed, escaped
+  and *then* wrapped in paragraph tags — that order, because escaping the
+  assembled HTML would destroy the tags and adding tags to unescaped text is the
+  injection. This is the one route in the console that turns typed input into an
+  email every subscriber reads.
+- **It cannot double-send.** The client issues a campaign id when the composer
+  opens and replaces it only after a send **succeeds**, so a double-click carries
+  the same id and the engine's dedupe drops the second copy per recipient. A
+  retry after a *failure* keeps the id, so anyone who did receive it is not
+  mailed twice.
+
+Reaching every subscriber at once needs its **own** grant. `customers:contact`
+is one-to-one and a wrong reply is fixed by another reply; a broadcast is
+neither, so `subscribers:broadcast` is separate and staff do not hold it.
+
+| What | Where |
+|---|---|
+| The route, and what it refuses to restate | `src/routes/admin.routes.js` **(~line 1057)** |
+| The capability | `src/middleware/capabilities.js` → `SUBSCRIBERS_BROADCAST` |
+| The composer | `admin.html` → `loadBroadcastComposer`, `sendSubscriberBroadcast` **(~line 4099)** |
+| The selected-tab treatment | `.inbox-tab.active, .rv-tab.active` |
+| Proof, in a real browser | `test/browser-inbox.test.js` — gating, the confirmation, the payload, the rotated id |
+
+### 7e. What a courier actually gets when you press Copy
+
+The copied block was bare **values** with no field names:
+
+```
+Mukul Chakraborty
+18 Burra Baajar Road, Flat 3B
+Howrah - 711101
+```
+
+A packer pasting that into a courier portal had to work out from **position**
+which box each line belonged in, and a missing optional line silently shifted
+everything below it up by one. It also carried no order reference, so a pasted
+address could not be tied back to the order it came from.
+
+Every line now names its field, and the order id is last:
+
+```
+Recipient Name : Mukul Chakraborty
+Phone : +91 70765 11660
+Email : mukul@example.com
+Address : 18 Burra Baajar Road, Flat 3B
+Landmark / Area : Near Howrah Maidan Metro
+City : Howrah
+State : West Bengal
+PIN Code : 711101
+Country : India
+Order ID : CHK-2026-0042
+```
+
+That position for the reference is deliberate: everything above it is *where the
+parcel goes*, and it is *which order this is*. A courier portal is filled
+top-down from the address; the reference is what gets written on the manifest
+afterwards. It is the human order **number**, not the internal uuid, because the
+number is what the customer quotes.
+
+The list was written out three times — the drawer, the copy, the printed label —
+and the three had already diverged, which is how the copy ended up with no field
+names while the drawer had them. **All three now read one declaration.** Account
+Email is marked as not-for-label: it is where the customer signs in, not where
+the parcel goes.
+
+| What | Where |
+|---|---|
+| The one declaration all three read | `admin.html` → `shippingAddressFields` **(~line 3115)** |
+| The copied and printed block | `shippingAddressBlock` **(~line 3149)** |
+| Proof | `test/browser-orders.test.js` — every line labelled, order id last, account email withheld |
+
+### 7f. A refund confirmation that opened behind the drawer
+
+The modal was `z-index:100` and the order drawer `z-index:101`, so **every**
+confirmation opened behind the drawer that raised it. On a desktop the drawer is
+480px and the centred dialog peeked out beside it, which is why it was never
+caught. On a phone the drawer is `min(480px,100vw)` — the whole screen — so the
+dialog was completely invisible: an admin tapping Refund saw the page dim and
+nothing else, with Confirm unreachable behind the panel. On the money path.
+
+The layers are named now rather than typed at each site, so the next control
+that needs one has an ordering to join instead of a number to guess. The rule
+they encode: **a thing you opened sits above the thing you opened it from, and a
+message about what just happened sits above everything.**
+
+Verified in a browser at 390px and 1440px: the dialog is the topmost element at
+the centre of its own box, and Confirm is both reachable and in the viewport.
+
+| What | Where |
+|---|---|
+| The scale | `admin.html` → `:root` layer tokens **(~line 401)** |
+| Proof a modal can never sink below a drawer again | `test/frontend.test.js` → `[fe-55]` LAYERS |
+
+### 7g. The product card — a button that says what it does
+
+**The `+` and the words under it are one button.** The circle on its own was an
+unlabelled affordance: it relied on the customer already knowing that a plus
+over a product photograph means "put this in my basket", which is a convention
+rather than a fact, and it is the convention a first-time visitor is least
+likely to hold. An `aria-label` told a screen reader and nobody else. The
+caption is **inside** the same `<button>`, so the whole stack is one hit area —
+a label beside a control that does nothing when pressed would be worse than no
+label. It carries its own dark pill because it sits over a photograph nobody
+chose for contrast; gold on ink measures **10.96:1**.
+
+**Buy Now sits to the right of the price tag**, outlined rather than filled,
+because Add to Cart above it is the primary action and two solid buttons on a
+card the size of a postcard compete instead of ranking. It is **not** a second
+route to checkout: it adds through the same `quickAdjust` the plus button uses,
+so the variant guard and the stock check have one implementation, and it only
+navigates if the product actually went in. It never clears the cart — somebody
+with three things in their basket who presses Buy Now on a fourth means *and
+this one, now*.
+
+**Where the two cannot share a line, the split is decided rather than left to
+`flex-wrap`.** A price chip showing `₹2,499  ₹2,999` is 107px and the button
+66px, so the pair needs about 179px of row. A four-across laptop grid gives 175px
+of row and a five-across one gives 182px — the boundary ran *through* a single
+grid, so two of seven cards wrapped and read as stubs while the other five did
+not. A container query at 208px, measured from those two card widths, makes every
+card in a grid resolve the same way.
+
+Measured at 320, 360, 390, 480, 640, 768, 1024, 1280 and 1440: **zero stubs at
+every width.**
+
+The rest of the brief, with what changed:
+
+| Asked for | Before | Now |
+|---|---|---|
+| Price tag a little smaller | 129×41, price 18–23px | 107×34, price 16–20px |
+| Star icon one size larger | 15px | 17px |
+| Notify Me smaller on mobile | 94px wide, 12px type | 75px wide, 10px type |
+
+**Notify Me got narrower and no shorter, and that is not a compromise to argue
+with.** Its 44px height is set by the touch block at the end of the stylesheet,
+`scripts/responsive-audit.js` fails the build for any control under 44px at
+767px and below, and a control a fingertip covers is one people miss. Narrower
+is a design choice; shorter would be a defect.
+
+| What | Where |
+|---|---|
+| The two-part button | `index.html` → `quickAddHTML` **(~line 7540)**, `.qa-add` **(~line 1346)** |
+| Buy Now, and why it reuses the cart path | `buyNow` **(~line 7585)**, `.p-buynow` **(~line 1581)** |
+| The measured split | `@container (max-width: 208px)` **(~line 1617)** |
+| Proof | `test/frontend.test.js` → `[fe-55]` CARD |
+
+### 7h. The console is inside the gate now
+
+Extending `npm run audit:responsive` to `admin.html` — eleven views at eight
+widths, with the login gate and the API stubbed **in the page** so what is
+measured is the real markup with realistic rows in it — found the reported
+overflow and a great deal more in one run. Every control in the console was
+under the 44px fingertip minimum at phone widths, because the file had **no
+touch-target rules at all**:
+
+| Control | Was |
+|---|---|
+| The two topbar icon buttons | 42×34 |
+| Every small button — inbox tabs, review actions, settings save | 32px tall |
+| Every filter select | 41px |
+| Product and customer search | 42px |
+| Full-width primary buttons | 32px tall |
+| A product name in a table | 21px |
+| The low-stock disclosure | 34px |
+
+One block at the end of the stylesheet fixes all of them, for the same reason
+the storefront's sits at the end of its own: anything whose job is to override
+every component has to come **after** every component, or it loses on source
+order to the rules it was written to beat.
+
+```
+ 64 combinations   before this session
+168 combinations   now — ten storefront routes and eleven admin views, 320px to 1440px
+```
+
+An empty table cannot overflow, so the fixtures are deliberately wordy: a long
+product name, a variant with two options, a real SKU. Fixtures that were too
+tidy would audit nothing.
+
+## Before that — the storefront a customer sees, and the API it is wired to
+
+Two questions drove everything below. **Does every screen say something true
+when it has nothing to show?** and **is the frontend still talking to routes
+that exist?** Neither had ever been asked, and both had real answers.
+
+Nothing here is a redesign. Every item is a place where the page was already
+lying to a customer, drawing the same picture for six different things, or
+offering a control that did nothing — plus one complete backend feature that had
+no screen at all. Each row below says what was wrong, what happens now, and the
+exact function to open.
+
+### 6a. Empty is not one state — the message now fits the page it is on
+
+Every product grid on the site is painted by one function, and it carried **one
+empty state**: *"No products found. Try adjusting your filters, or ask Chakra AI
+for a recommendation."* with a **Clear Filters** button. That sentence is only
+true on the shop page.
+
+Everywhere else it described a problem the visitor did not have, and the button
+was dead: `clearShopFilters()` resets the **shop's** filters and re-renders the
+**shop's** grid, so pressed from the wishlist it changed nothing on the screen
+the person was looking at.
+
+Where that message was actually reached:
+
+| Screen | When it appeared | Who sees it |
+|---|---|---|
+| Wishlist | Nothing saved yet | **Every first-time visitor who opens it** |
+| Home → Bestsellers | Before enough orders exist to compute a percentile | Any new shop |
+| Home → New Arrivals | Nothing added for 30 days | A small catalogue, most of the year |
+| Home → Deal Of The Day | Nothing discounted | Any day without an offer |
+
+The product page's related rail had already been fixed for exactly this; the
+other four were missed. The rule now lives in **one place, keyed by the grid**,
+so a grid added later gets a neutral message rather than the shop's filter one.
+
+| What | Where |
+|---|---|
+| One empty state per grid, chosen by container and by featured tab | `index.html` → `emptyGridHTML` **(~line 7750)** |
+| The grid renderer, now with no message of its own | `renderGridInto` **(~line 7800)** |
+| Proof only the shop may offer Clear Filters | `test/frontend.test.js` → *EMPTY STATES: only the shop tells anyone to clear a filter* |
+
+### 6b. A tab that leads nowhere is not offered, and a countdown needs an offer
+
+**Featured tabs.** Two of the four empty themselves with no code change and no
+admin action — Bestsellers is a percentile over real sales, New Arrivals is a
+30-day window. Each used to put an empty shelf in the middle of the home page,
+under a tab the customer had just been invited to press. The tab row is now
+derived from the catalogue: a tab appears only when something is behind it, and
+a customer standing on a tab that empties under them is moved to one that has
+products rather than left staring at nothing.
+
+**Deal Of The Day.** The panel says *"Today Only — Extra Savings"* beside a live
+countdown clock. With nothing discounted it said that, ran the clock, and showed
+an empty grid underneath. The whole section is now hidden when the claim is
+false — the same rule the puja showcase already follows for a shop with no
+services configured.
+
+Both are deliberately **not** applied during cold start, when every list is empty
+because nothing has loaded yet. Hiding three tabs for a second on every visit is
+a worse lie than the one being fixed.
+
+| What | Where |
+|---|---|
+| The products behind one tab — the single rule that fills it *and* decides whether to offer it | `index.html` → `featuredListFor` **(~line 8036)** |
+| Tab visibility and the fallback when the active tab empties | `syncFeaturedTabs` **(~line 8073)** |
+| The deal section, hidden when nothing is discounted | `renderDealGrid` **(~line 8116)**, markup `#dealSection` |
+| Proof | `test/frontend.test.js` → *FEATURED TABS…* and *DEAL OF THE DAY…* |
+
+### 6c. Half the category rail was drawing the same anonymous glyph
+
+The icon lookup was an exact match on the database's own category slug. The
+map's key was `books` and the shop's category is **`book`** — so the largest
+category on the site, four of eleven products, drew the fallback double circle.
+So did `sphatik`, `dhoti` and `wooden`, which had no entry at all. **Four of the
+eight categories that exist were the same drawing**, and a rail where half the
+tiles look identical is not a rail.
+
+An exact map cannot stay right, because categories are created by an admin
+typing into a form: `book`, `books`, `holy-books` and `Spiritual Books` are one
+shelf to a customer and four keys to an exact lookup. The match is now on the
+**words a category contains**, with four new icons drawn for the categories that
+exist. Where two words match, the one latest in the name wins, because these are
+English compounds and the head noun comes last — a `sphatik-lingam` is a lingam,
+a `rudraksha-bracelet` is a bracelet.
+
+| What | Where |
+|---|---|
+| The icons, and the words that select them | `index.html` → `CAT_ICONS`, `CAT_ICON_WORDS` **(~line 5796)** |
+| The lookup | `catIcon` **(~line 5864)** |
+| Proof, read from `catalog.json` so it asks about the real shop | `test/frontend.test.js` → *CATEGORY ICONS…* |
+
+### 6d. The footer sent customers to categories that do not exist
+
+The footer's Shop column was six hand-written links, and it had already drifted
+from the shop it points at:
+
+- **"Spiritual Books"** pointed at `category=books`. The real category is
+  `book`. The link landed on an empty shop.
+- **"Bracelets"** pointed at a category with **no products in it**. Same result.
+- **`book`, `sphatik`, `dhoti` and `wooden`** — including the largest category on
+  the site — had no footer link at all.
+
+Both dead links were real crawlable URLs, so a search engine followed them to an
+empty page. The column is now built from the same category rows that fill the
+home rail, ranked by units sold, so the two cannot disagree and a category
+created next week appears the moment it has a product in it.
+
+| What | Where |
+|---|---|
+| The derived column | `index.html` → `renderFooterShopLinks` **(~line 5981)**, called from `renderTopCategories` |
+| The pre-hydration fallback that is left in the markup | `#fcListShop` |
+| Proof every fallback link names a category that exists | `test/frontend.test.js` → *FOOTER: the Shop column lists categories that exist* |
+
+### 6e. The Journal — six articles, one picture, three different colours each
+
+Two defects, both visible on the page, both from the same mistake: the cover was
+a property of **where** a post was rendered rather than of the post.
+
+1. **The same drawing on every article.** Every card and every article hero drew
+   one hardcoded book glyph — six posts on malas, kundli readings, the Sri
+   Yantra, a griha pravesh and idol care, all identical. A cover carrying no
+   information is a cover doing no work, on the page whose job is making a
+   stranger want to read something.
+2. **One article wearing three colours.** The gradient was picked by **array
+   index**, and the three places a post appears index it differently: the grid
+   sorts by date and passes the sorted position, the article page passed the
+   *unsorted* position, and the related rail passed 0, 1, 2. A post was one
+   colour on the Journal, another on its own page and a third in the rail beside
+   it.
+
+The cover is now derived from the post — the icon from its subject, the palette
+from a hash of its id — so it is stable everywhere and a post written next year
+gets its own cover with no artwork to commission. A generic word never beats the
+subject: *"Puja Guides"* is a guide **to a puja**, and where the category says
+nothing the title carries the subject.
+
+| What | Where |
+|---|---|
+| Cover icons, and the subject vs generic word lists | `index.html` → `BLOG_ICONS`, `BLOG_SUBJECT_WORDS`, `BLOG_GENERIC_WORDS` **(~line 13834)** |
+| The lookup — category, then title, then kind of piece | `blogIcon` **(~line 13897)** |
+| The palette, hashed from the post id | `blogHash`, `blogCoverStyle` **(~line 13909)** |
+| Proof | `test/frontend.test.js` → *JOURNAL: no two articles in a row wear the same cover*, and the two tests after it |
+
+### 6f. Every Journal article now has its own address
+
+The card was a `<div onclick>`, so a crawler could not follow it, ctrl-click and
+middle-click did nothing, and the keyboard could not reach it. Every article
+also shared the single URL `/blog-post`, which meant **reloading the page you
+were reading showed a blank article**, sharing a link sent someone to that blank
+article, and Google had one URL for six pieces of writing.
+
+The product card was made a real anchor for exactly these reasons; the Journal
+card was missed. It is now an `<a href="/blog-post/<id>">`, the id travels in the
+URL the same way a product slug does, and each article carries its own title,
+description, canonical and `BlogPosting` structured data. An id matching no post
+goes to the Journal with an explanation rather than to a blank page.
+
+| What | Where |
+|---|---|
+| The card, now an anchor | `index.html` → `blogCardHTML` **(~line 13941)** |
+| The address of one article | `blogHref` **(~line 7372)**, `openBlogPost` |
+| Resolving the id from the URL on a cold landing | `navigateTo`, the `blog-post` branch |
+| Per-article title, description, canonical | `updatePageMeta` override in that branch |
+| `BlogPosting` structured data | `setPageStructuredData` |
+| Proof | `test/frontend.test.js` → *JOURNAL: an article has its own address, and a card is a real link* |
+
+Verified end to end in a real browser: click a card, the URL becomes
+`/blog-post/post-06`; reload it and the article is still there with its own
+title, canonical and valid JSON-LD; `/blog-post/does-not-exist` lands on
+`/blog`.
+
+### 6g. Review moderation existed on the server and had no screen
+
+`GET /api/admin/reviews` and `PATCH /api/admin/reviews/:id` have existed since
+**migration 005** — gated behind the `reviews:moderate` capability, writing every
+decision to the audit log with the admin who made it — and **nothing in the admin
+console ever called either one**.
+
+What that meant in practice: a customer review went live on the product page the
+moment it was written, the only way to take one down was hand-written SQL against
+production, and granting somebody `reviews:moderate` unlocked nothing, because
+there was no screen for the grant to unlock.
+
+There is now a Reviews screen. It opens on what still needs a decision, shows the
+full text of each review with its rating and who wrote it, and offers exactly one
+action per review — publish it, or hide it with a reason that goes to the audit
+log. A hidden review shows **why** it was hidden, so the decision can be looked at
+again later. The waiting count rides on the nav item, so a review needing
+attention is visible from every screen.
+
+It is a **card list, not a table**, and that is a decision rather than a
+preference: every other screen in the console shows short fields that line up in
+columns, while a review is a paragraph of unknown length next to a judgement that
+has to be made about it. In a table that paragraph either forces a sideways
+scroll on a phone or is truncated past the point where it can be judged — and
+judging it is the entire job of the screen.
+
+| What | Where |
+|---|---|
+| The screen | `admin.html` → `#view-reviews` **(~line 869)** |
+| Layout, and how it reflows | `.rv-*` rules **(~line 432)** |
+| Loading, filtering, and the empty queue | `loadReviews` **(~line 3939)** |
+| One card | `reviewCardHTML` **(~line 3890)**, ratings by `reviewStars` |
+| The two decisions | `approveReview`, `hideReview` **(~line 4002)** |
+| The nav count | `refreshReviewBadge` **(~line 3975)** |
+| Proof, in a real browser against a stubbed API | `test/browser-reviews.test.js` — 22 checks |
+
+Measured at 320, 390, 768 and 1440: the decision controls sit beside the review
+above 720px and drop under it below, one per row under 380px; every action is at
+least 44px tall; nothing scrolls sideways at any width.
+
+Two smaller things were fixed in passing. A review with no written comment was
+picking up the console's global `.empty` rule and opening a 50px hole in the
+middle of its card. And the inbox's four tabs have toggled an `active` class since
+they were built that **nothing in the file ever styled** — so the console showed
+four identical buttons and the only way to tell which panel you were looking at
+was to read the table. One rule now covers both tab bars.
+
+### 6h. A check that the frontend is still talking to routes that exist
+
+The two frontends are single files with no build step and no imports, so the only
+thing joining `apiFetch('/api/admin/low-stock')` to the route that answers it is
+**a string literal**. Rename a route, drop a mount, and every existing test still
+passes while the feature returns 404 — and because `apiFetch` turns that into a
+friendly *"could not load"*, it is indistinguishable from the free-tier instance
+waking up, which is the one failure nobody investigates.
+
+`npm run check:api` reads every `/api` call site out of `index.html` and
+`admin.html`, walks the **real Express router stack**, and fails if any call
+cannot reach a route **for the method it uses**. Nothing is asserted from a
+hand-written list: a route added, renamed or removed tomorrow is picked up with
+no edit to the script. It requires the app rather than starting one, stubs the
+database, and sends no request.
+
+```bash
+npm run check:api            # the gate
+npm run check:api -- --verbose   # also lists routes no browser calls
+```
+
+It found the review endpoints above. Its own accuracy took four passes, and each
+correction is recorded in the file, because a wiring check that reads as proof
+while quietly measuring nothing is worse than no check:
+
+| It got this wrong | Because | Now |
+|---|---|---|
+| Nine healthy endpoints called broken | It read `API_WAIT_COPY`, a table of `/api` **prefixes** used to pick the "Confirming your payment…" copy, as if they were calls | Only a literal that is the first argument of a call counts |
+| Twenty admin screens called broken | It attributed one call's `PATCH` to the GETs around it | The method comes from **that call's** own options object |
+| The AI chat and version poll invisible to it | They are written `fetch(API_BASE + '/api/…')`, and the literal was required to sit right after the paren | A prefix expression is allowed before the literal |
+| The new reviews screen called broken | `'/api/admin/reviews' + qp` appends a **query string**, not a path segment | A continuation only adds a segment when the literal ended in a slash |
+
+Verified in both directions: renaming a path or changing its method makes it
+exit non-zero, and the unmodified repository is clean.
+
+### 6i. Backend features that still have no screen
+
+`npm run check:api -- --verbose` reports what no call can reach. Most are
+webhooks and job triggers, correctly called by Render and Razorpay rather than by
+a browser. **Three are real gaps a person should decide about** — they are listed
+here rather than fixed, because each one changes booking behaviour and belongs to
+the owner, not to a cleanup pass:
+
+| Endpoint | What is missing |
+|---|---|
+| `GET /api/bookings/availability` | The booking page offers **six hardcoded time slots** and never asks which are actually free. `booking_slots` and its capacity rules exist in migration 013; the storefront never sends `slotId`, so a customer can book a slot that is already full |
+| `GET/POST/PUT /api/booking-services/practitioners` | Priests and astrologers can be stored and updated, and there is no screen to do it |
+| `GET/POST/PATCH /api/booking-services/slots` | The same for the slots those practitioners are available in |
+
+Wiring the storefront to real availability sits directly on the money path, so it
+is called out rather than done quietly.
+
+### 6j. What now runs in the gate that did not before
+
+| Added | Runs in | Why |
+|---|---|---|
+| `npm run check:api` | `npm test` and CI | See 6h |
+| `npm run test:browser-reviews` | `npm test` and CI | 22 checks over the new screen, including that a hide carries its reason and that nothing a customer typed becomes markup |
+| `blog` and `wishlist` in the responsive audit | `npm run audit:responsive` | Both are reachable from the header on every screen and neither was audited. 80 route/width combinations now, up from 64 |
+| `check:*` parity guard | `test/frontend.test.js` → `[fe-44]` | It watched `test:*` only. `check:syntax`, `check:chars` and `check:api` are gates in the same sense and were kept in the chain by nobody forgetting — which is exactly what dropped `test:frontend` and `test:drawer` before |
+
 ## Map of the cold-start and money-safety work — where everything lives
 
 Everything below was built so the storefront behaves correctly whether the
@@ -1632,6 +2691,13 @@ measurement artifact, not a defect. Measure layout with transitions disabled.
 | `[fe-53]` | **no test re-derives its subject** — and no exported query ships an unresolved `${...}` |
 | `test:yantra` | **the Sri Yantra is one** — four up, five down, nothing touching the girdle, measured on the emitted points |
 | `test:frontend` FOOTER | **the phone footer cannot disagree with itself** — collapse, tab order and ARIA state all from one function |
+| `[fe-54]` | **nothing is drawn from its position in an array** — every category has its own icon, every article its own cover and one colour everywhere, and the footer links to categories that exist |
+| `check:api` | **the frontend still reaches routes that exist** — every `/api` call site in both files, against the real Express router stack, for the method it uses |
+| `browser-reviews` | the review moderation screen — what the card contains, what the server receives, and that a hide carries its reason |
+| `audit:responsive` | **ten storefront routes AND eleven admin views at eight widths** — no sideways scroll, no target under 44px, no clipped or colliding control |
+| `[fe-55]` | **the back office is a phone screen too** — the grid overflow, the low-stock disclosure, where a product name goes, the layer order, the subscriber broadcast, and the card's two-part button |
+| `[fe-56]` | **the swap** — the price sticker's shape and measured contrast, the chip Buy Now inherited, the phone step-down, and the two markers the subscriber update accepts |
+| `[mail-5]` | **what actually leaves the building** — List-Unsubscribe, the plain-text half, Reply-To, asserted against a stubbed transport rather than a stubbed engine |
 
 ```bash
 npm test
@@ -1823,11 +2889,26 @@ mint unlimited distinct `Origin` values.
 
 ### Every control works down to 320px, and a check that proves it
 
-`npm run audit:responsive` renders eight routes at eight widths from 320px to
-1440px in a real browser and fails on five things: the page scrolling sideways,
+`npm run audit:responsive` renders **ten storefront routes and eleven admin
+views** at eight widths from 320px to 1440px in a real browser and fails on five things: the page scrolling sideways,
 any element escaping the viewport, any control below 44x44 CSS pixels at 767px
 and under, a button clipping its own label, and two controls overlapping. It is
 in `npm test` and CI, and it starts its own preview server so it needs no setup.
+
+**The admin console was added to it too — eleven views, with the login gate and
+the API stubbed in the page so what is measured is the real markup with
+realistic rows in it.** That is where the dashboard overflow was: ten storefront
+routes were audited at eight widths and `admin.html` at none, so the whole back
+office sat outside the gate. Extending it found the reported overflow and every
+control in the console sitting under the 44px fingertip minimum, because the
+file had no touch-target rules at all. 64 combinations before this work, 168 now.
+
+`blog` and `wishlist` were added earlier for the same reason. Both are reachable
+from the header on every screen and neither had ever been audited — the Journal is a
+card grid that reflows three times between 320px and 1440px, and its cards became
+real anchors, which is precisely the change that broke the product card once by
+putting buttons inside a link. Auditing eight of ten routes and calling it the
+site is how a defect survives a green run.
 
 It could not use the `file://` trick the contrast suite uses. The catalog is
 fetched, and a `file://` page cannot fetch, so every grid comes back empty — an
@@ -3569,17 +4650,27 @@ migrations/     # 001-015, applied in filename order and tracked in the _migrati
                 # runner tracks by filename and will not re-run a file it has already recorded.
 scripts/        # run-migrations.js, verify-full.js (THE pre-deploy gate), create-admin.js,
                 # test-db-connection.js, test-razorpay-connection.js, reconcile-payments.js,
-                # release-expired-orders.js, send-scheduled-emails.js, check-syntax.js
+                # release-expired-orders.js, send-scheduled-emails.js, check-syntax.js,
+                # check-api-wiring.js (every /api call in both frontends must reach a
+                # mounted route, for the method it uses — see "This pass", 6h),
+                # responsive-audit.js, seo-audit.js, css-conflicts.js
 test/           # Every suite runs the REAL application modules — no reimplementations.
                 #   unit / coupons / http / security  — offline logic and middleware
                 #   frontend            — parses index.html + admin.html: CSP, SRI, XSS,
                 #                         accessible names, capability gating
                 #   browser-cards       — renders a product card in Chromium and clicks it
                 #   browser-settings    — renders the admin settings screen in Chromium
+                #   browser-inbox       — the admin inbox: archive, filter, real replies
+                #   browser-orders      — the order drawer and low-stock panel
+                #   browser-reviews     — the review moderation screen: what the card shows,
+                #                         what the server receives, and the escaping
+                #   emails / contrast   — templates and jobs; measured WCAG contrast
                 #   db-integration      — real Postgres: concurrency, refunds, constraints
 vendor/         # Self-hosted third-party assets, pinned by SRI hash. Marked `-text` in
                 # .gitattributes — see Round 17 before touching anything in here.
-admin.html      # The admin console (10 views). index.html is the storefront.
+admin.html      # The admin console (11 views: Reviews and the Subscription update
+                # composer added recently). index.html
+                # is the storefront.
 ```
 
 ## Round 19 — Email Was Sending Perfectly and Nobody Was Receiving It

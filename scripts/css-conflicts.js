@@ -44,8 +44,15 @@ if (!FILES.length) FILES.push('index.html', 'admin.html');
    output; these are the ones that have actually gone wrong. */
 const WATCH = [
   '.p-card', '.p-body', '.p-name', '.p-cat', '.p-rating', '.p-material',
-  '.p-price .now', '.p-price .was', '.p-score .cnt', '.p-rating .cnt',
-  '.p-media', '.p-discount', '.p-quickadd', '.qa-add', '.p-meta',
+  '.p-score .cnt', '.p-rating .cnt', '.p-media',
+  /* The card's bottom half, as it is drawn now. The names it used to carry —
+     .p-price .now, .p-quickadd, .qa-add, .p-meta — were still listed here long
+     after the markup stopped emitting them, which is the quiet way a guard
+     stops guarding: it never fails, because it never matches anything. */
+  '.p-pricerow', '.pr-now', '.pr-mrp', '.p-discount', '.p-cta',
+  '.qa-cart', '.qa-cart-txt', '.qa-cart-ic',
+  '.qa-step', '.qa-step-btn', '.qa-step-mid', '.qa-step-txt', '.qa-step-n',
+  '.badge', '.p-wish', '.p-qview',
   '.product-grid', '#featuredGrid', '.footer-col', '.fc-body', '.fc-toggle',
   /* Added after the touch-target pass. A block written to override every
      component must come after every component, and three of these rules were
@@ -73,6 +80,122 @@ function styles(src) {
   let m;
   while ((m = re.exec(src))) out.push(m[1]);
   return out.join('\n');
+}
+
+/* IS THE STYLESHEET THE SHAPE ITS AUTHOR THINKS IT IS?
+ *
+ * THE DEFECT THIS EXISTS FOR, WHICH HAPPENED. An edit removed the CONTENTS of
+ * an `@media (max-width:560px)` block and left the opening line behind. CSS has
+ * no way to complain: the browser kept consuming rules into that block until
+ * the next stray `}`, so three hundred lines of card styles — the whole rating
+ * row, the price row, the new button — silently became phone-only. On a desktop
+ * the page rendered with those rules absent and NOTHING reported it:
+ *
+ *   - check:syntax parses JavaScript, not CSS;
+ *   - the conflict scan below reads declarations, and a declaration inside the
+ *     wrong media query is still a well-formed declaration;
+ *   - the contrast and responsive suites measure the page as rendered, and the
+ *     page as rendered was a different, entirely valid-looking design.
+ *
+ * It was found by measuring one element and asking why its width was 209px.
+ * That is not a way to find things.
+ *
+ * TWO CHECKS, AND THE SECOND ONE IS THE INTERESTING ONE.
+ *
+ *   1. BRACES BALANCE. Necessary, and on its own not sufficient: the stray `}`
+ *      that ended the runaway block also balanced the file, which is precisely
+ *      why the defect survived.
+ *
+ *   2. INDENTATION AGREES WITH NESTING. Every rule inside a conditional block
+ *      in this stylesheet is indented; every top-level rule starts at column
+ *      zero. That is not a style rule anybody wrote down, it is just how the
+ *      file has always been written — and it makes the defect self-announcing,
+ *      because the swallowed rules kept the indentation they had when they were
+ *      top-level. A rule at column zero that the braces say is inside a media
+ *      query is a block that was never closed. Nothing else produces it.
+ *
+ * Deliberate nesting is untouched: a reduced-motion override written inside a
+ * width block is indented, so it reads as what it is.
+ *
+ * Comments and strings are skipped, because a brace inside either is not a
+ * brace — `content:'}'` is real CSS and this must not read it as one.
+ */
+function structure(css, file) {
+  const problems = [];
+  const stack = [];                 // { head, line } for each open block
+  let i = 0, line = 1, col = 0;
+
+  const at = () => 'line ' + line;
+
+  while (i < css.length) {
+    const ch = css[i];
+
+    if (css.startsWith('/*', i)) {
+      const e = css.indexOf('*/', i);
+      const seg = css.slice(i, e < 0 ? css.length : e + 2);
+      const nl = (seg.match(/\n/g) || []).length;
+      line += nl;
+      col = nl ? seg.length - seg.lastIndexOf('\n') - 1 : col + seg.length;
+      i = e < 0 ? css.length : e + 2;
+      continue;
+    }
+    if (ch === '\n') { line++; col = 0; i++; continue; }
+    if (ch === '"' || ch === "'") {
+      let j = i + 1;
+      while (j < css.length && css[j] !== ch) { if (css[j] === '\\') j++; j++; }
+      col += (j + 1) - i;
+      i = j + 1;
+      continue;
+    }
+
+    if (ch === '{') {
+      /* The head is the text since the last block boundary; its indentation is
+         the column of its first non-space character. */
+      const from = Math.max(css.lastIndexOf('}', i), css.lastIndexOf('{', i - 1)) + 1;
+      const raw = css.slice(from, i);
+      const lastNl = raw.lastIndexOf('\n');
+      const headLine = lastNl < 0 ? raw : raw.slice(lastNl + 1);
+      const indent = headLine.length - headLine.replace(/^[ \t]*/, '').length;
+      const head = raw.replace(/\s+/g, ' ').trim().slice(0, 70);
+
+      const inConditional = stack.some((o) => /^@(media|supports|container)\b/.test(o.head));
+      const isKeyframeStep = stack.some((o) => /^@(-\w+-)?keyframes\b/.test(o.head));
+      if (inConditional && !isKeyframeStep && indent === 0 && head) {
+        problems.push(at() + ': "' + head + '" starts at column zero, but the braces put it '
+          + 'inside ' + stack[stack.length - 1].head + ' (opened on line '
+          + stack[stack.length - 1].line + '). A block above it was never closed.');
+      }
+      stack.push({ head: head, line: line });
+      col++; i++;
+      continue;
+    }
+    if (ch === '}') {
+      if (!stack.length) {
+        problems.push(at() + ': a closing brace with nothing open');
+      } else {
+        stack.pop();
+      }
+      col++; i++;
+      continue;
+    }
+    col++; i++;
+  }
+
+  if (stack.length) {
+    const last = stack[stack.length - 1];
+    problems.push('the stylesheet ends with ' + stack.length + ' block(s) still open; '
+      + 'the last was "' + last.head + '" opened on line ' + last.line);
+  }
+
+  if (problems.length) {
+    console.log('\n' + file + ' — STRUCTURE');
+    problems.slice(0, 12).forEach((p) => console.log('  BROKEN    ' + p));
+    if (problems.length > 12) console.log('  BROKEN    ...and ' + (problems.length - 12) + ' more');
+    console.log('\n  A block that does not close does not fail. It silently moves every rule');
+    console.log('  after it into itself, and the page renders as a different design.\n');
+    return false;
+  }
+  return true;
 }
 
 /**
@@ -137,9 +260,14 @@ function range(media) {
 
 const overlaps = (a, b) => a.min <= b.max && b.min <= a.max;
 
-let problems = 0, noted = 0;
+let problems = 0, noted = 0, broken = 0;
 for (const file of FILES) {
   const css = styles(fs.readFileSync(path.isAbsolute(file) ? file : path.join(ROOT, file), 'utf8'));
+  /* BEFORE anything else. A stylesheet whose blocks do not close is not a
+     stylesheet with a conflict in it — it is a different stylesheet, and every
+     conclusion drawn from scanning it would be about rules that are not where
+     they appear to be. */
+  if (!structure(css, file)) { broken++; continue; }
   const decls = declarations(css).filter((d) => WATCH.includes(d.sel) && WATCHED_PROPS.has(d.prop));
   const byKey = new Map();
   for (const d of decls) {
@@ -202,5 +330,6 @@ for (const file of FILES) {
 }
 
 console.log('\n  ' + noted + ' base-plus-override pair(s), which are fine');
-console.log('  ' + problems + ' conflict(s) where source order decides, or dead rules\n');
-process.exit(problems ? 1 : 0);
+console.log('  ' + problems + ' conflict(s) where source order decides, or dead rules');
+console.log('  ' + broken + ' stylesheet(s) whose blocks do not close\n');
+process.exit(problems || broken ? 1 : 0);

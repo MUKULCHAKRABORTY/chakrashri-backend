@@ -64,6 +64,15 @@ const CAPABILITIES = Object.freeze({
      Admin holds every capability (Object.values below), so nothing changes for
      the only role that can reach these routes today. */
   CUSTOMERS_CONTACT: 'customers:contact',
+  /* Writing to EVERY subscriber at once, which is a different kind of act from
+     replying to one enquiry and therefore a different grant.
+
+     customers:contact is one-to-one and reversible in practice — a wrong reply
+     is a follow-up reply. A broadcast is neither: it reaches the whole list in
+     one action, it cannot be recalled, and a mistake in it is a mistake every
+     subscriber reads. Whoever grants "let them answer customers" should not be
+     silently handing over the megaphone as well. */
+  SUBSCRIBERS_BROADCAST: 'subscribers:broadcast',
   REVIEWS_MODERATE: 'reviews:moderate',
   AUDIT_READ: 'audit:read',
   ANALYTICS_READ: 'analytics:read'

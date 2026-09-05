@@ -125,6 +125,17 @@ h1,h2,h3{ font-family:var(--f-display); font-weight:600; color:var(--ink); }
 .btn-ghost{ background:transparent; color:var(--oxblood); border:1.5px solid var(--parchment-2); }
 .btn-ghost:hover{ border-color:var(--oxblood); }
 .btn-sm{ padding:7px 12px; font-size:.8rem; border-radius:8px; }
+/* A SELECTED TAB HAS TO LOOK SELECTED.
+   The inbox has had four tabs since it was built, and switchInboxTab has always
+   toggled an `active` class that nothing in this file styled — so the console
+   showed four identical buttons and the only way to tell which panel you were
+   looking at was to read the table. The reviews screen uses the same two
+   classes, so this is written once for both rather than per screen.
+   Ink on parchment: 12.4:1, well past what AA asks for. */
+.inbox-tab.active, .rv-tab.active{
+  background:var(--parchment); border-color:var(--parchment-2);
+  color:var(--ink); font-weight:700; box-shadow:inset 0 -2px 0 var(--gold);
+}
 .btn-danger{ background:var(--danger); color:#fff; }
 .btn-danger:hover{ background:#8f2e24; }
 .login-error{
@@ -137,7 +148,7 @@ h1,h2,h3{ font-family:var(--f-display); font-weight:600; color:var(--ink); }
 .sidebar{
   position:fixed; top:0; left:0; bottom:0; width:var(--sidebar-w);
   background:var(--ink); color:var(--ivory); display:flex; flex-direction:column;
-  padding:22px 14px; z-index:40; transition:transform .2s;
+  padding:22px 14px; z-index:var(--z-sidebar); transition:transform .2s;
 }
 .sidebar .brand{ display:flex; align-items:center; gap:10px; padding:6px 10px 22px; }
 .sidebar .brand .mark{ width:30px; height:30px; flex:none; }
@@ -186,7 +197,7 @@ h1,h2,h3{ font-family:var(--f-display); font-weight:600; color:var(--ink); }
 
 .main{ margin-left:var(--sidebar-w); min-height:100vh; display:flex; flex-direction:column; }
 .topbar{
-  position:sticky; top:0; z-index:30; background:rgba(250,243,228,.92); backdrop-filter:blur(8px);
+  position:sticky; top:0; z-index:var(--z-topbar); background:rgba(250,243,228,.92); backdrop-filter:blur(8px);
   border-bottom:1px solid var(--parchment-2); padding:16px 28px; display:flex; align-items:center;
   justify-content:space-between; gap:16px;
 }
@@ -210,6 +221,33 @@ h1,h2,h3{ font-family:var(--f-display); font-weight:600; color:var(--ink); }
 .grid-2{ display:grid; grid-template-columns:2fr 1fr; gap:20px; }
 .grid-3{ display:grid; grid-template-columns:repeat(3,1fr); gap:20px; }
 @media (max-width:1100px){ .grid-2,.grid-3{ grid-template-columns:1fr; } }
+
+/* THE ONE DECLARATION THAT STOPS A TABLE DRAGGING THE WHOLE PAGE SIDEWAYS.
+
+   A grid item's default `min-width` is `auto`, which means "never shrink below
+   my content's intrinsic width". The Best-Selling Products and Low Stock Alert
+   tables are wider than a phone, so their cards refused to shrink and sat at
+   404px inside a 320px viewport — measured, not guessed. The page then scrolled
+   sideways, and because the sidebar is positioned against the document rather
+   than the viewport, it shifted left and left a blank strip down the right.
+
+   `.table-wrap{overflow-x:auto}` could never have helped: the card containing
+   it was already too wide, so there was nothing left for the wrapper to clip.
+   With min-width:0 the track collapses to the column width and the wrapper
+   scrolls the table inside the card, which is where the scrolling belongs. */
+.grid-2 > *, .grid-3 > *{ min-width:0; }
+/* The charts row wants 2fr 1fr — a wide plot beside a donut. The TABLES row
+   does not: Low Stock carries product names, SKUs and pills in a third of the
+   width, which broke `dho-ctn` across three lines. Two even columns, and only
+   where there are two columns at all. */
+@media (min-width:1101px){ .grid-2.grid-2-even{ grid-template-columns:1fr 1fr; } }
+/* A SKU is one token. Breaking it mid-string makes it unreadable and
+   un-copyable, which is the only thing a SKU is for. */
+code.mono{ white-space:nowrap; }
+/* Belt and braces for a card used outside a grid — a flex item has the same
+   auto-minimum, and every card in this console can hold a table. */
+.card{ min-width:0; }
+.table-wrap{ max-width:100%; }
 
 /* Chart containers need a definite height because the charts are configured
    with maintainAspectRatio:false (so they fill the card responsively rather
@@ -301,7 +339,7 @@ table.data .muted{ color:var(--text-mute); font-size:.8rem; }
 .combo-toggle svg{ width:13px; height:13px; transition:transform .18s ease; }
 .combo.open .combo-toggle svg{ transform:rotate(180deg); }
 .combo-menu{
-  position:absolute; left:0; right:0; top:calc(100% + 4px); z-index:60;
+  position:absolute; left:0; right:0; top:calc(100% + 4px); z-index:var(--z-dropdown);
   background:#fff; border:1px solid var(--line); border-radius:8px;
   box-shadow:0 10px 30px rgba(43,10,18,.16); padding:4px;
   max-height:230px; overflow-y:auto;
@@ -336,8 +374,35 @@ table.data .muted{ color:var(--text-mute); font-size:.8rem; }
 .filter-select{ padding:9px 12px; border:1.5px solid var(--parchment-2); border-radius:9px; background:#fff; font-size:.85rem; }
 .pager{ display:flex; align-items:center; gap:8px; justify-content:flex-end; margin-top:14px; font-size:.82rem; }
 
-/* ===== Modals / drawer ===== */
-.overlay{ position:fixed; inset:0; background:rgba(43,10,18,.5); z-index:100; display:none; align-items:center; justify-content:center; padding:20px; }
+/* ===== Modals / drawer =====
+
+   THE STACKING ORDER, WRITTEN DOWN, BECAUSE IT WAS WRONG.
+
+   A modal used to be z-index:100 and the order drawer z-index:101, so every
+   confirmation opened BEHIND the drawer that raised it. On a desktop the drawer
+   is 480px wide and the centred modal peeked out beside it, which is why nobody
+   caught it. On a phone the drawer is `min(480px,100vw)` — the full screen — so
+   the dialog was completely invisible: an admin tapping Refund on a phone saw
+   the page dim and nothing else, with the confirm button unreachable behind the
+   panel. That is on the money path.
+
+   The layers are named rather than typed at each site, so the next control that
+   needs one has an ordering to join instead of a number to guess. The rule the
+   numbers encode: a thing you opened must sit above the thing you opened it
+   from, and a message about what just happened sits above everything.
+
+   [fe-56] fails the build if a modal ever sinks below a drawer again. */
+:root{
+  --z-topbar:        30;   /* sticky, and under everything that overlays  */
+  --z-sidebar:       40;   /* off-canvas nav, over its own backdrop at 39 */
+  --z-dropdown:      60;   /* attached to a control, closes on outside click */
+  --z-drawer-scrim: 100;
+  --z-drawer:       101;   /* the order detail panel                      */
+  --z-modal-scrim:  120;   /* ABOVE the drawer — a dialog it can raise    */
+  --z-modal:        121;
+  --z-toast:        200;   /* always visible, never blocks anything       */
+}
+.overlay{ position:fixed; inset:0; background:rgba(43,10,18,.5); z-index:var(--z-modal-scrim); display:none; align-items:center; justify-content:center; padding:20px; }
 .overlay.show{ display:flex; }
 .modal{ background:#fff; border-radius:16px; box-shadow:var(--shadow-lg); width:100%; max-width:560px; max-height:90vh; overflow-y:auto; }
 .modal.wide{ max-width:760px; }
@@ -351,16 +416,16 @@ table.data .muted{ color:var(--text-mute); font-size:.8rem; }
 .product-link:focus-visible{ outline:2px solid var(--oxblood); outline-offset:2px; }
 .close-x{ width:32px; height:32px; border-radius:50%; display:flex; align-items:center; justify-content:center; cursor:pointer; color:var(--oxblood); }
 .close-x:hover{ background:var(--parchment); }
-.drawer-overlay{ position:fixed; inset:0; background:rgba(43,10,18,.5); z-index:100; display:none; }
+.drawer-overlay{ position:fixed; inset:0; background:rgba(43,10,18,.5); z-index:var(--z-drawer-scrim); display:none; }
 .drawer-overlay.show{ display:block; }
 .drawer{
-  position:fixed; top:0; right:0; bottom:0; width:min(480px,100vw); background:#fff; z-index:101;
+  position:fixed; top:0; right:0; bottom:0; width:min(480px,100vw); background:#fff; z-index:var(--z-drawer);
   box-shadow:var(--shadow-lg); transform:translateX(100%); transition:transform .25s; overflow-y:auto;
 }
 .drawer.show{ transform:translateX(0); }
 
 /* ===== Toast ===== */
-#toastWrap{ position:fixed; top:20px; right:20px; z-index:200; display:flex; flex-direction:column; gap:8px; }
+#toastWrap{ position:fixed; top:20px; right:20px; z-index:var(--z-toast); display:flex; flex-direction:column; gap:8px; }
 .toast{ background:var(--ink); color:var(--ivory); padding:12px 18px; border-radius:10px; box-shadow:var(--shadow-md); font-size:.86rem; min-width:220px; animation:toastIn .2s ease; }
 .toast.err{ background:var(--danger); }
 .toast.ok{ background:var(--success); }
@@ -412,6 +477,169 @@ table.data .muted{ color:var(--text-mute); font-size:.8rem; }
   .bk-q{ font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; }
   .bk-head{ flex-direction:column; gap:8px; }
 }
+/* ===== Subscription update composer =====
+   A form, so it is one column that narrows rather than a layout that reflows.
+   The only phone-specific rule is the footer: a send button that shares a row
+   with a status line ends up 90px wide on a 320px screen, and this is the one
+   button in the console that cannot be taken back. */
+.bc-head{ display:flex; gap:14px; align-items:flex-start; justify-content:space-between;
+  flex-wrap:wrap; margin-bottom:18px; }
+.bc-count{ background:var(--parchment); color:var(--ink); border-radius:20px;
+  padding:6px 14px; font-size:.78rem; font-weight:700; white-space:nowrap; }
+.bc-foot{ display:flex; gap:12px; align-items:center; justify-content:space-between;
+  flex-wrap:wrap; margin-top:6px; }
+/* `.btn-primary` carries `width:100%` for the login form and the modals, which
+   made the one irreversible button in the console span the whole card. It sits
+   at the end of a row here, so it takes its own width — and goes full width
+   again on a phone, where the row becomes a column. */
+.bc-foot .btn{ min-height:44px; width:auto; }
+.bc-result{ margin-top:16px; border-radius:10px; padding:14px 16px; font-size:.85rem; line-height:1.6; }
+.bc-result.ok{ background:var(--success-bg); color:var(--success); }
+.bc-result.err{ background:var(--danger-bg); color:var(--danger); }
+.bc-result ul{ margin:8px 0 0; padding-left:18px; list-style:disc; }
+/* The two markers, shown where the writing happens rather than in a help
+   page nobody opens. A syntax an owner cannot see is a syntax they will not
+   use, and the alternative to using it is pasting HTML that this route
+   correctly refuses to interpret. */
+.bc-syntax{ display:block; margin-top:6px; }
+.bc-syntax code{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.74rem;
+  background:var(--parchment); color:var(--ink); padding:1px 5px; border-radius:4px; }
+@media (max-width:560px){
+  .bc-foot{ flex-direction:column; align-items:stretch; }
+  .bc-foot .btn{ width:100%; justify-content:center; }
+  .bc-head{ flex-direction:column; }
+}
+
+/* ===== Low Stock Alert — one row per product, opened to see its sizes ===== */
+.ls-toggle{
+  display:flex; align-items:center; gap:8px; width:100%; text-align:left;
+  min-height:34px; cursor:pointer; color:var(--ink); font-weight:600; font-size:.86rem;
+  border-radius:7px; padding:2px 4px; margin:-2px -4px;
+}
+.ls-toggle:hover{ background:var(--ivory); }
+.ls-toggle:focus-visible{ outline:2px solid var(--oxblood); outline-offset:1px; }
+.ls-chev{ width:15px; height:15px; flex:0 0 auto; color:var(--oxblood);
+  transition:transform .16s ease; }
+.ls-group.is-open .ls-chev{ transform:rotate(90deg); }
+.ls-name{ overflow-wrap:anywhere; }
+.ls-summary{ font-size:.72rem; margin-top:2px; padding-left:23px; }
+.ls-variant > td:first-child{ padding-left:26px; }
+.ls-variant{ background:var(--ivory); }
+.ls-variant-name{ font-size:.83rem; font-weight:600; color:var(--ink); overflow-wrap:anywhere; }
+.ls-variant .ls-summary{ padding-left:0; }
+
+/* ===== A data table that stops being a table on a phone =====
+
+   THE DEFECT: the two dashboard panels held tables wider than a phone. Their
+   cards refused to shrink (a grid item's auto minimum), so the PAGE scrolled
+   sideways and the sidebar shifted with it, leaving a blank strip down the
+   right. `min-width:0` on the grid children stops that — but it leaves a table
+   you have to swipe, and a four-column table on a 320px screen is not readable
+   however it scrolls.
+
+   So below 640px these two tables stop being tables. Each row becomes a block
+   and each cell a label/value pair, with the label taken from `data-label` on
+   the cell — which is why the renderers set it. The header row is hidden from
+   sight but kept in the accessibility tree, because a screen reader still
+   announces the column it is in.
+
+   Only the two dashboard panels opt in, via `.stack-sm`. The order and product
+   tables have their own horizontal-scroll behaviour that works and is not being
+   changed here. */
+@media (max-width:640px){
+  table.data.stack-sm thead{
+    position:absolute; width:1px; height:1px; margin:-1px;
+    overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0;
+  }
+  table.data.stack-sm tr{ display:block; padding:10px 0; border-bottom:1px solid var(--parchment); }
+  /* AFTER the rule above, and it has to be. `display:block` on `tr` is an
+     AUTHOR declaration and it beats the user-agent's `[hidden]{display:none}`,
+     so every collapsed variant row was visible the moment this layout engaged —
+     the disclosure looked broken while the markup was correct. */
+  table.data.stack-sm tr[hidden]{ display:none; }
+  table.data.stack-sm tr:last-child{ border-bottom:none; }
+  table.data.stack-sm tr:hover td{ background:transparent; }
+  table.data.stack-sm td{
+    display:grid; grid-template-columns:6.6em minmax(0,1fr); gap:10px; align-items:start;
+    padding:3px 12px; border:none;
+  }
+  /* Every child of the cell goes in the VALUE column. Without this each child
+     is auto-placed, so a cell holding a name and a summary line put the summary
+     under the label — reading as though "3 variants low" were the field name. */
+  table.data.stack-sm td > *{ grid-column:2; min-width:0; }
+  /* The label comes from the cell, so a column added to the renderer arrives
+     labelled instead of arriving as an unexplained value. */
+  table.data.stack-sm td::before{
+    content:attr(data-label);
+    font-size:.68rem; letter-spacing:.06em; text-transform:uppercase;
+    color:var(--oxblood); opacity:.75; font-weight:700; padding-top:2px;
+  }
+  /* A cell with no label spans the full width rather than leaving a gap where
+     the label would have been. */
+  table.data.stack-sm td:not([data-label]){ display:block; }
+  table.data.stack-sm .loading-row, table.data.stack-sm .empty{ display:block; }
+  table.data.stack-sm td.empty, table.data.stack-sm td.loading-row{ grid-template-columns:1fr; }
+  table.data.stack-sm td.empty::before, table.data.stack-sm td.loading-row::before{ content:none; }
+  /* The disclosure control keeps its own indentation rules in this mode: the
+     chevron is the row's affordance and must stay beside the name. */
+  table.data.stack-sm .ls-summary{ padding-left:0; }
+  table.data.stack-sm .ls-variant > td:first-child{ padding-left:12px; }
+}
+
+/* ===== Reviews =====
+   The layout is one column of cards, and each card is a grid that reflows once.
+   Above 720px the decision controls sit in their own column beside the review,
+   so a moderator working through a queue never moves the pointer far. Below
+   that they drop under the text and become full-width, because a 44px target
+   that shares a row with two others is a 44px target nobody hits on a phone. */
+.rv-list{ display:flex; flex-direction:column; gap:12px; }
+.rv-card{ background:#fff; border:1px solid var(--parchment); border-radius:12px; padding:16px; }
+.rv-card.is-hidden{ border-color:var(--danger-bg); background:#FFFCFB; }
+.rv-top{ display:grid; grid-template-columns:1fr auto; gap:10px; align-items:start; margin-bottom:10px; }
+.rv-prod{ font-weight:700; color:var(--ink); font-size:.95rem; line-height:1.35; word-break:break-word; }
+.rv-prod a{ color:inherit; text-decoration:none; border-bottom:1px solid transparent; }
+.rv-prod a:hover{ border-bottom-color:var(--gold); }
+.rv-stars{ display:flex; align-items:center; gap:6px; margin-top:4px; }
+.rv-stars svg{ width:15px; height:15px; flex:0 0 auto; }
+.rv-stars .on{ color:var(--marigold); fill:var(--marigold); }
+.rv-stars .off{ color:var(--parchment-2); fill:var(--parchment-2); }
+.rv-stars .num{ font-size:.78rem; color:var(--text-mute); font-weight:600; }
+.rv-body{ font-size:.9rem; line-height:1.6; color:var(--text); white-space:pre-wrap;
+  overflow-wrap:anywhere; margin-bottom:12px; }
+/* `rv-empty`, not `empty`. The console already has a global `.empty` for the
+   "nothing here" row inside a table — centred, with 50px of padding — and a
+   review with no written comment picked it up, opening a hole in the middle of
+   the card with one italic line floating in it. */
+.rv-body.rv-empty{ color:var(--text-mute); font-style:italic; }
+.rv-meta{ display:flex; flex-wrap:wrap; gap:6px 14px; font-size:.78rem; color:var(--text-mute); }
+.rv-reason{ margin-top:10px; background:var(--danger-bg); color:var(--danger); border-radius:8px;
+  padding:9px 12px; font-size:.8rem; overflow-wrap:anywhere; }
+.rv-foot{ display:grid; grid-template-columns:1fr auto; gap:12px; align-items:end;
+  margin-top:12px; padding-top:12px; border-top:1px solid var(--ivory); }
+.rv-actions{ display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
+/* 44px is the fingertip minimum, and these are destructive-adjacent controls
+   on a screen an owner will use from a phone. */
+.rv-actions .btn{ min-height:44px; }
+.rv-hidebox{ display:none; grid-column:1/-1; margin-top:10px; }
+.rv-hidebox.show{ display:block; }
+.rv-hidebox label{ display:block; font-size:.78rem; color:var(--text-mute); margin-bottom:6px; }
+.rv-hidebox .row{ display:flex; gap:8px; flex-wrap:wrap; }
+.rv-hidebox input{ flex:1 1 220px; min-width:0; min-height:44px; padding:10px 12px;
+  border:1px solid var(--parchment-2); border-radius:9px; background:var(--ivory); font-size:.88rem; }
+.rv-hidebox input:focus{ border-color:var(--gold); background:#fff; }
+@media (max-width:720px){
+  .rv-foot{ grid-template-columns:1fr; align-items:stretch; }
+  .rv-actions{ justify-content:stretch; }
+  .rv-actions .btn{ flex:1 1 140px; justify-content:center; }
+}
+@media (max-width:380px){
+  .rv-card{ padding:13px; }
+  .rv-top{ grid-template-columns:1fr; }
+  /* One per row below 380px: two side by side leave 130px each, which clips
+     "Approve" and puts two destructive-adjacent targets under one thumb. */
+  .rv-actions .btn{ flex:1 1 100%; }
+}
+
 .divider{ height:1px; background:var(--parchment); margin:16px 0; }
 code.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.78rem; background:var(--parchment); padding:2px 6px; border-radius:5px; }
 
@@ -442,6 +670,57 @@ code.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.78rem; 
    everything would see nothing at all. Toggling a class instead lets each
    element fall back to its own natural display (.nav-btn is flex, a div is
    block) without this code needing to know what that is. */
+
+/* ============================================================
+   TOUCH TARGETS — the console is used from a phone
+   ============================================================
+   Every control at 767px and below must be at least 44x44 CSS pixels, the same
+   floor the storefront has carried for a while. This file had NONE, and nothing
+   was looking: scripts/responsive-audit.js covered ten storefront routes at
+   eight widths and admin.html at zero, so the whole back office was outside the
+   gate. Extending the audit to the console found these in one run —
+
+     the two topbar icon buttons         42x34
+     every .btn-sm (inbox tabs, review
+       actions, the settings save)       32px tall
+     every filter select                 41px
+     the product and customer search     42px
+     the full-width primary buttons      32px tall
+     a product name in a table           21px
+     the low-stock disclosure            34px
+
+   — none of which is a style preference. Below the minimum a fingertip covers
+   more than the control, people miss, hit the row beside it, and on this screen
+   the row beside it might be a refund.
+
+   ONE BLOCK, AT THE END, for the same reason the storefront's sits at the end
+   of its stylesheet: anything whose job is to override every component has to
+   come after every component, or it loses on source order to the rules it was
+   written to beat. Only min-height where the control has its own padding, so
+   nothing is resized on a desktop and no layout above is disturbed. */
+@media (max-width:767px){
+  .btn,
+  .filter-select,
+  .search-box input,
+  .field input, .field select, .field textarea{ min-height:44px; }
+
+  /* The topbar pair are icon-only at this width, so they need both dimensions
+     rather than a height alone. */
+  .topbar-actions .btn{ min-width:44px; }
+
+  /* A product name is a link into the storefront and it was 21px of text.
+     inline-flex rather than block: it sits inside a table cell beside other
+     content, and blockifying it would push that content onto its own line. */
+  .product-link{ display:inline-flex; align-items:center; min-height:44px; }
+
+  /* The disclosure on a low-stock group. It already fills its cell, so only the
+     height is short. */
+  .ls-toggle{ min-height:44px; }
+
+  /* The close control on a modal or drawer — small, and the one thing somebody
+     jabs at when they opened the wrong row. */
+  .close-x{ width:44px; height:44px; }
+}
 </style>
 </head>
 <body>
@@ -510,6 +789,18 @@ code.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.78rem; 
       <button class="nav-btn" data-view="coupons" onclick="switchView('coupons')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M20 12a2 2 0 012-2V7a1 1 0 00-1-1H3a1 1 0 00-1 1v3a2 2 0 010 4v3a1 1 0 001 1h18a1 1 0 001-1v-3a2 2 0 01-2-2z"/><path d="M9 9l6 6M9 15l6-6"/></svg>
         Coupons
+      </button>
+      <!-- REVIEWS HAD A COMPLETE BACKEND AND NO WAY IN.
+           GET /api/admin/reviews and PATCH /api/admin/reviews/:id have existed
+           since migration 005, gated behind the reviews:moderate capability,
+           writing every decision to the audit log — and nothing in this console
+           ever called either. So a customer review appeared on a product page
+           the moment it was written, and the only way to take one down was to
+           write SQL by hand. Granting somebody reviews:moderate did nothing at
+           all, because there was no screen the grant could unlock. -->
+      <button class="nav-btn" data-cap="reviews:moderate" data-view="reviews" onclick="switchView('reviews')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3l2.6 5.7 6.2.7-4.6 4.2 1.3 6.1L12 16.6 6.5 19.7l1.3-6.1L3.2 9.4l6.2-.7z"/></svg>
+        Reviews <span class="pill pill-warn" id="navReviewsBadge" style="margin-left:auto;display:none;"></span>
       </button>
       <button class="nav-btn" data-cap="customers:read" data-view="customers" onclick="switchView('customers')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/></svg>
@@ -590,17 +881,17 @@ code.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.78rem; 
           </div>
         </div>
 
-        <div class="grid-2">
+        <div class="grid-2 grid-2-even">
           <div class="card">
             <div class="card-head"><h3>Best-Selling Products</h3></div>
-            <div class="table-wrap"><table class="data" id="topProductsTable">
+            <div class="table-wrap"><table class="data stack-sm" id="topProductsTable">
               <thead><tr><th>Product</th><th>Category</th><th>Units Sold</th><th>Revenue</th></tr></thead>
               <tbody><tr><td colspan="4" class="loading-row"><span class="spinner"></span></td></tr></tbody>
             </table></div>
           </div>
           <div class="card">
             <div class="card-head"><h3>Low Stock Alert</h3></div>
-            <div class="table-wrap"><table class="data" id="lowStockTable">
+            <div class="table-wrap"><table class="data stack-sm" id="lowStockTable">
               <thead><tr><th>Product</th><th>SKU</th><th>Stock</th></tr></thead>
               <tbody><tr><td colspan="3" class="loading-row"><span class="spinner"></span></td></tr></tbody>
             </table></div>
@@ -739,6 +1030,7 @@ code.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.78rem; 
             <button class="btn btn-sm inbox-tab"        data-tab="subscribers" onclick="switchInboxTab('subscribers')">Subscribers</button>
             <button class="btn btn-sm inbox-tab"        data-tab="waitlist"    onclick="switchInboxTab('waitlist')">Restock waitlist</button>
             <button class="btn btn-sm inbox-tab"        data-tab="email"       onclick="switchInboxTab('email')">Email delivery</button>
+            <button class="btn btn-sm inbox-tab" data-cap="subscribers:broadcast" data-tab="broadcast" onclick="switchInboxTab('broadcast')">Subscription update</button>
             <!-- Archived is hidden by DEFAULT, which is what makes Archive mean
                  something. This is the only way back to it. -->
             <select class="filter-select" id="messageStatusFilter" style="margin-left:auto;" onchange="loadContactMessages()" aria-label="Filter messages by status">
@@ -772,12 +1064,86 @@ code.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.78rem; 
           </table></div>
         </div>
 
+        <!-- ============ SUBSCRIPTION UPDATE ============
+             Writes one message to every CONFIRMED subscriber. The template
+             behind it (sendNewsletter) has existed since the email system was
+             built and had never been called — the list has been collecting
+             addresses nobody could write to.
+
+             The composer is a form rather than a table, so it is laid out as
+             one column that simply narrows; nothing here needs a phone-specific
+             treatment beyond the field widths, which are already fluid. -->
+        <div class="card inbox-panel" id="inbox-broadcast" style="display:none;">
+          <div class="bc-head">
+            <div>
+              <h3 style="font-size:1.02rem;">Send an update to your subscribers</h3>
+              <p class="muted" style="font-size:.82rem;margin-top:4px;max-width:62ch;">
+                Goes to everyone who confirmed their subscription. Anyone who unsubscribed,
+                bounced or never confirmed is skipped automatically, and every message carries
+                an unsubscribe link.
+              </p>
+            </div>
+            <div class="bc-count" id="bcAudience">—</div>
+          </div>
+
+          <div class="field">
+            <label for="bcSubject">Subject line</label>
+            <input id="bcSubject" maxlength="200" placeholder="Navratri opening hours and a new arrival"
+                   oninput="updateBroadcastReady()">
+            <div class="field-hint" id="bcSubjectHint">This is what lands in the inbox. 3–200 characters.</div>
+          </div>
+
+          <div class="field">
+            <label for="bcMessage">Your update</label>
+            <textarea id="bcMessage" maxlength="5000" rows="9"
+                      placeholder="Write it the way you would write to one person.&#10;&#10;Leave a blank line between paragraphs, **bold** what matters, and link with [the words](https://example.com)."
+                      oninput="updateBroadcastReady()"></textarea>
+            <div class="field-hint" id="bcMessageHint">
+              A blank line starts a new paragraph. 10&ndash;5000 characters.
+              <span class="bc-syntax">
+                <code>**bold**</code> makes a word bold ·
+                <code>[shop the malas](https://…)</code> makes a link
+              </span>
+            </div>
+          </div>
+
+          <div class="bc-foot">
+            <div class="muted" id="bcStatus" style="font-size:.8rem;"></div>
+            <button class="btn btn-primary" id="bcSendBtn" onclick="sendSubscriberBroadcast()" disabled>
+              Send to subscribers
+            </button>
+          </div>
+
+          <div id="bcResult" class="bc-result" hidden></div>
+        </div>
+
         <div class="card inbox-panel" id="inbox-email" style="padding:0;display:none;">
           <div style="padding:12px 14px;" id="emailSummary" class="muted"></div>
           <div class="table-wrap"><table class="data">
             <thead><tr><th>Sent</th><th>Template</th><th>To</th><th>Subject</th><th>Status</th></tr></thead>
             <tbody id="emailTbody"><tr><td colspan="5" class="loading-row"><span class="spinner"></span></td></tr></tbody>
           </table></div>
+        </div>
+      </section>
+
+      <!-- ============ REVIEWS ============
+           A CARD LIST, NOT A TABLE, and that is a deliberate choice rather than
+           a stylistic one. Every other screen here shows short fields that line
+           up in columns; a review is a paragraph somebody wrote, of unknown
+           length, next to a decision that has to be made about it. In a table
+           that paragraph either forces a horizontal scroll on a phone or is
+           truncated to the point where it cannot be judged — and judging it is
+           the entire job of this screen. -->
+      <section class="view" id="view-reviews">
+        <div class="card" style="padding:14px;margin-bottom:14px;">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+            <button class="btn btn-sm rv-tab active" data-rv="pending" onclick="switchReviewFilter('pending')">Needs a decision</button>
+            <button class="btn btn-sm rv-tab" data-rv="all" onclick="switchReviewFilter('all')">All reviews</button>
+            <span class="muted" id="reviewsCount" style="margin-left:auto;font-size:.8rem;"></span>
+          </div>
+        </div>
+        <div id="reviewsList" class="rv-list">
+          <div class="loading-row" style="padding:28px;"><span class="spinner"></span></div>
         </div>
       </section>
 
@@ -1337,6 +1703,7 @@ const VIEW_META = {
   bookings:  { title: 'Bookings',  sub: 'Puja and astrology consultation requests' },
   services:  { title: 'Booking Services', sub: 'Manage puja and astrology pricing — this is the only source of truth customers are charged from' },
   coupons:   { title: 'Coupons', sub: 'Create and manage discount codes — limits and expiry are enforced server-side at checkout' },
+  reviews:   { title: 'Reviews', sub: 'What customers wrote about your products — publish it or take it down, with the reason recorded' },
   customers: { title: 'Customers', sub: 'Everyone who has an account' },
   inbox:     { title: 'Inbox', sub: 'Messages, subscribers, restock waitlist and email delivery' },
   auditlog:  { title: 'Audit Log', sub: 'Every admin action, for accountability' },
@@ -1367,6 +1734,7 @@ function refreshCurrentView(){
   else if (currentView === 'bookings') loadBookings();
   else if (currentView === 'services') loadBookingServicesAdmin();
   else if (currentView === 'coupons') loadCoupons();
+  else if (currentView === 'reviews') loadReviews();
   else if (currentView === 'customers') loadCustomers(1);
   else if (currentView === 'inbox') loadInbox();
   else if (currentView === 'auditlog') loadAuditLog();
@@ -1434,6 +1802,11 @@ async function loadDashboard(){
     // gets a banner rather than a number buried in a table.
     renderPaymentReviewBanner(overview.ordersNeedingPaymentReview || 0);
   } catch (err) { toast(err.error || 'Could not load dashboard stats.', 'err'); }
+
+  /* A review waiting for a decision is visible from the dashboard, the same way
+     an unanswered message is. Guarded on the capability so an account that
+     cannot moderate never fires a request it would be refused for. */
+  if (hasCapability('reviews:moderate')) refreshReviewBadge();
 
   loadRevenueChart();
   loadStatusChart();
@@ -1578,10 +1951,43 @@ async function loadTopProducts(){
     const body = await api('/api/admin/analytics/top-products?limit=8');
     if (!body.products.length) { tbody.innerHTML = '<tr><td colspan="4" class="empty">No sales yet.</td></tr>'; return; }
     tbody.innerHTML = body.products.map((p) => `<tr>
-      <td>${productLink(p.id, p.name)}</td><td class="muted">${esc(p.category)}${p.subcategory ? ` / ${esc(p.subcategory)}` : ''}</td>
-      <td>${esc(p.units_sold)}</td><td>${paise(p.revenue_paise)}</td>
+      <td data-label="Product">${productLink(p.slug, p.name)}</td><td class="muted" data-label="Category">${esc(p.category)}${p.subcategory ? ` / ${esc(p.subcategory)}` : ''}</td>
+      <td data-label="Units">${esc(p.units_sold)}</td><td data-label="Revenue">${paise(p.revenue_paise)}</td>
     </tr>`).join('');
   } catch (err) { tbody.innerHTML = '<tr><td colspan="4" class="empty">Could not load.</td></tr>'; }
+}
+
+/* The variant option values as one readable line: "Size: Large / Colour: Red".
+   One function, because the low-stock panel and anything that lists a variant
+   later must not describe the same variant two different ways. */
+function variantOptionLabel(optionValues){
+  return Array.isArray(optionValues)
+    ? optionValues.map((o) => esc(o.option) + ': ' + esc(o.value)).join(' / ')
+    : '';
+}
+
+/* The stock figure, coloured by how bad it is. Zero is an outage, not a
+   warning, and the two must not look the same at a glance. */
+function stockPill(n){
+  const qty = Number(n) || 0;
+  return '<span class="pill ' + (qty === 0 ? 'pill-danger' : 'pill-warn') + '">' +
+    (qty === 0 ? 'Out of stock' : qty + ' left') + '</span>';
+}
+
+/* Which base products are expanded. Kept OUTSIDE the render so a refresh — the
+   Refresh button, or switching back to the dashboard — does not silently
+   collapse a group somebody had opened to work through. */
+const lowStockOpen = new Set();
+
+function toggleLowStockGroup(productId){
+  if (lowStockOpen.has(productId)) lowStockOpen.delete(productId);
+  else lowStockOpen.add(productId);
+  const btn = qs('#lsBtn-' + CSS.escape(productId));
+  const open = lowStockOpen.has(productId);
+  if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  const group = qs('#lsRow-' + CSS.escape(productId));
+  if (group) group.classList.toggle('is-open', open);
+  qsa('tr[data-ls-parent="' + productId + '"]').forEach((tr) => { tr.hidden = !open; });
 }
 
 async function loadLowStock(){
@@ -1597,22 +2003,82 @@ async function loadLowStock(){
        holding 2 each report 6 and never tripped a threshold of 5 — while every
        individual size was one order from unsellable. Those rows are the ones
        that need acting on, so they lead; "Dhoti" as a whole is not something
-       anybody can restock. */
-    const rows = variants.map((v) => {
-      const opts = Array.isArray(v.option_values)
-        ? v.option_values.map((o) => esc(o.option) + ': ' + esc(o.value)).join(' / ')
-        : '';
-      return `<tr>
-        <td>${productLink(v.product_id, v.product_name)}
-          <div class="muted" style="font-size:.72rem;">${opts || 'variant'}</div></td>
-        <td class="muted"><code class="mono">${esc(v.variant_sku || v.product_sku || '—')}</code></td>
-        <td><span class="pill ${v.stock_qty === 0 ? 'pill-danger' : 'pill-warn'}">${v.stock_qty} left</span></td>
-      </tr>`;
-    }).concat(products.map((p) => `<tr>
-      <td>${productLink(p.id, p.name)}</td><td class="muted"><code class="mono">${esc(p.sku)}</code></td>
-      <td><span class="pill ${p.stock_qty === 0 ? 'pill-danger' : 'pill-warn'}">${p.stock_qty} left</span></td>
-    </tr>`));
+       anybody can restock.
 
+       GROUPED UNDER THE BASE PRODUCT, collapsed. They used to be one flat list
+       repeating the same product name once per size, so a dhoti in five sizes
+       filled the whole panel with the word "Dhoti" and buried every other
+       product that needed attention. One row per product, opened to see the
+       sizes, keeps the panel a list of PRODUCTS to act on — which is what it is
+       for — and reads on a phone without a sideways swipe. */
+    const groups = new Map();
+    variants.forEach((v) => {
+      if (!groups.has(v.product_id)) {
+        groups.set(v.product_id, {
+          id: v.product_id, name: v.product_name, slug: v.product_slug,
+          sku: v.product_sku, variants: []
+        });
+      }
+      groups.get(v.product_id).variants.push(v);
+    });
+
+    /* The worst variant in a group decides where the group sorts and what its
+       summary says. A product with one size out of stock is more urgent than
+       one with three sizes down to four, however many rows each has. */
+    const groupRows = [...groups.values()]
+      .map((g) => {
+        const worst = g.variants.reduce((a, b) => (Number(a.stock_qty) <= Number(b.stock_qty) ? a : b));
+        const out = g.variants.filter((v) => Number(v.stock_qty) === 0).length;
+        return { g, worst: Number(worst.stock_qty), out };
+      })
+      .sort((a, b) => a.worst - b.worst || b.out - a.out)
+      .map(({ g, worst, out }) => {
+        const open = lowStockOpen.has(g.id);
+        const n = g.variants.length;
+        const summary = n + (n === 1 ? ' variant' : ' variants') + ' low' +
+          (out ? ' · ' + out + ' out of stock' : '');
+        const head = `<tr class="ls-group${open ? ' is-open' : ''}" id="lsRow-${esc(g.id)}">
+          <td data-label="Product">
+            <button type="button" class="ls-toggle" id="lsBtn-${esc(g.id)}"
+                    aria-expanded="${open ? 'true' : 'false'}"
+                    aria-controls="lsRow-${esc(g.id)}"
+                    onclick="toggleLowStockGroup('${esc(g.id)}')">
+              <svg class="ls-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+              <span class="ls-name">${esc(g.name)}</span>
+            </button>
+            <div class="muted ls-summary">${summary}</div>
+          </td>
+          <td class="muted" data-label="SKU"><code class="mono">${esc(g.sku || '—')}</code></td>
+          <td data-label="Stock">${stockPill(worst)}</td>
+        </tr>`;
+        /* The variants themselves, in the same three columns as every other row
+           so a size carries exactly the detail a standalone product does: its
+           own name, its own SKU, its own count. `hidden` rather than a display
+           rule, so the rows are genuinely out of the accessibility tree while
+           the group is closed. */
+        const kids = g.variants
+          .slice()
+          .sort((a, b) => Number(a.stock_qty) - Number(b.stock_qty))
+          .map((v) => `<tr class="ls-variant" data-ls-parent="${esc(g.id)}"${open ? '' : ' hidden'}>
+            <td data-label="Variant">
+              <span class="ls-variant-name">${variantOptionLabel(v.option_values) || 'Variant'}</span>
+              <div class="muted ls-summary">${productLink(g.slug, g.name)}</div>
+            </td>
+            <td class="muted" data-label="SKU"><code class="mono">${esc(v.variant_sku || g.sku || '—')}</code></td>
+            <td data-label="Stock">${stockPill(v.stock_qty)}</td>
+          </tr>`).join('');
+        return head + kids;
+      });
+
+    /* Products with no variants keep a plain row — there is nothing to expand,
+       and giving them a chevron that opens nothing would be worse than none. */
+    const plainRows = products.map((p) => `<tr class="ls-plain">
+      <td data-label="Product">${productLink(p.slug, p.name)}</td>
+      <td class="muted" data-label="SKU"><code class="mono">${esc(p.sku)}</code></td>
+      <td data-label="Stock">${stockPill(p.stock_qty)}</td>
+    </tr>`);
+
+    const rows = groupRows.concat(plainRows);
     if (!rows.length) { tbody.innerHTML = '<tr><td colspan="3" class="empty">All products and variants well-stocked.</td></tr>'; return; }
     tbody.innerHTML = rows.join('');
   } catch (err) { tbody.innerHTML = '<tr><td colspan="3" class="empty">Could not load.</td></tr>'; }
@@ -1663,7 +2129,7 @@ async function loadProducts(page){
     }
     tbody.innerHTML = products.map((p) => `<tr>
       <td><div class="thumb-sm" style="display:flex;align-items:center;justify-content:center;font-size:.7rem;color:var(--text-mute);">${esc((p.category||'').slice(0,2).toUpperCase())}</div></td>
-      <td>${productLink(p.id, p.name, { bold: true })}</td>
+      <td>${productLink(p.slug, p.name, { bold: true })}</td>
       <td class="muted">${esc(p.sku)}</td>
       <td class="muted">${esc(p.category)}</td>
       <td class="muted">${p.subcategory ? esc(p.subcategory) : '<span class="muted">—</span>'}</td>
@@ -1958,14 +2424,39 @@ let editingProductImages = [];
    These are gen_random_uuid() values and cannot contain a quote; the safety
    comes from the type, not from escaping. The visible TEXT is escaped, because
    a product name is free text an admin typed. */
-function productLink(productId, name, opts){
+/* A PRODUCT NAME OPENS THE PRODUCT, NOT THE FORM THAT EDITS IT.
+
+   This used to call openProductForm(), so every product name anywhere in the
+   console — the dashboard, the product table, an order's items, the restock
+   waitlist — dropped whoever clicked it into an edit screen. That is the wrong
+   destination for the overwhelmingly common intent: somebody reading an order
+   wants to SEE what was bought, the way the customer saw it. Editing is what
+   the Edit control on the row is for.
+
+   It now opens the storefront's own product page in a new tab, built from the
+   product's SLUG. The slug is the storefront's address for a product, so every
+   call site has to supply one — `p.slug`, `product_slug`, or the slug the
+   order item's LEFT JOIN carries.
+
+   TAKES A SLUG, NOT AN ID, AND CHECKS. Passing the id — which is what every
+   call site did before this change — would build /product/<uuid>, a link that
+   looks perfectly fine and 404s. A uuid-shaped value is therefore refused and
+   the name renders as plain text: a missed call site becomes visibly unlinked
+   rather than quietly broken. [fe-55] additionally fails the build if any call
+   site passes something that is not a slug. */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function productLink(slug, name, opts){
   const o = opts || {};
   const text = esc(name || '—');
-  if(!productId) return o.bold ? '<b>' + text + '</b>' : text;
   const inner = o.bold ? '<b>' + text + '</b>' : text;
-  return '<a href="#" class="product-link" title="Open this product"'
-    + ' onclick="event.preventDefault(); openProductForm(\'' + productId + '\');">'
-    + inner + '</a>';
+  const href = (slug && !UUID_RE.test(String(slug))) ? storefrontProductHref(slug) : null;
+  if(!href) return inner;
+  /* target=_blank so a packer reading an order does not lose the order to look
+     at the product; rel=noopener because the opened page must not be able to
+     reach back into this console through window.opener. */
+  return '<a href="' + esc(href) + '" class="product-link" target="_blank" rel="noopener"'
+    + ' title="Open this product on the storefront">' + inner + '</a>';
 }
 
 /* Mirrors SEO_DESCRIPTION in scripts/seo-fields.js.
@@ -2612,20 +3103,67 @@ let currentOrderId = null;
    look like. */
 let currentOrderForLabel = null;
 
-function shippingAddressBlock(o){
-  if(!o || !o.ship_name) return '';
-  const lines = [
-    o.ship_name,
-    o.ship_line1,
-    o.ship_line2 || '',
-    // City and PIN on one line: this is the form every Indian courier label and
-    // manifest uses, and splitting them is what invites a transcription slip.
-    [o.ship_city, o.ship_pincode].filter(Boolean).join(' - '),
-    o.ship_state,
-    o.ship_country || 'India',
-    o.ship_phone ? 'Phone: ' + o.ship_phone : ''
+/* THE SHIPPING FIELDS, DECLARED ONCE.
+
+   These were written out three times — once as the drawer's <dt>/<dd> list,
+   once as the lines copied for a courier, once as the printed label — and the
+   three had already diverged. The copied block was bare VALUES with no field
+   names at all: a packer pasting it into a courier portal got
+
+       Mukul Chakraborty
+       12 Burra Baajar
+       Howrah - 711101
+
+   and had to work out from position which box each line belonged in, with a
+   missing optional line silently shifting everything below it up by one. It
+   also carried no order reference, so a pasted address could not be tied back
+   to the order it came from.
+
+   One list now feeds all three. A field added here appears on screen, in the
+   copy and on the label, labelled the same way in each.
+
+   `forLabel` marks what a courier needs. Account Email is an admin detail — it
+   is the address the customer signs in with, not where the parcel goes — so it
+   shows in the drawer and stays off the label. */
+function shippingAddressFields(o){
+  if(!o || !o.ship_name) return [];
+  const fields = [
+    { label: 'Recipient Name', value: o.ship_name,   forLabel: true },
+    { label: 'Phone',          value: o.ship_phone,  forLabel: true },
+    { label: 'Email',          value: o.ship_email,  forLabel: true },
+    { label: 'Address',        value: o.ship_line1,  forLabel: true },
+    { label: 'Landmark / Area', value: o.ship_line2, forLabel: true },
+    { label: 'City',           value: o.ship_city,   forLabel: true },
+    { label: 'State',          value: o.ship_state,  forLabel: true },
+    { label: 'PIN Code',       value: o.ship_pincode, forLabel: true },
+    { label: 'Country',        value: o.ship_country || 'India', forLabel: true }
   ];
-  return lines.filter(function(l){ return String(l || '').trim(); }).join('\n');
+  /* Only when it differs from the delivery address — the same rule the drawer
+     applied before, kept here so it is applied once. */
+  if (o.customer_email && o.customer_email !== o.ship_email) {
+    fields.push({ label: 'Account Email', value: o.customer_email, forLabel: false });
+  }
+  /* LAST, and that position is deliberate: everything above is where the parcel
+     goes, and this is which order it belongs to. A courier portal is filled
+     top-down from the address; the reference is what gets written on the
+     manifest afterwards. The order NUMBER, not the internal uuid — the number
+     is what the customer quotes and what appears on the invoice. */
+  if (o.order_number) {
+    fields.push({ label: 'Order ID', value: o.order_number, forLabel: true });
+  }
+  return fields.filter(function(f){ return String(f.value == null ? '' : f.value).trim(); });
+}
+
+/* The copied and printed block: "Label : value", one per line.
+
+   Spaced around the colon because that is how the user asked for it and it
+   survives a paste into a plain-text courier form, where a tab or a fixed-width
+   pad would not. */
+function shippingAddressBlock(o){
+  return shippingAddressFields(o)
+    .filter(function(f){ return f.forLabel; })
+    .map(function(f){ return f.label + ' : ' + f.value; })
+    .join('\n');
 }
 
 async function copyShippingAddress(){
@@ -2644,7 +3182,7 @@ async function copyShippingAddress(){
     const ta = document.createElement('textarea');
     ta.value = text;
     ta.setAttribute('readonly', 'readonly');
-    ta.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:200;width:min(90vw,360px);height:170px;padding:12px;font-family:inherit;';
+    ta.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:201;width:min(90vw,360px);height:170px;padding:12px;font-family:inherit;';
     document.body.appendChild(ta);
     ta.select();
     let copied = false;
@@ -2673,7 +3211,9 @@ function printShippingLabel(){
     '.on{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#666;margin-bottom:8px;}' +
     '.addr{white-space:pre-wrap;font-size:16px;font-weight:600;}' +
     '.frm{margin-top:14mm;padding-top:4mm;border-top:1px dashed #999;font-size:11px;color:#555;}</style>' +
-    '<div class="on">Order ' + esc(orderNo) + '</div>' +
+    // No separate "Order NNN" header any more: shippingAddressBlock now ends
+    // with "Order ID : NNN", and printing the same reference twice on a 10x15cm
+    // label wastes the only space that matters.
     '<div class="addr">' + esc(text) + '</div>' +
     '<div class="frm">From: Chakrashri</div>'
   );
@@ -2723,7 +3263,7 @@ function renderOrderDetail(o, items){
   const itemsHtml = items.map((i) => `
     <tr>
       <td>
-        ${productLink(i.product_id, i.product_name_snapshot, { bold: true })}
+        ${productLink(i.slug, i.product_name_snapshot, { bold: true })}
         <div class="muted" style="font-size:.72rem;margin-top:2px;">
           ${i.sku ? `SKU <code class="mono">${esc(i.sku)}</code>` : '<i>product no longer in catalogue</i>'}
           ${i.category ? ` · ${esc(i.category)}${i.subcategory ? ' / ' + esc(i.subcategory) : ''}` : ''}
@@ -2778,16 +3318,7 @@ function renderOrderDetail(o, items){
       <button class="btn btn-sm" onclick="printShippingLabel()">Print label</button>` : ''}
     </div>
     ${o.ship_name ? `<dl class="kv">
-      <dt>Recipient</dt><dd>${esc(o.ship_name)}</dd>
-      <dt>Phone</dt><dd>${esc(o.ship_phone)}</dd>
-      ${o.ship_email ? `<dt>Email</dt><dd>${esc(o.ship_email)}</dd>` : ''}
-      <dt>Address</dt><dd>${esc(o.ship_line1)}</dd>
-      ${o.ship_line2 ? `<dt>Landmark / Area</dt><dd>${esc(o.ship_line2)}</dd>` : ''}
-      <dt>City</dt><dd>${esc(o.ship_city)}</dd>
-      <dt>State</dt><dd>${esc(o.ship_state)}</dd>
-      <dt>PIN Code</dt><dd>${esc(o.ship_pincode)}</dd>
-      <dt>Country</dt><dd>${esc(o.ship_country || 'India')}</dd>
-      ${o.customer_email && o.customer_email !== o.ship_email ? `<dt>Account Email</dt><dd>${esc(o.customer_email)}</dd>` : ''}
+      ${shippingAddressFields(o).map((f) => `<dt>${esc(f.label)}</dt><dd>${esc(f.value)}</dd>`).join('')}
     </dl>` : '<div class="muted">No shipping address on file.</div>'}
 
     <div class="divider"></div>
@@ -3520,6 +4051,12 @@ function switchInboxTab(tab){
   const panel = qs('#inbox-' + tab);
   if (panel) panel.style.display = '';
   qsa('.inbox-tab').forEach(function(b){ b.classList.toggle('active', b.dataset.tab === tab); });
+  /* The status filter belongs to Messages and to nothing else. It sits in the
+     shared tab bar, so it stayed on screen over Subscribers, the waitlist, the
+     email log and the composer — a control that changes nothing on four of the
+     five panels, which reads as a control that is broken. */
+  const statusFilter = qs('#messageStatusFilter');
+  if (statusFilter) statusFilter.style.display = (tab === 'messages') ? '' : 'none';
   loadInbox();
 }
 
@@ -3527,7 +4064,136 @@ async function loadInbox(){
   if (inboxTab === 'subscribers') return loadSubscribers();
   if (inboxTab === 'waitlist')    return loadStockWaitlist();
   if (inboxTab === 'email')       return loadEmailLog();
+  if (inboxTab === 'broadcast')   return loadBroadcastComposer();
   return loadContactMessages();
+}
+
+/* =========================================================================
+   SUBSCRIPTION UPDATE — one message to every confirmed subscriber
+   ========================================================================= */
+
+/* The idempotency key for the send in progress.
+
+   Generated when the composer opens and replaced only after a send SUCCEEDS.
+   A double-click, or a retry after a network wobble, therefore carries the same
+   id — and the mail engine's dedupe key is `newsletter:<campaignId>:<email>`,
+   so the second attempt is dropped per recipient rather than mailing the whole
+   list twice. Nothing else in this console can do damage by being clicked
+   twice; this can, so it is the one place that needs an explicit key. */
+let broadcastCampaignId = null;
+
+function newCampaignId(){
+  try {
+    if (window.crypto && typeof window.crypto.randomUUID === 'function') return window.crypto.randomUUID();
+  } catch (e) { /* fall through */ }
+  // Older browsers: still 128 bits of randomness, just assembled by hand.
+  const a = new Uint8Array(16);
+  (window.crypto || {}).getRandomValues ? window.crypto.getRandomValues(a) : a.forEach((_, i) => { a[i] = Math.floor(Math.random() * 256); });
+  return Array.from(a, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/* Enabled only when both fields would actually pass the server's validators.
+   The server remains the rule — this just stops somebody composing for two
+   minutes and then being told the subject was two characters short. */
+function updateBroadcastReady(){
+  const subject = (qs('#bcSubject') || {}).value || '';
+  const message = (qs('#bcMessage') || {}).value || '';
+  const btn = qs('#bcSendBtn');
+  if (!btn) return;
+  const ready = subject.trim().length >= 3 && message.trim().length >= 10;
+  btn.disabled = !ready;
+  const status = qs('#bcStatus');
+  if (status && !btn.dataset.sending) {
+    status.textContent = ready ? 'Ready to send.'
+      : (subject.trim().length < 3 ? 'Add a subject line.' : 'Write at least a couple of sentences.');
+  }
+}
+
+async function loadBroadcastComposer(){
+  broadcastCampaignId = broadcastCampaignId || newCampaignId();
+  updateBroadcastReady();
+  const audience = qs('#bcAudience');
+  if (!audience) return;
+  audience.textContent = 'Counting…';
+  try {
+    /* The same endpoint the Subscribers tab reads, for its counts only. Asking
+       one place how many confirmed subscribers there are means the number above
+       the composer and the number in the table can never disagree. */
+    const body = await api('/api/admin/subscribers?status=confirmed');
+    const n = (body && body.counts && body.counts.confirmed) || 0;
+    audience.textContent = n === 1 ? '1 confirmed subscriber' : n + ' confirmed subscribers';
+    audience.dataset.n = String(n);
+  } catch (err) {
+    audience.textContent = 'Could not count subscribers';
+  }
+}
+
+async function sendSubscriberBroadcast(){
+  const subjectEl = qs('#bcSubject');
+  const messageEl = qs('#bcMessage');
+  const btn = qs('#bcSendBtn');
+  const status = qs('#bcStatus');
+  const result = qs('#bcResult');
+  if (!subjectEl || !messageEl || !btn) return;
+
+  const subject = subjectEl.value.trim();
+  const message = messageEl.value.trim();
+  if (subject.length < 3 || message.length < 10) { updateBroadcastReady(); return; }
+
+  const n = Number((qs('#bcAudience') || {}).dataset && qs('#bcAudience').dataset.n) || 0;
+
+  /* Confirmed before it goes, naming the number of people it reaches. This is
+     the only irreversible one-to-many action in the console; every other
+     destructive control here already asks, and this one reaches further than
+     any of them. */
+  confirmAction(
+    'Send to ' + (n === 1 ? '1 subscriber' : n + ' subscribers'),
+    'This emails "' + subject + '" to every confirmed subscriber. It cannot be recalled.',
+    async () => {
+      btn.disabled = true;
+      btn.dataset.sending = '1';
+      if (status) status.textContent = 'Sending…';
+      if (result) { result.hidden = true; result.className = 'bc-result'; }
+      try {
+        const body = await api('/api/admin/subscribers/broadcast', {
+          method: 'POST',
+          body: JSON.stringify({ subject, message, campaignId: broadcastCampaignId })
+        });
+        if (result) {
+          result.className = 'bc-result ok';
+          result.hidden = false;
+          /* Every outcome, not just the successes. "Skipped" is the number the
+             owner most needs to see — it is unsubscribes, unconfirmed addresses
+             and suppressions, and a large one means the list is not what they
+             think it is. */
+          result.innerHTML = '<strong>Sent.</strong>' +
+            '<ul>' +
+              '<li>' + esc(String(body.sent)) + ' delivered to the mail server</li>' +
+              (body.skipped ? '<li>' + esc(String(body.skipped)) + ' skipped — unsubscribed, suppressed, or already sent this update</li>' : '') +
+              (body.failed ? '<li>' + esc(String(body.failed)) + ' failed — see Email delivery for the reason</li>' : '') +
+            '</ul>';
+        }
+        toast('Update sent to ' + body.sent + ' subscriber' + (body.sent === 1 ? '' : 's') + '.');
+        // Cleared only on success, and a fresh key so the NEXT update is a new
+        // campaign rather than being deduped against this one.
+        subjectEl.value = '';
+        messageEl.value = '';
+        broadcastCampaignId = newCampaignId();
+      } catch (err) {
+        if (result) {
+          result.className = 'bc-result err';
+          result.hidden = false;
+          result.textContent = (err && err.error) || 'The update could not be sent.';
+        }
+        toast((err && err.error) || 'The update could not be sent.', 'err');
+        // Key deliberately NOT rotated: a retry of a failed send is the same
+        // campaign, so anyone who did receive it is not mailed a second time.
+      } finally {
+        delete btn.dataset.sending;
+        updateBroadcastReady();
+      }
+    }
+  );
 }
 
 const MSG_PILL = { new: 'pill-warn', read: 'pill-neutral', replied: 'pill-success', archived: 'pill-neutral' };
@@ -3695,7 +4361,7 @@ async function loadStockWaitlist(){
     const body = await api('/api/admin/stock-waitlist');
     if (!body.waitlist.length) { tbody.innerHTML = '<tr><td colspan="6"><div class="empty">Nobody is waiting on a restock.</div></td></tr>'; return; }
     tbody.innerHTML = body.waitlist.map(function(w){
-      return '<tr><td>' + productLink(w.product_id, w.name) + '</td>'
+      return '<tr><td>' + productLink(w.slug, w.name) + '</td>'
         + '<td class="mono muted">' + esc(w.sku) + '</td>'
         + '<td class="muted">' + esc(w.variant_sku || '—') + '</td>'
         + '<td>' + esc(w.stock_qty) + '</td>'
@@ -3733,6 +4399,194 @@ async function loadEmailLog(){
   } catch (err) {
     tbody.innerHTML = '<tr><td colspan="5"><div class="empty">Could not load the email log.</div></td></tr>';
   }
+}
+
+/* =========================================================================
+   REVIEWS — moderation
+
+   The endpoints behind this screen have existed since migration 005 and had
+   never been called. What that meant in practice: a review went live on the
+   product page the moment a customer wrote it, and the only way to take one
+   down was hand-written SQL against production.
+
+   The server owns the rules and this screen does not restate any of them —
+   requireCapability(REVIEWS_MODERATE) decides who may act, hiding without a
+   reason is refused with 400, and every decision is written to the audit log
+   with the admin who made it. Duplicating those here would only create a
+   second place for them to drift out of agreement.
+   ========================================================================= */
+let reviewFilter = 'pending';
+
+function switchReviewFilter(which){
+  reviewFilter = which;
+  qsa('.rv-tab').forEach((b) => b.classList.toggle('active', b.dataset.rv === which));
+  loadReviews();
+}
+
+/* Five stars, five elements — never a repeated character in a string. A rating
+   is the one number on this screen a moderator reads at a glance, and "★★★☆☆"
+   is announced by a screen reader as a run of symbols. The figure is written
+   out beside them for the same reason. */
+function reviewStars(rating){
+  const n = Math.max(0, Math.min(5, Math.round(Number(rating) || 0)));
+  const star = '<path d="M12 3l2.6 5.7 6.2.7-4.6 4.2 1.3 6.1L12 16.6 6.5 19.7l1.3-6.1L3.2 9.4l6.2-.7z"/>';
+  let out = '<span class="rv-stars" role="img" aria-label="' + n + ' out of 5">';
+  for (let i = 1; i <= 5; i++) {
+    out += '<svg viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.4" class="' +
+      (i <= n ? 'on' : 'off') + '" aria-hidden="true">' + star + '</svg>';
+  }
+  return out + '<span class="num">' + n + '.0</span></span>';
+}
+
+/* The storefront lives on the same origin as this console — _redirects serves
+   /admin from it — so a product link can be built without a second constant to
+   keep in sync. Opened from a file:// copy there is no origin to build from,
+   and the name is shown as plain text rather than as a link to nowhere. */
+function storefrontProductHref(slug){
+  if (!slug) return null;
+  if (location.protocol !== 'http:' && location.protocol !== 'https:') return null;
+  return location.origin + '/product/' + encodeURIComponent(slug);
+}
+
+function reviewCardHTML(r){
+  const approved = r.is_approved !== false;
+  const href = storefrontProductHref(r.product_slug);
+  const product = href
+    ? '<a href="' + esc(href) + '" target="_blank" rel="noopener">' + esc(r.product_name || 'Product') + '</a>'
+    : esc(r.product_name || 'Product');
+  const who = esc(r.reviewer_name_snapshot || 'Anonymous');
+  const comment = String(r.comment || '').trim();
+
+  return '<article class="rv-card' + (approved ? '' : ' is-hidden') + '" data-review="' + esc(r.id) + '">' +
+    '<div class="rv-top">' +
+      '<div><div class="rv-prod">' + product + '</div>' + reviewStars(r.rating) + '</div>' +
+      '<span class="pill ' + (approved ? 'pill-success' : 'pill-danger') + '">' +
+        (approved ? 'Live on the site' : 'Hidden') + '</span>' +
+    '</div>' +
+    '<div class="rv-body' + (comment ? '' : ' rv-empty') + '">' +
+      (comment ? esc(comment) : 'No written comment — a rating only.') + '</div>' +
+    '<div class="rv-meta">' +
+      '<span>' + who + '</span>' +
+      (r.reviewer_email ? '<span>' + esc(r.reviewer_email) + '</span>' : '') +
+      '<span>' + fmtDate(r.created_at) + '</span>' +
+      (r.moderated_at ? '<span>Last decided ' + fmtDate(r.moderated_at) + '</span>' : '') +
+    '</div>' +
+    (r.hidden_reason ? '<div class="rv-reason"><strong>Hidden because:</strong> ' + esc(r.hidden_reason) + '</div>' : '') +
+    '<div class="rv-foot">' +
+      '<div class="muted" style="font-size:.76rem;">' +
+        (approved ? 'Visible to every customer on that product page.'
+                  : 'Not shown to customers.') + '</div>' +
+      '<div class="rv-actions">' +
+        (approved
+          ? '<button class="btn btn-sm btn-ghost" onclick="openHideReview(\'' + esc(r.id) + '\')">Hide this review</button>'
+          : '<button class="btn btn-sm btn-primary" onclick="approveReview(\'' + esc(r.id) + '\')">Publish it</button>') +
+      '</div>' +
+      /* The reason field is part of the card rather than a modal: hiding a
+         review is a judgement made while reading it, and a dialog that covers
+         the text asks somebody to type a reason for something they can no
+         longer see. Required, because the server refuses a hide without one. */
+      '<div class="rv-hidebox" id="rvHide-' + esc(r.id) + '">' +
+        '<label for="rvReason-' + esc(r.id) + '">Why is this being hidden? Recorded in the audit log.</label>' +
+        '<div class="row">' +
+          '<input id="rvReason-' + esc(r.id) + '" maxlength="200" placeholder="Abusive language, spam, wrong product…">' +
+          '<button class="btn btn-sm btn-danger" onclick="hideReview(\'' + esc(r.id) + '\')">Hide it</button>' +
+          '<button class="btn btn-sm btn-ghost" onclick="cancelHideReview(\'' + esc(r.id) + '\')">Cancel</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>' +
+  '</article>';
+}
+
+async function loadReviews(){
+  const list = qs('#reviewsList');
+  const count = qs('#reviewsCount');
+  if (!list) return;
+  list.innerHTML = '<div class="loading-row" style="padding:28px;"><span class="spinner"></span></div>';
+  try {
+    // `hidden=true` is the server's name for "not approved", which is exactly
+    // the set that still needs a decision.
+    const qp = reviewFilter === 'pending' ? '?limit=200&hidden=true' : '?limit=200';
+    const body = await api('/api/admin/reviews' + qp);
+    const rows = (body && body.reviews) || [];
+    if (count) {
+      count.textContent = rows.length
+        ? rows.length + (reviewFilter === 'pending' ? ' waiting' : ' review' + (rows.length === 1 ? '' : 's'))
+        : '';
+    }
+    if (!rows.length) {
+      list.innerHTML = '<div class="card"><div class="empty">' +
+        (reviewFilter === 'pending'
+          ? 'Nothing is waiting. Every review a customer has written is live on the site.'
+          : 'No reviews have been written yet.') +
+        '</div></div>';
+    } else {
+      list.innerHTML = rows.map(reviewCardHTML).join('');
+    }
+    refreshReviewBadge();
+  } catch (err) {
+    list.innerHTML = '<div class="card"><div class="empty">' +
+      esc(err && err.error ? err.error : 'Could not load reviews.') + '</div></div>';
+  }
+}
+
+/* The count beside the nav entry, so a review waiting for a decision is visible
+   from any screen rather than only from this one. Its own request, because the
+   overview endpoint does not report it and inventing a field there would mean a
+   migration for a number this screen already knows how to ask for. */
+async function refreshReviewBadge(){
+  const badge = qs('#navReviewsBadge');
+  if (!badge) return;
+  try {
+    const body = await api('/api/admin/reviews?limit=200&hidden=true');
+    const n = ((body && body.reviews) || []).length;
+    if (n > 0) { badge.style.display = ''; badge.textContent = String(n); }
+    else badge.style.display = 'none';
+  } catch (err) {
+    // A moderator without the capability gets a 403 here, which is correct and
+    // is not something to report — the nav entry itself is hidden for them.
+    badge.style.display = 'none';
+  }
+}
+
+function openHideReview(id){
+  const box = qs('#rvHide-' + CSS.escape(id));
+  if (!box) return;
+  box.classList.add('show');
+  const input = qs('#rvReason-' + CSS.escape(id));
+  if (input) input.focus();
+}
+function cancelHideReview(id){
+  const box = qs('#rvHide-' + CSS.escape(id));
+  if (box) box.classList.remove('show');
+}
+
+async function approveReview(id){
+  try {
+    await api('/api/admin/reviews/' + encodeURIComponent(id), {
+      method: 'PATCH', body: JSON.stringify({ approve: true })
+    });
+    toast('Review published.');
+    loadReviews();
+  } catch (err) { toast(err.error || 'Could not publish that review.', 'err'); }
+}
+
+async function hideReview(id){
+  const input = qs('#rvReason-' + CSS.escape(id));
+  const reason = input ? input.value.trim() : '';
+  if (!reason) {
+    // Checked here as well as on the server so the moderator is told before the
+    // round trip, not after it. The server's 400 remains the actual rule.
+    toast('Please say why — the reason is recorded in the audit log.', 'err');
+    if (input) input.focus();
+    return;
+  }
+  try {
+    await api('/api/admin/reviews/' + encodeURIComponent(id), {
+      method: 'PATCH', body: JSON.stringify({ approve: false, reason: reason })
+    });
+    toast('Review hidden.');
+    loadReviews();
+  } catch (err) { toast(err.error || 'Could not hide that review.', 'err'); }
 }
 
 async function loadAuditLog(){

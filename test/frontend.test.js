@@ -3060,10 +3060,17 @@ section('[fe-36] A feature that is built but never reached does not exist');
     // feature is invisible wherever it was missed.
     const html = read('index.html');
     const code = html.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    /* FOUR, NOT FIVE. The grid card stopped printing a category — it repeated
+       what the customer had just filtered or navigated by, and on a 144px card
+       it was a line of grey capitals between the photograph and the name. The
+       quick-view modal, the JSON-LD, the search and the sidebar all still show
+       it, which is what this test is really about: a subcategory must reach
+       every surface a category reaches. The card now shows NEITHER, so it is
+       not a surface where one can go missing. */
     const uses = (code.match(/catPath\(/g) || []).length;
-    assert.ok(uses >= 5, 'catPath is called ' + (uses - 1) + ' times outside its definition — it was ZERO, which is how the feature shipped invisible');
+    assert.ok(uses >= 4, 'catPath is called ' + (uses - 1) + ' times outside its definition — it was ZERO, which is how the feature shipped invisible');
     assert.match(code, /class="p-cat">' \+ escapeHtml\(catPath\(p\)\)/,
-      'the product card must show the full path');
+      'the quick-view modal must show the full path');
     assert.match(code, /category: product\.cat \? catPath\(product\)/,
       'storefront JSON-LD must match the prerendered page, which already emits the path');
     assert.match(code, /catPath\(p\)\.toLowerCase\(\)/,
@@ -4055,6 +4062,44 @@ section('[fe-44] The gate cannot quietly stop running a suite');
       'these run without any external service but are not in `npm test`: ' + missing.join(', '));
   });
 
+  /* THE SAME HOLE, ONE FAMILY OVER.
+
+     [fe-44] above watches `test:*` and nothing else, and the gate is not built
+     only from `test:*`. `check:syntax`, `check:chars` and `check:api` are gates
+     in exactly the same sense — they fail the build — and until this test they
+     were kept in `npm test` and in ci.yml by nobody forgetting. That is the
+     precise arrangement that dropped test:frontend and test:drawer.
+
+     `check:*` splits into gates and diagnostics, so unlike the suites above the
+     exemption here has to say which a script is. A diagnostic that reads the
+     live site or the real secrets cannot run in CI and must not be listed; a
+     gate that needs nothing must be in both places. */
+  const CHECK_EXEMPT = {
+    'check:storefront': 'a read-only report on what the snapshot captured — it answers a question, it does not fail a build',
+    'check:share': 'fetches the LIVE deployed site, so it cannot run before the deploy it is checking',
+    'check:config': 'reads the real production secrets, which a CI runner does not have and must not be given'
+  };
+
+  test('every check:* gate either runs in CI or is exempt with a stated reason', () => {
+    const checks = Object.keys(pkg.scripts).filter(k => /^check:/.test(k));
+    const missing = checks.filter(c =>
+      !Object.prototype.hasOwnProperty.call(CHECK_EXEMPT, c) &&
+      !ci.includes('npm run ' + c));
+    assert.deepStrictEqual(missing, [],
+      'these checks fail the build locally but the gate never runs them: ' + missing.join(', '));
+  });
+
+  test('every check:* gate that runs in CI is also in the `npm test` chain', () => {
+    // Otherwise the command the docs call the pre-commit gate is weaker than
+    // CI, and a developer who runs `npm test` before pushing is told the change
+    // is fine by a chain that skipped the check which is about to fail.
+    const checks = Object.keys(pkg.scripts).filter(k => /^check:/.test(k));
+    const inCi = checks.filter(c => ci.includes('npm run ' + c));
+    const missing = inCi.filter(c => !pkg.scripts.test.includes('npm run ' + c));
+    assert.deepStrictEqual(missing, [],
+      'CI runs these but `npm test` does not, so the local gate is weaker than the remote one: ' + missing.join(', '));
+  });
+
   test('no suite is run twice by the same command', () => {
     // verify:full runs verify, which runs test. Appending a suite to BOTH is a
     // duplicate run: slower, and it hides which chain is actually covering it.
@@ -4659,8 +4704,66 @@ section('[fe-48] Checkout in two panes, service search, badges, booking mail');
     // The card and the Featured tabs must read the SAME answer or they
     // disagree on one page.
     assert.match(code, /const autoBadge = effectiveBadge\(p\);/);
-    assert.match(grab('renderFeaturedGrid'), /PRODUCTS\.filter\(isBestseller\)/);
-    assert.match(grab('renderFeaturedGrid'), /PRODUCTS\.filter\(isNewArrival\)/);
+    // The per-tab filters moved out of renderFeaturedGrid into featuredListFor
+    // when the tab row started deriving its own visibility from them — one
+    // function answering "what is in this tab?" for both the grid and the tab.
+    // The property being asserted is unchanged: a tab is filled from the
+    // COMPUTED predicate, never from a badge somebody typed.
+    assert.match(grab('featuredListFor'), /PRODUCTS\.filter\(isBestseller\)/);
+    assert.match(grab('featuredListFor'), /PRODUCTS\.filter\(isNewArrival\)/);
+    assert.match(grab('renderFeaturedGrid'), /featuredListFor\(featuredTab\)/,
+      'and the grid must ask that one function rather than re-deriving the filter beside it');
+  });
+
+  test('FEATURED TABS: a tab with nothing behind it is not offered', () => {
+    // Bestsellers is empty until a shop has sales, and New Arrivals whenever
+    // nothing has been added for 30 days — both reachable with no code change
+    // and no admin action, and both used to put an empty shelf under a tab the
+    // customer had just been invited to press.
+    const fn = grab('syncFeaturedTabs');
+    assert.match(fn, /featuredListFor\(b\.dataset\.tab\)\.length/,
+      'the tab is hidden on the SAME list that fills it, never on a second rule');
+    assert.match(fn, /if\(!buttons\.length \|\| !catalogSource\) return;/,
+      'never during cold start: every list is empty then because nothing has loaded');
+    assert.match(fn, /anyFilled/,
+      'with an empty catalogue there is no choice to offer, so nothing is hidden');
+    assert.match(fn, /featuredTab = fallback\.dataset\.tab;/,
+      'and a customer standing on a tab that empties is moved, not left staring at nothing');
+    assert.match(grab('renderFeaturedGrid'), /syncFeaturedTabs\(\);/);
+  });
+
+  test('EMPTY STATES: only the shop tells anyone to clear a filter', () => {
+    /* THE DEFECT: one empty state served every grid — "No products found. Try
+       adjusting your filters" with a Clear Filters button — so an empty
+       wishlist, an empty Bestsellers tab and an empty Deal Of The Day all told
+       the customer to fix filters that were not there, with a button that
+       re-rendered the invisible shop grid and changed nothing on screen. */
+    const fn = grab('emptyGridHTML');
+    assert.match(fn, /containerId === 'wishlistGrid'/);
+    assert.match(fn, /containerId === 'dealGrid'/);
+    assert.match(fn, /containerId === 'featuredGrid'/);
+    assert.match(fn, /Your wishlist is empty/);
+
+    // clearShopFilters may be offered from exactly one place: the branch that
+    // is reached when a shop filter is what emptied the list.
+    const occurrences = (fn.match(/clearShopFilters\(\)/g) || []).length;
+    assert.strictEqual(occurrences, 1,
+      'a Clear Filters button anywhere but the shop is a control that does nothing');
+
+    // And renderGridInto must not have grown a second empty state beside it.
+    assert.match(grab('renderGridInto'), /el\.innerHTML = emptyGridHTML\(containerId\);/);
+    assert.ok(!/No products found/.test(grab('renderGridInto')),
+      'the message belongs to emptyGridHTML, so there is one place it can be wrong');
+  });
+
+  test('DEAL OF THE DAY: the countdown never runs on an offer that does not exist', () => {
+    // The panel says "Today Only — Extra Savings" beside a live countdown. With
+    // nothing discounted it said that over an empty grid.
+    const fn = grab('renderDealGrid');
+    assert.match(fn, /section\.style\.display = \(catalogSource && !deals\.length\) \? 'none' : ''/,
+      'hidden when the claim is false, and NOT during cold start, when nothing is known yet');
+    assert.match(code, /<section class="section tight" id="dealSection">/,
+      'the section needs the id the renderer hides');
   });
 
   test('BADGES: the threshold cannot go stale', () => {
@@ -4738,55 +4841,70 @@ section('[fe-48] Checkout in two panes, service search, badges, booking mail');
        a 127px body, a 341px card, and 732px for two rows. Every pixel came out
        of text; the photograph was not touched, because the photograph is the
        product. */
-    /* A BUDGET, NOT THREE MAGIC NUMBERS.
-       This used to assert padding:12px 14px 14px and gap:6px literally, so
-       raising the product name by one step — which had to buy those pixels back
-       out of the padding — failed a test that was never about padding. What has
-       to hold is the card's HEIGHT, so that is what is measured: the body's own
-       vertical chrome, whatever numbers produce it. */
+    /* A BUDGET, NOT THREE MAGIC NUMBERS, AND RE-DERIVED WHEN THE BODY CHANGED.
+
+       This measured `padding-top + padding-bottom + gap` and capped it at 30px.
+       That formula only meant something while the body had six rows: it counted
+       ONE gap and the body had five of them. The body has four rows now — name,
+       rating, price, button — so it has three, and the same formula would have
+       compared a different quantity against the same ceiling and called a
+       tighter body a regression.
+
+       What has to hold is unchanged and is the reason the budget exists at all:
+       two rows of cards fit above a 794px laptop fold. So the measurement is the
+       body's REAL vertical chrome — the padding plus every gap it actually has —
+       and the ceiling is what the old card spent, so this can only ever report
+       the body getting taller than the one that was measured to fit. */
     const body = html.match(/\.p-body\{ padding:(\d+)px \d+px (\d+)px;[^}]*gap:(\d+)px; \}/);
     assert.ok(body, 'the body must still declare its padding and gap in one rule');
-    const chrome = Number(body[1]) + Number(body[2]) + Number(body[3]);
-    assert.ok(chrome <= 30,
-      `the body's vertical chrome is ${chrome}px; above 30 the second row drops below a 794px fold`);
-    assert.match(html, /\.p-meta\{ display:flex;[^}]*justify-content:space-between/,
-      'category and rating share ONE row, facing each other');
+    const ROWS = 4;                       // name, rating, price row, CTA
+    const chrome = Number(body[1]) + Number(body[2]) + Number(body[3]) * (ROWS - 1);
+    assert.ok(chrome <= 49,
+      `the body's padding plus its ${ROWS - 1} gaps is ${chrome}px; the six-row body this `
+      + 'replaced spent 49px and two rows fit above the fold at that');
+
+    /* THE CATEGORY LINE IS GONE FROM THE CARD, and .p-meta with it. It held the
+       category beside the rating; the rating has the row to itself now. */
+    assert.ok(!/class="p-meta"/.test(html),
+      'the meta row held a category the card no longer shows');
+
     assert.match(html, /\.p-name\{[\s\S]{0,400}?-webkit-line-clamp:2;/,
       'two lines, clamped, so a long name cannot push the price down');
-    assert.match(html, /min-height:2\.7em; margin:0;/,
-      'and reserved, so a short name cannot pull it up either — prices align across a row');
-    /* The reserve is in em ON PURPOSE. It tracks the name's own size, so raising
-       the type does not need a second edit here and cannot silently start
-       clipping the second line. */
+    /* AND NO LONGER RESERVED. `min-height:2.7em` held two lines open so cards
+       with a one-word name ended level with the rest. The Add to Cart button
+       carries `margin-top:auto` now, which does that properly — it pushes the
+       button to the bottom whatever is above it. Keeping both meant a card
+       called "Gita" paid for the same alignment twice, once in dead space. */
+    assert.ok(!/min-height:2\.7em/.test(html),
+      'the reserve is redundant once the CTA pushes itself to the bottom');
+    assert.match(html, /\.p-cta\{ margin-top:auto;/,
+      'and that push is what aligns the row now, so it must be there');
+    /* BUT NOT TO NOTHING. Taking the reserve out entirely left a one-line title
+       19px tall on a 320px phone, and the responsive audit asks 24 of a text
+       link because that is the ROW a finger lands on. It failed the gate, which
+       is the only reason this line is here — a floor for the tap, not a reserve
+       for the layout, so two-line names are untouched at 2.68em. */
+    assert.match(html, /\.p-name\{[\s\S]{0,400}?min-height:26px;/,
+      'the title still has a finger-sized row on a phone');
+
     assert.match(html, /\.p-name\{[\s\S]{0,300}?font-size:clamp\(\.88rem, 5\.9cqi, 1\.04rem\)/,
       'the name is one step up at every width, and still continuous rather than stepped');
-    /* The saving is back on the photograph, where it was, and now in four tiers
-       chosen by its own size rather than by hashing the product id — so the
-       loudest chip on the grid is always the best deal, and the grid can be
-       scanned by colour alone. */
-    assert.match(html, /\.p-discount\{[\s\S]{0,200}?left:6cqi;/,
-      'the chip is placed in card units, opposite the add button, so the two stay a pair');
+
+    /* THE SAVING MOVED OFF THE PHOTOGRAPH and into the price row, beside the two
+       numbers it is the difference between. The four tiers stayed: 60% off
+       should not look like 5% off, and badge-math pins which percentage lands
+       in which one. */
+    assert.match(html, /\.p-discount\{[\s\S]{0,260}?margin-left:auto;/,
+      'it is pushed to the end of the price row rather than positioned on the image');
+    assert.ok(!/\.p-discount\{[\s\S]{0,120}?position:absolute/.test(html),
+      'and it is no longer absolutely positioned over the picture');
     for (const tier of ['dt-low', 'dt-mid', 'dt-high', 'dt-max']) {
-      assert.ok(html.indexOf('.' + tier) > -1, tier + ' must exist — four tiers, four treatments');
+      assert.ok(html.indexOf('.' + tier) > -1, tier + ' must exist — four tiers, four colours');
     }
     assert.ok(!/class="p-off"/.test(html),
-      'and it must not ALSO sit in the price row; saying the saving twice is worse than once');
+      'and it must not ALSO sit anywhere else; saying the saving twice is worse than once');
     assert.match(html, /\.no-rating\{ display:none; \}/,
       '"No reviews yet" occupied a line on every card of a new shop to report an absence');
-    /* THE CATEGORY IS NO LONGER HIDDEN ON A PHONE.
-
-       It used to be, and the reason was sound at the time: the rating was five
-       stars and a count, which took 65 of the ~130px a two-across card gives,
-       so the category truncated to "IDOL…" — a label so cut down it named
-       nothing. The rating is now ONE star with a percentage fill, around 45px,
-       and both fit. Keeping the workaround after the thing it worked around was
-       replaced is how a phone quietly ends up showing less than a desktop for no
-       present reason. Measured: no clipping at 414px and above; at 390px and
-       360px the longest label ellipsizes, which still names the category. */
-    assert.ok(!/\.p-cat\{ display:none/.test(html),
-      'the category must not be hidden at any width — the desktop shows it, so a phone should too');
-    assert.match(html, /@media \(max-width:413px\)\{\s*\.p-cat\{ font-size:clamp\(\.56rem, 4\.2cqi, \.68rem\); letter-spacing:\.02em; \}/,
-      'the narrowest phones buy the space back from tracking rather than by hiding the label');
   });
 
   test('FOOTER: the phone accordion cannot drift out of agreement with itself', () => {
@@ -4840,87 +4958,83 @@ section('[fe-48] Checkout in two panes, service search, badges, booking mail');
       'and resize is listened to as well as the media query');
   });
 
-  test('PRICE TAG: three treatments, and no neighbour repeats one', () => {
-    /* The tag carries the one number a shopper is hunting for, so it is a step
-       larger and properly bold — and the struck-through MRP is deliberately left
-       alone, because raising both together restores the sameness this fixes. */
-    assert.match(html, /\.p-price \.now\{[^}]*font-size:clamp\(1\.14rem, 7\.8cqi, 1\.42rem\)[^}]*font-weight:800/,
-      'the selling price is a size up and bold');
-    /* THE RELATIONSHIP, NOT THE NUMBER. What has to hold is that the struck
-       MRP stays smaller than the selling price at EVERY width, which a pair of
-       literal sizes cannot promise once both are container-relative. Comparing
-       the MRP's ceiling against the selling price's floor does. */
-    const nowR = html.match(/\.p-price \.now\{[^}]*font-size:clamp\(([\d.]+)rem, [\d.]+cqi, ([\d.]+)rem\)/);
-    const wasR = html.match(/\.p-price \.was\{ font-size:clamp\(([\d.]+)rem, [\d.]+cqi, ([\d.]+)rem\)/);
-    assert.ok(nowR && wasR, 'both prices must be container-relative, from one rule each');
-    assert.ok(Number(wasR[2]) < Number(nowR[1]),
-      `the MRP tops out at ${wasR[2]}rem and the price starts at ${nowR[1]}rem; ` +
-      'the MRP must be smaller at every width, not merely at one');
+  test('BADGES: seven grounds and four movements, none repeating beside itself', () => {
+    /* WHAT THIS REPLACES. The three movements this test used to guard belonged
+       to the price chip, which belonged to the price, which is now a plain row
+       in the card body. The idea survived the furniture: a decoration dealt per
+       product with a neighbour rule, so a grid never reads as a mechanical
+       repeat. It is on the badge now, where it does more good — a badge took
+       its colour from what it SAID, so eight new arrivals were eight identical
+       chips and the badge stopped being a thing the eye could pick out.
 
-    for (const n of [1, 2, 3]) {
-      assert.ok(html.indexOf('.p-price.pa-' + n) > -1, 'treatment ' + n + ' must exist');
+       assignPriceAnims became assignBadgeStyles. The mechanism is unchanged. */
+    for (let n = 1; n <= 7; n++) {
+      assert.ok(html.indexOf('.bg-c' + n + '{') > -1, 'ground ' + n + ' must exist');
     }
-    assert.match(html, /@keyframes priceSheen\{/, '1 — a highlight sweeps the face');
-    assert.match(html, /@keyframes priceRock\{/, '2 — the tag rocks, left up as right drops');
-    assert.match(html, /@keyframes cometRun\{ to\{ --comet:360deg; \} \}/,
-      '3 — a bright point runs the border');
+    for (let n = 1; n <= 4; n++) {
+      assert.ok(html.indexOf('.bg-a' + n + '{') > -1, 'movement ' + n + ' must exist');
+    }
 
-    /* The comet animates the gradient ANGLE. Spinning the pseudo-element
-       instead rotates the ring with it, and the gold edge comes out of the chip
-       as a diagonal streak across the card — which is exactly what shipped
-       before. A registered custom property is what makes this animatable. */
-    assert.match(html, /@property --comet\{ syntax:'<angle>';/,
-      'the comet needs a registered angle, not a rotated element');
-    assert.ok(!/\.p-price[^{]*::before\{[^}]*animation:[^}]*rotate/.test(html),
-      'nothing may rotate the ring itself');
+    /* EVERY GROUND CARRIES WHITE TEXT AND EVERY ONE IS MEASURED. A badge sits
+       on a photograph and is the smallest type on the card; a ground chosen by
+       eye is a ground that fails for somebody. */
+    const lum = (hex) => {
+      const c = hex.replace('#', '').match(/../g).map((x) => parseInt(x, 16) / 255)
+        .map((v) => (v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)));
+      return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+    };
+    const ratio = (x, y) => (Math.max(lum(x), lum(y)) + 0.05) / (Math.min(lum(x), lum(y)) + 0.05);
+    const grounds = [...html.matchAll(/\.bg-c\d\{ background:(#[0-9A-Fa-f]{6}); \}/g)].map((m) => m[1]);
+    assert.strictEqual(grounds.length, 7, 'all seven must be flat colours this can measure');
+    for (const g of grounds) {
+      const r = ratio('#ffffff', g);
+      assert.ok(r >= 4.5, 'white on ' + g + ' is ' + r.toFixed(2) + ':1; AA needs 4.5');
+    }
+    assert.match(html, /\.bg-c1, \.bg-c2, \.bg-c3, \.bg-c4, \.bg-c5, \.bg-c6, \.bg-c7\{ color:#fff; \}/,
+      'and the text colour is stated once for all of them, not seven times');
 
-    // Every treatment must be removable, and the gold edge must survive it.
-    assert.match(html, /@media \(prefers-reduced-motion:reduce\)\{\s*\.p-price\.pa-1::after\{ animation:none; display:none; \}\s*\.p-price\.pa-2\{ animation:none; transform:none; \}\s*\.p-price\.pa-3::before\{ animation:none; \}/,
-      'all three stop under reduced motion, and only the movement is lost');
+    /* Every movement is removable and nothing is lost but the movement. */
+    assert.match(html, /@media \(prefers-reduced-motion:reduce\)\{\s*\.bg-a1, \.bg-a2, \.bg-a4\{ animation:none; transform:none; \}\s*\.bg-a3::after\{ animation:none; display:none; \}/);
 
-    /* Random would put the same treatment on two cards side by side one time in
-       three, and would redraw the grid differently on every render. */
-    const assign = grab('assignPriceAnims');
+    /* THE NEIGHBOUR RULE, WHICH IS THE WHOLE POINT. Random would put the same
+       ground on two cards side by side one time in seven, and a fresh draw on
+       every re-render would change a badge while somebody is looking at it. */
+    const assign = grab('assignBadgeStyles');
     assert.ok(!/Math\.random/.test(assign), 'the choice must be stable, not redrawn each render');
-    assert.match(assign, /taken\[i - 1\] \|\| v === taken\[i - 2\]/,
-      'it steps past the two cards before it, so no near neighbour can match');
-    assert.match(html, /assignPriceAnims\(list\);\s*el\.innerHTML = list\.map/,
+    assert.match(assign, /v === takenC\[i - 1\][\s\S]{0,120}?v === takenC\[i - 4\]/,
+      'the ground steps past FOUR cards, which is the card directly above on a four-across grid');
+    assert.match(assign, /a === takenA\[i - 1\] \|\| a === takenA\[i - 2\]/,
+      'and so does the movement, on its own history — otherwise two neighbours differ in one and match in the other');
+    assert.match(assign, /\(h >>> 8\) % BADGE_ANIMS/,
+      'the two axes are seeded from different parts of the hash, or colour and movement move together and the grid shows seven pairings instead of twenty-eight');
+    assert.match(html, /assignBadgeStyles\(list\);\s*el\.innerHTML = list\.map/,
       'and it is decided across the whole list, because the rule is about neighbours');
   });
 
-  test('PRICE TAG: the comet leads with its head, and the shake is a shake', () => {
-    /* A comet is bright at the front and fades behind. The gradient turns
-       clockwise, so a stop at a LARGER angle leads and a smaller one trails —
-       putting the bright end at the low angle would draw the tail in front,
-       which reads as a smear rather than as something moving. */
-    const comet = html.match(/\.p-price\.pa-3::before\{[\s\S]*?\n\}/);
-    assert.ok(comet, 'the comet treatment must still declare its ring');
-    /* Keep the leading dot in the capture: reading ".18" as 18 makes the dimmest
-       stop look like the brightest, and then this test measures the tail as the
-       head and passes on a comet pointing the wrong way. */
-    const stops = [...comet[0].matchAll(/(?:rgba\([^)]*,\s*(\.\d+|\d+(?:\.\d+)?)\)|(#FFFFFF))\s+(\d+)deg/g)]
-      .map((m) => ({ a: m[2] ? 1 : Number(m[1]), deg: Number(m[3]) }));
-    assert.ok(stops.length >= 5, 'a head and a tail need more than a couple of stops');
-    const brightest = stops.reduce((b, s) => (s.a > b.a ? s : b));
-    const tail = stops.filter((s) => s.deg < brightest.deg && s.a > 0);
-    assert.ok(tail.length >= 3, 'the tail must be a graded fade behind the head, not one stop');
-    assert.ok(stops.filter((s) => s.deg > brightest.deg && s.a > 0).length <= 1,
-      'and it must cut off just past the head, or the tail leads');
-    assert.match(comet[0], /filter:drop-shadow\(/,
-      'the head glows rather than merely being pale');
-    assert.match(comet[0], /padding:1\.9px;/,
-      'a one-pixel edge cannot carry a highlight, so this ring is thicker');
+  test('BADGES: narrow letters, minimal height, and a name that is not a class', () => {
+    /* A badge sits in the corner of a photograph that is 144px wide on the
+       narrowest phone and has to say a whole word there without becoming the
+       photograph. Narrowing the letters buys that; shrinking them only makes
+       the word unreadable. */
+    assert.match(html, /\.badge\{[\s\S]{0,400}?font-family:var\(--f-condensed\)/);
+    assert.match(html, /--f-condensed: 'Barlow Condensed', 'Arial Narrow'/,
+      'with a fallback that is on essentially every desktop, so the shape survives a failed font load');
+    assert.match(html, /family=Barlow\+Condensed/,
+      'and it is added to the ONE font request already being made, not a second one');
+    assert.match(html, /\.badge\{[\s\S]{0,400}?padding:2px 9px/,
+      'minimal top and bottom padding — the cap height carries the chip');
+    assert.match(html, /\.badge\{[\s\S]{0,400}?letter-spacing:0/,
+      'a condensed face tracked out is a wide face again');
+    assert.match(html, /\.badge\{[\s\S]{0,400}?border-radius:var\(--radius-full\)/);
 
-    /* Two keyframes is a metronome. A shake needs to change direction more than
-       once and to lift as it tilts. */
-    const rock = html.match(/@keyframes priceRock\{[\s\S]*?\n\}/)[0];
-    assert.ok((rock.match(/transform:rotate/g) || []).length >= 4,
-      'the rock needs at least four stops to read as a shake');
-    assert.match(rock, /translateY/, 'and a little lift with each tilt');
-    const angles = [...rock.matchAll(/rotate\((-?\d*\.?\d+)deg\)/g)].map((m) => Math.abs(Number(m[1])));
-    assert.ok(Math.max(...angles) > 1.2, 'it was too subtle to notice at under a degree');
-    assert.ok(Math.max(...angles) < 3,
-      'and it sits beside a price somebody has to read, so it cannot go far');
+    /* THE KIND OF BADGE IS AN ATTRIBUTE, NOT A CLASS, because it no longer
+       paints anything — the dealt ground does. Four class names in the markup
+       that no stylesheet mentioned is exactly the silent failure [fe-8] exists
+       to catch. */
+    assert.match(grab('productCardHTML'), /data-badge="' \+ escapeHtml\(bi\.key\)/);
+    assert.ok(!/bi\.cssClass/.test(grab('productCardHTML')));
+    assert.match(html, /\.badge\[data-badge="limited"\] \.b-txt\{/,
+      'the two rules that DO key off the kind of badge select on the attribute');
   });
 
   test('HOT BADGE: the flame is behind the word, and large enough to be fire', () => {
@@ -4944,24 +5058,65 @@ section('[fe-48] Checkout in two panes, service search, badges, booking mail');
       `flame opacity is ${op}; above about .6 the white label starts to fail AA`);
   });
 
-  test('ADD BUTTON: the whole circle is inside the crop', () => {
-    /* It sat at bottom:-4px inside a photo box that is overflow:hidden, so the
-       bottom of the circle and its 2px border were sliced off at every screen
-       size. The button read as a half-moon. */
-    const inset = html.match(/\.p-quickadd\{ position:absolute; right:6cqi; bottom:(-?\d+)px;/);
-    assert.ok(inset, 'the quick-add must still declare its own inset');
-    assert.ok(Number(inset[1]) > 2,
-      `bottom is ${inset[1]}px; anything at or below zero is clipped by .p-media's overflow`);
-    const small = html.match(/\.p-quickadd\{ bottom:(-?\d+)px; \}/);
-    assert.ok(small && Number(small[1]) > 2, 'and the phone override must clear the crop too');
-    // The chip on the other side sits on the same line, so the two read as a pair.
-    assert.match(html, /\.p-discount\{\s*position:absolute; left:6cqi; bottom:9px;/,
-      'the discount chip shares the button\'s baseline');
+  test('PHOTO CONTROLS: nothing anchored to the image can be clipped by its crop', () => {
+    /* THE DEFECT THIS REMEMBERS. The add button used to float over the photo at
+       bottom:-4px inside a box that is overflow:hidden, so the bottom of the
+       circle and its 2px border were sliced off at every screen size and the
+       button read as a half-moon.
 
-    /* A step smaller at the top end, with the 44px floor untouched: that floor
-       is the minimum touch target, not a style choice. */
-    assert.match(html, /\.qa-add\{ width:clamp\(44px, 22cqi, 46px\); height:clamp\(44px, 22cqi, 46px\)/,
-      'smaller ceiling, same accessible floor');
+       Almost everything has since left the photograph — the add control, the
+       saving and the price are all in the body now — so what is left to protect
+       is the badge and the two controls. Each is anchored to an edge, and each
+       is inset by the card's own --photo-gap, which must stay positive. */
+    const gaps = [...html.matchAll(/--photo-gap:(-?[\d.]+)px;/g)].map((m) => Number(m[1]));
+    assert.ok(gaps.length >= 2,
+      'the gap is declared once for a pointer and once for a phone; found ' + gaps.length);
+    for (const g of gaps) {
+      assert.ok(g > 0, 'a gap of ' + g + 'px puts a corner element under the crop');
+    }
+    /* And every corner element reads it, rather than carrying a number of its
+       own. Three hand-written insets is how the badge came to sit 9px in while
+       both buttons sat at 18px on the same photograph. */
+    assert.match(html, /\.p-badges\{\s*position:absolute; top:var\(--photo-gap\); left:var\(--photo-gap\);/);
+    assert.match(html, /\.p-wish\{ top:calc\(var\(--photo-gap\) - var\(--photo-pad\)\); \}/);
+    assert.match(html, /\.p-qview\{ bottom:calc\(var\(--photo-gap\) - var\(--photo-pad\)\); \}/);
+    assert.match(html, /\.p-wish, \.p-qview\{[\s\S]{0,140}?right:calc\(var\(--photo-gap\) - var\(--photo-pad\)\);/);
+
+    // And nothing that left may be lifted back onto it by a stale rule.
+    assert.ok(!/\.p-quickadd|\.p-pricetag/.test(html),
+      'the add control and the price sticker are gone from the stylesheet, not merely unused');
+    assert.ok(!/\.p-discount\{[\s\S]{0,140}?position:absolute/.test(html),
+      'and the saving is a row item now, not a chip on the picture');
+  });
+
+  test('PHOTO CONTROLS: the out-of-stock wash is the size of the picture, in every view', () => {
+    /* IT WAS A SIBLING OF THE PICTURE, SIZED AGAINST THE CARD. An aspect ratio
+       of 1/1 on a box pinned to the card's left and right edges is the picture's
+       box in a grid and nothing like it in the list view, where the card is a
+       row: on a 1440px row the wash was 916px tall and lay over the title, the
+       price and the Notify Me button.
+
+       Inside the picture it is inset:0 and needs no arithmetic, no breakpoint,
+       and no second rule to keep in step with the two the list view already has
+       for .p-media. */
+    const fn = grab('productCardHTML');
+    const mediaOpen = fn.indexOf('class="p-media"');
+    const scrim = fn.indexOf('class="p-stock-out"');
+    const mediaClose = fn.indexOf("'</a>'");
+    assert.ok(mediaOpen > -1 && scrim > -1 && mediaClose > -1, 'the card still has all three');
+    assert.ok(scrim > mediaOpen && scrim < mediaClose,
+      'the wash must be rendered inside the picture, not beside it');
+    assert.match(html, /\.p-stock-out\{\s*position:absolute; inset:0;/,
+      'and take the whole box of the picture rather than computing one of its own');
+    assert.ok(!/\.p-stock-out\{[\s\S]{0,200}?aspect-ratio/.test(html),
+      'an aspect ratio here is the bug: the picture in the list view is not square');
+    /* UNDER the corner controls, not over them. At z-index 4 the wash greyed out
+       the wishlist and the quick view, and both still work on something that is
+       out of stock — wishlisting one is how a customer asks to be told it is
+       back. The badges and the controls are at 3. */
+    const z = html.match(/\.p-stock-out\{[\s\S]{0,220}?z-index:(\d+);/);
+    assert.ok(z && Number(z[1]) < 3,
+      'the wash sits under the controls it used to grey out');
   });
 
   test('CARD: the hover says pickable, not decorated', () => {
@@ -5610,6 +5765,827 @@ section('[fe-53] A test may not re-derive the thing it is testing');
     } finally {
       Module._load = origLoad;
     }
+  });
+}
+
+// ============================================================
+section('[fe-54] Nothing on the storefront is drawn from its position in an array');
+// ============================================================
+/* THREE PLACES WHERE A PICTURE OR A LINK WAS DERIVED FROM THE WRONG THING, and
+   the property that stops each coming back.
+
+   Every one of them is the same mistake in a different corner: a value that
+   belongs to the ITEM was taken from where the item happened to be rendered,
+   or from a list somebody typed beside the data instead of from the data. */
+{
+  const html = read('index.html');
+  const strip = s => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const code = strip(html);
+  function grab(name) {
+    const i = code.search(new RegExp('(?:async )?function ' + name + '\\('));
+    if (i < 0) throw new Error('missing ' + name);
+    let d = 0; const s = code.indexOf('{', i);
+    for (let k = s; k < code.length; k++) {
+      if (code[k] === '{') d++;
+      else if (code[k] === '}') { d--; if (!d) return code.slice(i, k + 1); }
+    }
+  }
+  /* Lifts a block of the real source and runs it, rather than asserting about
+     its text. The alternative — a regex over the word lists — would prove the
+     list exists and nothing about where a category actually lands, which is
+     the only thing anyone cares about. */
+  function evalBlock(startMarker, endMarker, exports) {
+    const s = html.indexOf(startMarker);
+    const e = html.indexOf(endMarker, s);
+    assert.ok(s > -1 && e > s, 'could not find ' + startMarker + ' … ' + endMarker);
+    const end = html.indexOf('\n}', e) + 2;
+    return new Function(html.slice(s, end) + '; return {' + exports.join(',') + '};')();
+  }
+
+  // ------------------------------------------------ the shop's category icons
+  const shop = evalBlock('const CAT_ICONS = {', 'function catIcon(key){',
+    ['catIcon', 'CAT_ICONS', 'DEFAULT_CAT_ICON']);
+  const shopIconName = (k) => {
+    const svg = shop.catIcon(k);
+    return Object.keys(shop.CAT_ICONS).find(n => shop.CAT_ICONS[n] === svg)
+      || (svg === shop.DEFAULT_CAT_ICON ? 'DEFAULT' : '?');
+  };
+
+  test('CATEGORY ICONS: every category the shop actually sells has one of its own', () => {
+    /* THE DEFECT: the lookup was an exact match on the database slug, and the
+       map's key was `books` while the shop's category is `book` — so the
+       largest category on the site drew the anonymous fallback, as did
+       sphatik, dhoti and wooden, which had no entry at all. Half the rail was
+       the same drawing. Read from catalog.json so this asks about the shop
+       that exists, not one written into the test. */
+    const catalog = JSON.parse(read('catalog.json'));
+    const categories = [...new Set(catalog.products.map(p => p.category))].filter(Boolean);
+    assert.ok(categories.length >= 3, 'the snapshot should carry a real catalogue');
+
+    const anonymous = categories.filter(c => shopIconName(c) === 'DEFAULT');
+    assert.deepStrictEqual(anonymous, [],
+      'these categories draw the fallback glyph: ' + anonymous.join(', '));
+
+    // And they must be distinguishable from each other, which is the actual
+    // point of an icon rail.
+    const drawn = categories.map(shopIconName);
+    assert.strictEqual(new Set(drawn).size, drawn.length,
+      'two categories share one drawing: ' + drawn.join(', '));
+  });
+
+  test('CATEGORY ICONS: a category nobody has created yet still resolves sensibly', () => {
+    // Singular and plural are the same shelf to a customer.
+    assert.strictEqual(shopIconName('book'), shopIconName('books'));
+    assert.strictEqual(shopIconName('holy-books'), shopIconName('books'));
+    // The head noun of a compound decides it — this is what longest-word-wins
+    // got wrong, calling a rudraksha bracelet a mala.
+    assert.strictEqual(shopIconName('rudraksha-bracelet'), 'bracelets');
+    assert.strictEqual(shopIconName('sphatik-mala'), 'malas');
+    assert.strictEqual(shopIconName('sphatik-lingam'), 'lingam');
+    // And something genuinely unrecognisable is a plainer tile, never a crash.
+    assert.strictEqual(shopIconName('quux'), 'DEFAULT');
+    assert.strictEqual(shopIconName(''), 'DEFAULT');
+    assert.strictEqual(shopIconName(null), 'DEFAULT');
+  });
+
+  // ------------------------------------------------------- the Journal covers
+  const journal = evalBlock('const BLOG_ICONS = {', 'function blogIcon(post){',
+    ['blogIcon', 'BLOG_ICONS', 'BLOG_ICON']);
+  const blogIconName = (post) => {
+    const svg = journal.blogIcon(post);
+    return Object.keys(journal.BLOG_ICONS).find(n => journal.BLOG_ICONS[n] === svg) || '?';
+  };
+  /* The posts are read out of index.html rather than restated here, so this
+     asks about the Journal that ships. */
+  const posts = (() => {
+    const s = html.indexOf('let BLOG_POSTS = [');
+    const e = html.indexOf('\n];', s);
+    assert.ok(s > -1 && e > s, 'could not find BLOG_POSTS');
+    return new Function(html.slice(s, e + 3) + '; return BLOG_POSTS;')();
+  })();
+
+  test('JOURNAL: no two articles in a row wear the same cover', () => {
+    /* THE DEFECT: every card and every article hero drew one hardcoded book
+       glyph, so six posts on six subjects were six identical drawings — on the
+       page whose whole job is making a stranger want to read something. */
+    assert.ok(posts.length >= 5, 'the Journal should have real posts');
+    const drawn = posts.map(blogIconName);
+    assert.ok(!drawn.includes('?'), 'a post resolved to no icon at all');
+    assert.ok(new Set(drawn).size >= 4,
+      'only ' + new Set(drawn).size + ' distinct covers across ' + posts.length
+      + ' articles: ' + drawn.join(', '));
+  });
+
+  test('JOURNAL: a generic category never beats the subject of the piece', () => {
+    // "Puja Guides" is a guide TO A PUJA. Latest-word-wins over one flat list
+    // put a price tag on it, because "guides" comes after "puja".
+    assert.strictEqual(blogIconName({ category: 'Puja Guides', title: 'A Simple Guide To Griha Pravesh Puja' }), 'puja');
+    // And where the category says nothing, the title carries the subject.
+    assert.strictEqual(blogIconName({ category: 'Product Guides', title: 'How To Choose Your First Rudraksha Mala' }), 'mala');
+    assert.strictEqual(blogIconName({ category: 'Product Guides', title: '5 Questions Before Buying A Sphatik Shivling' }), 'crystal');
+    // The author's own classification outranks the title.
+    assert.strictEqual(blogIconName({ category: 'Product Care', title: 'Caring For Your Puja Idols' }), 'care');
+    // A post about nothing recognised still gets something meaning "article".
+    assert.strictEqual(journal.blogIcon({ category: 'Company News', title: 'We Have Moved' }), journal.BLOG_ICON);
+  });
+
+  test('JOURNAL: one article is one colour, in all three places it appears', () => {
+    /* THE DEFECT: the gradient was chosen by ARRAY INDEX, and the three places
+       a post appears index it differently — the grid sorts by date and passes
+       the sorted position, the article page passed the UNSORTED position, and
+       the related rail passed 0, 1, 2. One article had three identities. */
+    const { blogCoverStyle } = evalBlock('function blogHash(s){', 'function blogCoverStyle(post){',
+      ['blogCoverStyle', 'blogHash']);
+    for (const post of posts) {
+      assert.strictEqual(blogCoverStyle(post), blogCoverStyle({ id: post.id }),
+        'the cover must depend on the post id and nothing else');
+    }
+    // And the callers must pass the post, not a position.
+    assert.match(grab('blogCardHTML'), /blogCoverStyle\(post\)/);
+    assert.match(grab('blogCardHTML'), /blogIconSVG\(false, post\)/);
+    assert.match(grab('renderBlogPostDetail'), /blogCoverStyle\(post\)/);
+    assert.match(grab('renderBlogPostDetail'), /blogIconSVG\(true, post\)/);
+    assert.ok(!/BLOG_POSTS\.indexOf\(post\)/.test(grab('renderBlogPostDetail')),
+      'the article page must no longer look up a position it has no use for');
+  });
+
+  test('JOURNAL: an article has its own address, and a card is a real link', () => {
+    /* THE DEFECT: the card was a <div onclick>, so no crawler could follow it,
+       ctrl-click and middle-click did nothing, and the keyboard could not
+       reach it. Every article also shared the single URL /blog-post, so a
+       reload showed a blank article and a shared link sent someone to it. The
+       product card was made a real <a> for exactly these reasons; the Journal
+       card was missed. */
+    assert.match(grab('blogCardHTML'), /<a class="blog-card" href="/,
+      'the card is an anchor with a real href');
+    assert.match(grab('blogHref'), /pathForRoute\('blog-post', post\.id\)/);
+    assert.match(grab('openBlogPost'), /navigateTo\('blog-post\/' \+ id\)/,
+      'the id goes into the URL, or a reload cannot reconstruct the article');
+    // The route resolves the id from the URL first, so a cold landing works.
+    assert.match(grab('navigateTo'), /const postId = param \|\| currentBlogId;/);
+    assert.match(grab('navigateTo'), /That article could not be found/,
+      'an id matching no post goes to the Journal, not to a blank page');
+    // Its own title and canonical, like a product page — and for the same
+    // reason the generic call is skipped first.
+    assert.match(grab('navigateTo'), /pageId !== 'product' && pageId !== 'blog-post'/);
+    assert.match(grab('navigateTo'), /updatePageMeta\('blog-post', post\.id, \{/);
+    assert.match(grab('setPageStructuredData'), /'@type': 'BlogPosting'/);
+  });
+
+  // ------------------------------------------------------- the footer's shelf
+  test('FOOTER: the Shop column lists categories that exist', () => {
+    /* THE DEFECT: six hand-written links that had already drifted from the shop
+       they point at. "Spiritual Books" pointed at category=books when the real
+       category is `book`, and Bracelets pointed at a category with no products
+       — so two of the six landed a customer on an empty shop, while the largest
+       category on the site had no footer link at all. */
+    assert.match(grab('renderFooterShopLinks'), /cats\.slice\(0, 6\)/);
+    assert.match(grab('renderTopCategories'), /renderFooterShopLinks\(cats\);/,
+      'filled from the same rows as the home rail, so the two cannot disagree');
+
+    // The static markup left behind is a pre-hydration fallback, so every link
+    // in it must still name a category that exists.
+    const catalog = JSON.parse(read('catalog.json'));
+    const real = new Set(catalog.products.map(p => p.category));
+    const list = html.slice(html.indexOf('<ul id="fcListShop">'), html.indexOf('</ul>', html.indexOf('<ul id="fcListShop">')));
+    const linked = [...list.matchAll(/category=([a-z0-9_-]+)/gi)].map(m => m[1]);
+    assert.ok(linked.length > 0, 'the fallback should still list something');
+    const dead = linked.filter(c => !real.has(c));
+    assert.deepStrictEqual(dead, [],
+      'these fallback links land on an empty shop: ' + dead.join(', '));
+  });
+}
+
+// ============================================================
+section('[fe-55] The back office is a phone screen too, and a link goes where it says');
+// ============================================================
+/* Seven reported defects, and the structure that stops each returning. Six of
+   the seven were in admin.html, which until this pass no automated check had
+   ever rendered at a phone width — the responsive audit covered ten storefront
+   routes at eight widths and the console at none. */
+{
+  const admin = read('admin.html');
+  const html = read('index.html');
+  const strip = s => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const adminCode = strip(admin);
+  const shopCode = strip(html);
+  function grab(name, src) {
+    const code = src || adminCode;
+    const i = code.search(new RegExp('(?:async )?function ' + name + '\\('));
+    if (i < 0) throw new Error('missing ' + name);
+    let d = 0; const s = code.indexOf('{', i);
+    for (let k = s; k < code.length; k++) {
+      if (code[k] === '{') d++;
+      else if (code[k] === '}') { d--; if (!d) return code.slice(i, k + 1); }
+    }
+  }
+
+  // -------------------------------------------------- 1. the table overflow
+  test('DASHBOARD: a table can no longer drag the page sideways', () => {
+    /* MEASURED, not guessed: at a 320px viewport the two dashboard cards sat at
+       404px, because a grid item's default min-width is `auto` — "never shrink
+       below my content" — and the tables are wider than a phone. The page then
+       scrolled sideways and the sidebar shifted with it, leaving a blank strip
+       down the right. `.table-wrap{overflow-x:auto}` could not help: the card
+       around it was already too wide to clip anything. */
+    assert.match(admin, /\.grid-2 > \*, \.grid-3 > \*\{ min-width:0; \}/,
+      'the grid children must be allowed to shrink');
+    assert.match(admin, /\.card\{ min-width:0; \}/,
+      'and a card used outside a grid has the same auto-minimum as a flex item');
+  });
+
+  test('DASHBOARD: the two panels stop being tables on a phone', () => {
+    // min-width:0 stops the page scrolling; it still leaves a four-column table
+    // to swipe, which is not readable on a 320px screen however it scrolls.
+    assert.match(admin, /table\.data\.stack-sm td::before\{[\s\S]{0,80}content:attr\(data-label\)/,
+      'each cell is labelled from its own data-label, so a column added to the renderer arrives labelled');
+    assert.match(admin, /table\.data\.stack-sm tr\[hidden\]\{ display:none; \}/,
+      'display:block on tr is an AUTHOR rule and beats the UA [hidden] rule — without this every collapsed variant row is visible');
+    assert.match(admin, /table\.data\.stack-sm td > \*\{ grid-column:2; min-width:0; \}/,
+      'or a cell with two children puts the second one under the LABEL');
+    // Both panels have to opt in, or the fix covers one of the two reported.
+    assert.match(admin, /<table class="data stack-sm" id="topProductsTable">/);
+    assert.match(admin, /<table class="data stack-sm" id="lowStockTable">/);
+    // And the renderers must supply what the CSS reads.
+    assert.match(grab('loadTopProducts'), /data-label="Units"/);
+    assert.match(grab('loadLowStock'), /data-label="Stock"/);
+  });
+
+  // ------------------------------------------- 2. low stock, grouped by product
+  test('LOW STOCK: variants are grouped under the product, collapsed', () => {
+    const fn = grab('loadLowStock');
+    assert.match(fn, /groups\.set\(v\.product_id/, 'grouped by the base product');
+    assert.match(fn, /aria-expanded="\$\{open \? 'true' : 'false'\}"/,
+      'a disclosure a screen reader can read as open or closed');
+    assert.match(fn, /data-ls-parent="\$\{esc\(g\.id\)\}"\$\{open \? '' : ' hidden'\}/,
+      'hidden as an attribute, so the rows leave the accessibility tree rather than only the screen');
+    // The worst variant decides the group's headline: one size out of stock is
+    // more urgent than three sizes down to four, whatever the row counts.
+    assert.match(fn, /const worst = g\.variants\.reduce/);
+    assert.match(fn, /\.sort\(\(a, b\) => a\.worst - b\.worst/);
+    // A product with no variants keeps a plain row — a chevron that opens
+    // nothing is worse than no chevron.
+    assert.match(fn, /const plainRows = products\.map/);
+  });
+
+  test('LOW STOCK: an open group survives a refresh', () => {
+    // Kept outside the render, or the Refresh button silently collapses a group
+    // somebody opened to work through.
+    assert.match(adminCode, /const lowStockOpen = new Set\(\);/);
+    assert.match(grab('toggleLowStockGroup'), /lowStockOpen\.(has|add|delete)/);
+    assert.match(grab('loadLowStock'), /lowStockOpen\.has\(g\.id\)/);
+  });
+
+  // ------------------------------- 3. a product name opens the product page
+  test('PRODUCT LINKS: every one goes to the storefront, not the edit form', () => {
+    /* It called openProductForm(), so a product name anywhere in the console —
+       the dashboard, the product table, an order's items, the waitlist —
+       dropped whoever clicked it into an edit screen. Wrong destination for the
+       common intent: somebody reading an order wants to SEE what was bought. */
+    const fn = grab('productLink');
+    assert.ok(!/openProductForm/.test(fn), 'productLink must not open the edit form any more');
+    assert.match(fn, /storefrontProductHref\(slug\)/);
+    assert.match(fn, /target="_blank" rel="noopener"/,
+      'a new tab, so a packer reading an order does not lose the order');
+
+    // A uuid would build /product/<uuid>, a link that looks fine and 404s.
+    assert.match(fn, /UUID_RE\.test\(String\(slug\)\)/);
+
+    // AND NO CALL SITE MAY PASS AN ID. Every call site before this change did.
+    const calls = [...adminCode.matchAll(/productLink\(([^,]+),/g)].map(m => m[1].trim());
+    assert.ok(calls.length >= 5, 'the scan found only ' + calls.length + ' call sites; the pattern stopped matching');
+    const notSlug = calls.filter(a => !/slug/i.test(a) && a !== 'slug');
+    assert.deepStrictEqual(notSlug, [],
+      'these pass something that is not a slug, so the link would 404: ' + notSlug.join(', '));
+  });
+
+  test('PRODUCT LINKS: the server supplies the slug every screen needs', () => {
+    // Adding the column is what makes the link buildable; without it every
+    // productLink call gets undefined and renders plain text, which would look
+    // like the feature simply did not work.
+    const routes = read('src/routes/admin.routes.js');
+    assert.match(routes, /SELECT p\.id, p\.name, p\.slug, p\.category, SUM\(oi\.quantity\)/, 'top-products');
+    assert.match(routes, /SELECT p\.id, p\.name, p\.slug, p\.sku, p\.stock_qty/, 'low-stock products');
+    assert.match(routes, /p\.slug AS product_slug/, 'low-stock variants');
+    assert.match(routes, /SELECT p\.id AS product_id, p\.name, p\.slug, p\.sku/, 'stock waitlist');
+    // GROUP BY has to move with the SELECT or Postgres refuses the query — the
+    // kind of break that only shows up against a real database.
+    assert.match(routes, /GROUP BY p\.id, p\.name, p\.slug, p\.category/);
+    assert.match(routes, /GROUP BY p\.id, p\.name, p\.slug, p\.sku, p\.stock_qty, sn\.variant_id, v\.sku/);
+  });
+
+  // ----------------------------------- 4. inbox tabs, and the subscriber send
+  test('INBOX: a selected tab looks selected', () => {
+    // switchInboxTab has toggled an `active` class since the inbox was built
+    // and nothing in the file styled it, so the console showed four identical
+    // buttons and the only way to tell which panel you were on was to read it.
+    assert.match(admin, /\.inbox-tab\.active, \.rv-tab\.active\{/,
+      'one rule for both tab bars, so they cannot drift apart');
+    assert.match(grab('switchInboxTab'), /classList\.toggle\('active', b\.dataset\.tab === tab\)/);
+  });
+
+  test('BROADCAST: it connects a template that existed and was never called', () => {
+    const templates = read('src/utils/email/templates.js');
+    assert.match(templates, /async function sendNewsletter\(/,
+      'the template this route sends through');
+    const routes = read('src/routes/admin.routes.js');
+    assert.match(routes, /router\.post\(\s*'\/subscribers\/broadcast'/);
+    assert.match(routes, /sendNewsletter\(\{/, 'and it actually calls it');
+    assert.match(routes, /WHERE status = 'confirmed'/,
+      'confirmed subscribers only — a pending address has clicked nothing');
+  });
+
+  test('BROADCAST: reaching every subscriber needs its own grant', () => {
+    const caps = read('src/middleware/capabilities.js');
+    assert.match(caps, /SUBSCRIBERS_BROADCAST: 'subscribers:broadcast'/);
+    assert.match(read('src/routes/admin.routes.js'),
+      /requireCapability\(C\.CUSTOMERS_READ, C\.SUBSCRIBERS_BROADCAST\)/,
+      'a one-to-one reply grant must not silently carry the megaphone');
+    // staff must not gain it by accident; admin holds everything by construction.
+    const { capabilitiesForRole, CAPABILITIES } = require(path.join(ROOT, 'src/middleware/capabilities.js'));
+    assert.ok(capabilitiesForRole('admin').includes(CAPABILITIES.SUBSCRIBERS_BROADCAST));
+    assert.ok(!capabilitiesForRole('staff').includes(CAPABILITIES.SUBSCRIBERS_BROADCAST));
+  });
+
+  test('BROADCAST: nothing an admin typed becomes markup, and a double-click sends once', () => {
+    const routes = read('src/routes/admin.routes.js');
+    /* THE INPUT IS A SYNTAX, NOT MARKUP, and that is the whole defence.
+
+       The owner needs bold and links, and the obvious way to give them that is
+       a rich-text box producing HTML — which means accepting HTML from a form
+       and sanitising it, on the one route whose output every subscriber reads.
+       Instead the input stays plain text carrying `**bold**` and
+       `[label](https://…)`, and the HTML is PRODUCED here from escaped pieces.
+       An admin who types a tag gets that tag shown to their subscribers as the
+       text they typed. */
+    assert.match(routes, /\.map\(\(para\) => `<p style="margin:0 0 16px;">\$\{renderUpdateInline\(para\)\}<\/p>`\)/);
+    assert.match(routes, /function renderUpdateInline/);
+    assert.match(routes, /function escapeUpdateText/);
+    // The URL is MATCHED, not trusted — a whitelist, so javascript: and data:
+    // are simply not matches and the text is left alone.
+    assert.match(routes, /https\?:\\\/\\\/\[\^\\s\(\)<>"'`\]/,
+      'the link pattern must admit only http and https, and nothing that can close an attribute');
+    // The idempotency key is required by the validator, so a client that
+    // forgets one is refused rather than silently able to double-send.
+    assert.match(routes, /body\('campaignId'\)\.trim\(\)\.isLength\(\{ min: 8, max: 64 \}\)/);
+    assert.match(routes, /campaignId\s*\}\);/, 'and it reaches the template as the dedupe key');
+    // The client rotates it only on success: a retry of a FAILED send is the
+    // same campaign, so anyone who did receive it is not mailed twice.
+    const send = grab('sendSubscriberBroadcast');
+    assert.match(send, /broadcastCampaignId = newCampaignId\(\);/);
+    assert.ok(/Key deliberately NOT rotated|catch \(err\)/.test(admin.slice(admin.indexOf('sendSubscriberBroadcast'))),
+      'the failure path must not rotate the key');
+  });
+
+  // ------------------------------------------ 5. what a courier actually gets
+  test('SHIPPING: the copied block carries its field names, and the order id last', () => {
+    /* It was bare VALUES — a packer pasting into a courier portal had to work
+       out from position which box each line belonged in, and a missing optional
+       line shifted everything below it up by one. */
+    const fields = grab('shippingAddressFields');
+    assert.match(fields, /label: 'Recipient Name'/);
+    assert.match(fields, /label: 'PIN Code'/);
+    assert.match(grab('shippingAddressBlock'), /f\.label \+ ' : ' \+ f\.value/);
+
+    // Order ID goes on last, and it is the human order NUMBER — the uuid means
+    // nothing to a courier.
+    const idAt = fields.indexOf("label: 'Order ID'");
+    const countryAt = fields.indexOf("label: 'Country'");
+    assert.ok(idAt > countryAt && idAt > -1, 'Order ID must be appended after the address fields');
+    assert.match(fields, /value: o\.order_number/);
+
+    // Account Email is an admin detail, not a delivery field.
+    assert.match(fields, /label: 'Account Email', value: o\.customer_email, forLabel: false/);
+    assert.match(grab('shippingAddressBlock'), /filter\(function\(f\)\{ return f\.forLabel; \}\)/);
+  });
+
+  test('SHIPPING: the screen, the copy and the label read one list', () => {
+    // Three hand-maintained copies is how the copied block ended up with no
+    // field names while the drawer had them.
+    assert.match(admin, /\$\{shippingAddressFields\(o\)\.map\(\(f\) => `<dt>\$\{esc\(f\.label\)\}<\/dt><dd>\$\{esc\(f\.value\)\}<\/dd>`\)\.join\(''\)\}/,
+      'the drawer renders from the same list');
+    assert.match(grab('printShippingLabel'), /shippingAddressBlock\(currentOrderForLabel\)/);
+    // The label used to print "Order NNN" in its own header; the block now ends
+    // with it, and printing it twice wastes the only space a 10x15cm label has.
+    assert.ok(!/<div class="on">Order/.test(admin),
+      'the duplicated order header must be gone');
+  });
+
+  // -------------------------------- 6. a dialog above the thing that raised it
+  test('LAYERS: a confirmation can never open behind the drawer that raised it', () => {
+    /* The modal was 100 and the order drawer 101. On a desktop the drawer is
+       480px and the centred dialog peeked out beside it, which is why it was
+       never caught; on a phone the drawer is 100vw and the dialog was invisible,
+       with Confirm unreachable — on the refund path. */
+    const num = (name) => {
+      const m = admin.match(new RegExp('--' + name + ':\\s*(\\d+)'));
+      assert.ok(m, 'missing layer token --' + name);
+      return Number(m[1]);
+    };
+    assert.ok(num('z-modal-scrim') > num('z-drawer'),
+      'a modal must sit above the drawer, or a phone shows a dimmed screen and nothing else');
+    assert.ok(num('z-toast') > num('z-modal'), 'a message about what happened sits above everything');
+    assert.ok(num('z-drawer') > num('z-sidebar'));
+    // And the components must actually use the scale rather than raw numbers,
+    // or the tokens document an ordering nothing follows.
+    assert.match(admin, /\.overlay\{[^}]*z-index:var\(--z-modal-scrim\)/);
+    assert.match(admin, /\.drawer\{[\s\S]{0,200}z-index:var\(--z-drawer\)/);
+  });
+
+  // ------------------------------------------- 7. the storefront product card
+  test('CARD: one button, and every pixel of it adds to the cart', () => {
+    /* WHAT THIS REPLACES, IN ORDER. A round + floating over the photograph; a
+       −/n/+ stepper that took its place once something was in the basket; a Buy
+       Now beside it; and then a version of this button that still carried the +
+       as a circle on its right. Three shapes for one intention, and then a
+       fourth with a second target still on it.
+
+       The + is gone. What it was carrying was the COUNT, and a count belongs on
+       the cart it counts. */
+    const fn = grab('quickAddHTML', shopCode);
+    assert.match(fn, /<button class="qa-cart" aria-label="Add to cart"/);
+    assert.match(fn, /<span class="qa-cart-txt">Add to Cart<\/span>/);
+    assert.ok(!/qa-cart-n|qa-add-ic|qa-add-lbl|qa-stepper|p-buynow/.test(fn),
+      'the plus circle, the old two-part button, the stepper and Buy Now are all gone');
+
+    /* TWO STATES, ONE SHAPE. Empty, the whole button adds. Once something is in
+       the basket the SAME rounded rectangle becomes a stepper — minus at one
+       end, plus at the other, the count between them — because a control that
+       changes SIZE when it changes state makes the whole grid twitch, and
+       because removing an item should not mean opening the cart. */
+    assert.match(fn, /if\(qty > 0\)\{[\s\S]{0,200}?<div class="qa-step"/,
+      'something in the basket turns the button into a stepper');
+    assert.match(fn, /aria-label="Remove one"[\s\S]{0,220}?quickAdjust\([\s\S]{0,40}?,-1,this\)/,
+      'the minus removes one through the same path the plus adds through');
+    assert.match(fn, /aria-label="Add one"[\s\S]{0,220}?quickAdjust\([\s\S]{0,40}?,1,this\)/,
+      'and the plus adds through it, so the variant guard and the stock check are shared');
+    assert.match(fn, /qty > 99 \? '99\+' : qty/,
+      'two digits is the width the readout is built for');
+    /* THE MIDDLE ADDS TOO — three targets, and only one of them subtracts.
+
+       Pressing the cart is what pressing the cart meant a moment earlier, when
+       this control was a single Add to Cart button. A customer does not know
+       the control changed shape underneath them; they know they pressed the
+       cart and it worked. So the middle keeps that meaning.
+
+       The ratio is the assertion worth making: two of the three presses add,
+       one removes. A stepper whose middle did nothing wasted the largest target
+       on the card, and one whose middle removed would be a trap. */
+    const stepBlock = fn.slice(fn.indexOf('qa-step"'), fn.indexOf('</div></div>'));
+    assert.strictEqual((stepBlock.match(/<button/g) || []).length, 3,
+      'minus, the cart itself, and plus');
+    assert.match(fn, /<button class="qa-step-mid"[\s\S]{0,240}?quickAdjust\([\s\S]{0,40}?,1,this\)/,
+      'the cart in the middle adds one, the same as the plus beside it');
+    assert.strictEqual((stepBlock.match(/,1,this\)/g) || []).length, 2,
+      'two of the three add');
+    assert.strictEqual((stepBlock.match(/,-1,this\)/g) || []).length, 1,
+      'and exactly one takes away');
+    assert.match(fn, /class="qa-step-mid" aria-label="Add to cart, ' \+ qty \+ ' in your cart"/,
+      'the middle names itself, because the words beside the icon are hidden on a narrow card');
+
+    /* NO RING AROUND THE SIGNS. They were drawn inside 26px circles for one
+       revision; the circles were doing a job the glyphs can do themselves once
+       they are heavy enough, and two discs on a small control is more furniture
+       than a card wants. What the ring never controlled was the TARGET — that
+       is the full height of the strip, and 44px wide on a phone. */
+    /* The pseudo-element came back, but as the SHAPE OF THE TARGET rather than
+       a ring around the glyph: a rounded wash the width of the whole end of the
+       strip, lit on hover, so what the eye is told is where the press actually
+       lands. currentColor at 15% covers both grounds — white on the maroon,
+       oxblood on the gold it inverts to — with one declaration. */
+    assert.match(html, /\.qa-step-btn::before\{[\s\S]{0,200}?background:currentColor; opacity:0;/,
+      'the click area is drawn, and invisible until it is wanted');
+    assert.ok(!/\.qa-step-btn::before\{[\s\S]{0,200}?border-radius:50%/.test(html),
+      'and it is the rectangle the press lands in, not a circle around the sign');
+    assert.match(html, /\.qa-step-btn:hover::before\{ opacity:\.15; \}/);
+    assert.match(html, /\.qa-step-btn svg\{[\s\S]{0,160}?width:clamp\(16px/,
+      'so the glyphs themselves step up to carry the affordance');
+  });
+
+  test('CARD: the badge animates on the card that changed, and only that one', () => {
+    /* syncAllQuickAddControls runs after EVERY cart change, for every card on
+       screen, and replaces each one's markup outright — so an animation that
+       plays on mount plays on all of them whenever any one is touched. A grid
+       of eight flashing because one was added is worse than no animation. */
+    const sync = grab('syncAllQuickAddControls', shopCode);
+    assert.match(sync, /const before = Number\(holder\.getAttribute\('data-qty'\) \|\| 0\);/,
+      'the previous count is read off the DOM, so there is no parallel map to keep in step');
+    assert.match(sync, /holder\.outerHTML = quickAddHTML\(p, after > before\);/,
+      'and only a count that went UP asks for the animation');
+    const fn = grab('quickAddHTML', shopCode);
+    assert.match(fn, /data-qty="' \+ qty \+ '"/,
+      'the render must write the count back, or the next sync cannot tell what changed');
+    assert.match(fn, /\(bump \? ' is-bump' : ''\)/);
+    assert.match(html, /\.qa-step-n\.is-bump\{ animation:cartBadgePop/);
+    assert.match(html, /@keyframes cartBadgePop\{/);
+  });
+
+  test('CARD: the hover is the mark\'s own gold, and legible on it', () => {
+    /* #F0D08A is the third band of the Sri Yantra this shop is built around —
+       see scripts/generate-yantra.js, where it is the ring colour. Using a
+       brand tone rather than a generic yellow is the point; measuring it is
+       what makes the choice defensible. */
+    assert.match(html, /\.qa-cart:hover, \.qa-cart:focus-visible\{[\s\S]{0,200}?background:#F0D08A/);
+    assert.match(html, /\.qa-cart:hover, \.qa-cart:focus-visible\{[\s\S]{0,200}?color:var\(--oxblood\)/,
+      'text and icons invert to maroon');
+    assert.match(html, /\.qa-step:hover \.qa-step-n, \.qa-step:focus-within \.qa-step-n\{[\s\S]{0,180}?background:var\(--oxblood\)/,
+      'and the count inverts with it, or a gold badge on a gold ground disappears');
+    assert.match(html, /\.qa-step:hover, \.qa-step:focus-within\{[\s\S]{0,200}?background:#F0D08A/,
+      'the stepper takes the same hover, because it is the same control in another state');
+    const lum = (hex) => {
+      const c = hex.replace('#', '').match(/../g).map((x) => parseInt(x, 16) / 255)
+        .map((v) => (v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)));
+      return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+    };
+    const ratio = (x, y) => (Math.max(lum(x), lum(y)) + 0.05) / (Math.min(lum(x), lum(y)) + 0.05);
+    const r = ratio('#7A1128', '#F0D08A');
+    assert.ok(r >= 4.5, 'oxblood on the hover gold is ' + r.toFixed(2) + ':1; AA needs 4.5');
+  });
+
+  test('CARD: Notify Me takes the button\'s place, and is no shorter than a finger', () => {
+    /* It used to be a small pill on the photograph beside the add control. It
+       takes the button's place in the body now — same shape, same width —
+       because "you cannot buy this yet" is the same KIND of statement as "buy
+       this", and putting it elsewhere would make a customer look for it.
+
+       The 44px height is not available to trade: the touch block sets it, the
+       responsive audit fails the build under it, and a control a fingertip
+       covers is one people miss. */
+    assert.match(html, /\.qa-notify\{ width:100%; min-height:44px;/,
+      'full width and a fingertip tall');
+    assert.match(html, /\.qa-notify,[\s\S]{0,140}min-height:44px;/,
+      'and the touch block still names it');
+    const fn = grab('quickAddHTML', shopCode);
+    assert.match(fn, /if\(!p\.stock\) \{[\s\S]{0,260}?qa-notify/,
+      'out of stock takes the place of the button rather than sitting beside it');
+  });
+
+  test('CARD: the label never truncates at any width the grid produces', () => {
+    /* At a 144px card the button is 122px and "Add to Cart" was being ellipsised
+       — the one thing on it that says what it does. Everything around the words
+       gives way first, in two measured steps. */
+    for (const at of ['175px', '150px']) {
+      assert.ok(html.indexOf('@container (max-width: ' + at + ')') > -1,
+        'a step at ' + at + ' of card must exist');
+    }
+    const step = html.match(/@container \(max-width: 150px\)\{[\s\S]{0,340}?\.qa-cart-txt\{ font-size:\.(\d+)rem/);
+    assert.ok(step, 'the narrowest step must bring the label down, not off');
+    /* A FLOOR, NOT A FIXED SIZE. The label was raised once already and the step
+       had to move with it; pinning the number turned a size the owner chose into
+       a failing test. What must hold is that the narrowest card still sets it
+       large enough to read. */
+    assert.ok(Number('.' + step[1]) >= 0.66,
+      'the narrowest step sets the label at .' + step[1] + 'rem; below .66 it stops being readable');
+    assert.match(html, /\.p-card\{ container-type:inline-size; \}/,
+      'the card has to be a container for those queries to resolve');
+  });
+
+  test('CARD: the star went up, and the price row reads in the order it is asked', () => {
+    /* The star was the ★ glyph with a clipped gradient across it — arms as thin
+       as the typeface decided, which at 15px read as a speck. It is drawn now,
+       with an inner radius that makes the arms broad, and it is larger.
+
+       The price row answers the questions in the order they are asked: what
+       does this cost, what did it cost, how much is saved. */
+    assert.match(html, /\.p-star\{[\s\S]{0,200}?width:clamp\(15px, [\d.]+cqi, 18px\)/,
+      'larger than the 15px glyph it replaces, and container-relative');
+    assert.match(shopCode, /const STAR_PATH = /, 'the geometry is stated once, not computed per render');
+    const fn = grab('priceRowHTML', shopCode);
+    const now = fn.indexOf('pr-now');
+    const mrp = fn.indexOf('pr-mrp');
+    const off = fn.indexOf('discountTagHTML');
+    assert.ok(now > -1 && mrp > now && off > mrp,
+      'price, then the price it replaced, then the saving — in that order');
+    assert.match(fn, /<s><span class="sr-only">was <\/span>/,
+      'a strikethrough is visual only, so the word it stands for is said out loud');
+  });
+}
+
+// ============================================================
+section('[fe-56] The price is a sticker, the button wears the chip, and mail is bulk-safe');
+// ============================================================
+/* The price and the add control traded places, the price chip's treatment went
+   with the button, and the subscriber update learned two tags. Each of those is
+   a design decision with a property underneath it, and this is the property. */
+{
+  const html = read('index.html');
+  const routes = read('src/routes/admin.routes.js');
+  const engine = read('src/utils/email/engine.js');
+  const strip = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const shopCode = strip(html);
+  function grab(name) {
+    const code = shopCode;
+    const i = code.search(new RegExp('(?:async )?function ' + name + '\\('));
+    if (i < 0) throw new Error('missing ' + name);
+    let d = 0; const st = code.indexOf('{', i);
+    for (let k = st; k < code.length; k++) {
+      if (code[k] === '{') d++;
+      else if (code[k] === '}') { d--; if (!d) return code.slice(i, k + 1); }
+    }
+  }
+
+  // ------------------------------------------------------------ the sticker
+  test('PRICE ROW: the price is always shown, with or without a saving', () => {
+    /* WHAT THIS REPLACES. The price spent one pass as a starburst sticker on the
+       photograph. It is a row in the body again — the photograph now carries the
+       badge, the wishlist and the quick view, and a fourth thing on it was one
+       too many. What survived the move is the rule that made the sticker right:
+       the price is the one fact a card exists to state, so it is ALWAYS there,
+       and a product at full price simply has one item in the row instead of
+       three. */
+    const fn = grab('priceRowHTML');
+    assert.match(fn, /<span class="pr-now">' \+ formatINR\(p\.price\)/);
+    assert.match(fn, /off\s*\n?\s*\?\s*'<span class="pr-mrp">/,
+      'the struck price appears only when there is one');
+    assert.ok(!/return '';/.test(fn), 'and the row itself is never withheld');
+    // On the photograph there is now nothing but the badge and the two controls.
+    assert.ok(!/priceTagHTML|p-pricetag|pt-burst/.test(html),
+      'the sticker and its clip-path are gone, not merely unused');
+  });
+
+  test('PRICE ROW: the struck price is red, pale, and dark enough to read', () => {
+    const mrp = html.match(/\.pr-mrp\{[\s\S]{0,220}?color:(#[0-9A-Fa-f]{6});/);
+    assert.ok(mrp, 'the struck price must declare its colour');
+    assert.match(html, /\.pr-mrp s\{ text-decoration:line-through/);
+    assert.match(grab('priceRowHTML'), /<span class="pr-lbl">MRP<\/span>/,
+      'and it is labelled MRP, because a second number with a line through it is not self-explanatory');
+    const lum = (hex) => {
+      const c = hex.replace('#', '').match(/../g).map((x) => parseInt(x, 16) / 255)
+        .map((v) => (v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)));
+      return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+    };
+    const ratio = (x, y) => (Math.max(lum(x), lum(y)) + 0.05) / (Math.min(lum(x), lum(y)) + 0.05);
+    const r = ratio(mrp[1], '#ffffff');
+    assert.ok(r >= 4.5,
+      'the struck price is ' + mrp[1] + ' on white, which is ' + r.toFixed(2) + ':1; AA needs 4.5');
+  });
+
+  test('PRICE ROW: it splits the same way for every card in a grid', () => {
+    /* Left to flex-wrap the break lands wherever each product's own price
+       happens to put it, so one grid showed three cards with the saving beside
+       the price and five with it underneath. The threshold sits BETWEEN the two
+       card widths the desktop grids produce — 205px at four across and 212px at
+       five — so every card in a given grid resolves the same way. */
+    assert.match(html, /@container \(max-width: 208px\)\{[\s\S]{0,400}?\.p-pricerow::before\{ content:''; order:1; flex-basis:100%/,
+      'a full-width break element, so the saving always starts a new line rather than sometimes fitting');
+    assert.match(html, /\.p-discount\{[\s\S]{0,260}?margin-left:auto;/,
+      'and above the threshold it is pushed to the far right without a spacer');
+  });
+
+  test('PHONE: the badge and the discount tag come down a size', () => {
+    /* Both are annotations ON a photograph and their type was set for a desktop
+       card. Neither is a control, so no touch minimum applies to either — which
+       is exactly why these two are the ones that CAN come down. */
+    const block = html.match(/@media \(max-width:767px\)\{\s*\.badge\{[\s\S]*?\n\}/);
+    assert.ok(block, 'the phone step-down must exist');
+    assert.match(block[0], /\.badge\{ padding:[^;]+; font-size:\.6rem/);
+    assert.match(block[0], /\.p-discount\{ padding:[^;]+; font-size:clamp/);
+    assert.ok(!/\.badge[^}]*min-height:44px/.test(html));
+  });
+
+  test('PHOTO CONTROLS: always visible, and a target a finger can hit', () => {
+    /* They lived in a wrapper held at opacity:0 until the card was hovered,
+       which means they did not exist on a touch screen — the wishlist and the
+       quick view were desktop-only features on a site where most traffic is a
+       phone.
+
+       Being visible brings them inside the touch rule they were previously
+       exempt from: the audit skips anything an ancestor holds at zero opacity,
+       so 38px passed while they were hidden and would not now. */
+    assert.ok(!/\.p-quick\{[^}]*opacity:0/.test(html), 'nothing may hide them behind a hover again');
+
+    /* THE TARGET AND THE CIRCLE ARE TWO DIFFERENT SIZES, AND THE DIFFERENCE IS
+       COMPUTED. A finger needs 44px; a 44px white disc covers a quarter of a
+       165px photograph. So the button carries the target, the pseudo-element
+       carries the circle, and --photo-pad is half the difference — DERIVED, so
+       that raising the target for touch cannot leave the circle sitting further
+       in than the badge it is supposed to line up with. That is exactly what had
+       happened: 9px for the badge, 18px for both buttons, on one photograph. */
+    assert.match(html, /--photo-pad:calc\(\(var\(--photo-btn\) - var\(--photo-disc\)\) \/ 2\);/,
+      'the pad must be derived from the two sizes, never typed');
+    assert.match(html, /\.p-wish, \.p-qview\{[\s\S]{0,200}?width:var\(--photo-btn\); height:var\(--photo-btn\);/);
+    assert.match(html, /\.p-wish::before, \.p-qview::before\{[\s\S]{0,80}?inset:var\(--photo-pad\);/,
+      'inset on the disc, not on the button, or the finger loses what the eye gains');
+    assert.match(html, /\.p-wish::before, \.p-qview::before\{[\s\S]{0,200}?background:rgba\(255,255,255,\.94\)/);
+
+    /* AND THE QUESTION IS THE POINTER, NOT THE WINDOW. A bare max-width:767px is
+       a phone breakpoint being asked about pointers, and it left an iPad at
+       834px with 34px targets. hover:none is the capability query; the width
+       catches a touch laptop that reports a hover it does not really have. It is
+       the pair the filter rows and the category chips already use. */
+    const touch = html.match(/@media \(hover:none\), \(max-width:980px\)\{\s*\.p-card\{ --photo-btn:(\d+)px; --photo-disc:(\d+)px; \}/);
+    assert.ok(touch, 'the target is raised by a capability query, not a phone breakpoint');
+    assert.strictEqual(Number(touch[1]), 44, 'a fingertip is 44px');
+    assert.ok(Number(touch[2]) < Number(touch[1]),
+      'and the circle stays smaller than the target, or the picture pays for the finger');
+    assert.ok(!/@media \(max-width:767px\)\{[\s\S]{0,400}?\.p-wish, \.p-qview\{ width:44px/.test(html),
+      'the old width-only rule must not come back alongside it');
+  });
+
+  test('CARD: the ends of the stepper are a fingertip, and the label is re-measured around them', () => {
+    /* Same question, same query. The ends going from 34px to 44px takes twenty
+       pixels out of the middle, so the line where "Add to Cart" stops fitting
+       has to move with them — otherwise the words would truncate on any touch
+       device wide enough to still be showing them, which is the one failure the
+       208px line exists to prevent. */
+    assert.match(html, /@media \(hover:none\), \(max-width:980px\)\{\s*\.qa-step-btn\{ min-width:44px; \}/,
+      'the ends grow for a finger, not for a narrow window');
+    const nested = html.match(/@media \(hover:none\), \(max-width:980px\)\{\s*\.qa-step-btn\{ min-width:44px; \}\s*@container \(max-width: (\d+)px\)\{\s*\.qa-step-txt\{ display:none; \}/);
+    assert.ok(nested, 'and the label threshold moves with them, inside the same query');
+    const wide = Number(nested[1]);
+    const narrow = Number(html.match(/@container \(max-width: (\d+)px\)\{\s*\.qa-step-txt\{ display:none; \}/)[1]);
+    assert.ok(wide - narrow >= 20,
+      'twenty pixels leave the middle when both ends grow by ten; the threshold moved '
+      + (wide - narrow) + 'px');
+  });
+
+  test('TOUCH TARGETS: the block asks about the pointer, not the window', () => {
+    /* It asked `max-width:767px`, which is a phone breakpoint standing in for a
+       question about pointers. An iPad at 834px is a finger with no mouse near
+       it, and it was getting the desktop sizes: the view toggle at 32px,
+       pagination at 40, the footer's social buttons at 38, the sort menu at 35
+       and every footer link at 20 — every number this block exists to prevent,
+       on a device it never looked at.
+
+       This is the same pair used by the category chips, the service search, the
+       filter rows and the card's own --photo-btn, so there is one idiom on this
+       site rather than two. */
+    const block = html.match(/TOUCH TARGETS[\s\S]{0,2600}?@media ([^{]+)\{/);
+    assert.ok(block, 'the touch-target block must still be one block with one query');
+    assert.strictEqual(block[1].trim(), '(hover:none), (max-width:980px)',
+      'it asked "' + block[1].trim() + '", which cannot tell a finger from a mouse');
+    /* And every other place that raises a target for touch uses the same pair,
+       so a reader learns the idiom once. */
+    for (const sel of ['\\.allcat-chip', '\\.svc-search-clear']) {
+      const re = new RegExp('@media \\(hover:none\\), \\(max-width:\\d+px\\)\\{[^}]*?' + sel);
+      assert.ok(re.test(html),
+        sel.replace('\\', '') + ' should still raise its target on a capability query');
+    }
+  });
+
+  test('CARD: the list row caps every shape the button takes', () => {
+    /* A row is 700px wide and a button stretched across all of it reads as a
+       banner, so the list view caps it. The cap named .qa-cart and .qa-notify
+       and not .qa-step — which is what .qa-cart BECOMES the moment somebody
+       presses it — so the banner appeared on the first click. */
+    const cap = html.match(/\.product-grid\.list-view \.qa-cart,\s*\.product-grid\.list-view \.qa-notify,\s*\.product-grid\.list-view \.qa-step\{ width:auto; min-width:\d+px; max-width:\d+px; \}/);
+    assert.ok(cap, 'all three shapes the CTA can take must be capped together');
+    /* And the renderer may not grow a fourth without this failing. */
+    const fn = grab('quickAddHTML', shopCode);
+    const shapes = new Set([...fn.matchAll(/class="(qa-(?:cart|notify|step))"/g)].map((m) => m[1]));
+    assert.ok(shapes.size === 3, 'the CTA takes three shapes; found ' + [...shapes].join(', '));
+    for (const cls of shapes) {
+      assert.ok(cap[0].includes('.' + cls),
+        cls + ' is a shape the CTA takes and the list view does not cap it');
+    }
+  });
+
+  // --------------------------------------------------- the mail that goes out
+  test('MAIL: bulk messages carry what a receiving server judges them on', () => {
+    /* Round 19 fixed the DNS half — SPF, DKIM, DMARC — and the README records
+       that as configuration. This is the half that lives in code, and none of
+       it was set. Since February 2024 Gmail and Yahoo require one-click
+       unsubscribe on bulk mail, and an HTML-only message is one of the oldest
+       spam signals there is. */
+    assert.match(engine, /headers\['List-Unsubscribe'\] = `<\$\{listUnsubUrl\}>`/);
+    assert.match(engine, /headers\['List-Unsubscribe-Post'\] = 'List-Unsubscribe=One-Click'/,
+      'RFC 8058 — without the POST header the URL is not one-click');
+    assert.match(engine, /if \(cat === CATEGORY\.MARKETING\) \{\s*const listUnsubUrl = await unsubscribeUrlFor\(recipient\);/,
+      'computed from the recipient here, not supplied by each of twenty call sites');
+    assert.match(engine, /text: textBody \|\| htmlToText\(html\)/,
+      'every message goes multipart/alternative');
+    assert.match(engine, /replyTo: process\.env\.REPLY_TO_EMAIL \|\| process\.env\.FROM_EMAIL \|\| undefined/,
+      'and a reply reaches somebody');
+  });
+
+  test('MAIL: the text part keeps the destination of every link', () => {
+    const { htmlToText } = require(path.join(ROOT, 'src/utils/email/engine.js'));
+    const out = htmlToText('<p>See the <a href="https://x.test/shop">new malas</a> &amp; more.</p>');
+    assert.match(out, /new malas \(https:\/\/x\.test\/shop\)/,
+      'a link that has lost its URL is a dead end in a text part');
+    assert.match(out, /& more/, 'entities are decoded');
+    // Decoding must happen AFTER the tags are stripped, or an escaped tag is
+    // decoded back into one and then removed — silently deleting text.
+    assert.match(htmlToText('<p>&lt;b&gt;kept&lt;/b&gt;</p>'), /<b>kept<\/b>/);
+  });
+
+  test('MAIL: the update takes a syntax, and cannot be given markup', () => {
+    /* An owner needs bold and a link. Accepting HTML would mean sanitising it
+       on the one route every subscriber reads, so the input stays plain text
+       and this route can emit exactly two tags. */
+    assert.match(routes, /out \+= '<strong>' \+ escapeUpdateText\(m\[3\]\) \+ '<\/strong>'/);
+    assert.match(routes, /out \+= '<a href="' \+ escapeUpdateText\(m\[2\]\) \+ '"'/);
+    const re = routes.match(/const UPDATE_LINK_OR_BOLD =\s*\r?\n?\s*(\/[\s\S]*?\/g);/);
+    assert.ok(re, 'the marker pattern must be declared once');
+    assert.match(re[1], /https\?:/, 'only http and https may become an href');
+    /* Run it. The property is what the pattern DOES, not what it looks like:
+       javascript: and data: must not be recognised as links at all, so the text
+       is left alone and shown literally. */
+    const pattern = eval(re[1]);      // eslint-disable-line no-eval
+    const sample = '[a](javascript:alert(1)) [b](data:text/html,x) [c](https://ok.test/p)';
+    const hits = [...sample.matchAll(new RegExp(pattern.source, 'g'))].map((m) => m[2]);
+    assert.deepStrictEqual(hits, ['https://ok.test/p'],
+      'only the http(s) URL may be recognised as a link');
   });
 }
 

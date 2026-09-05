@@ -165,7 +165,7 @@ function renderShell({ heading, body, preheader, unsubscribeUrl }) {
       <p style="margin:0;font-size:17px;font-weight:700;letter-spacing:.04em;color:${BRAND.accent};">${esc(BRAND.name)}</p>
     </td></tr>
     <tr><td style="padding:14px 30px 26px;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${BRAND.ink};font-size:15px;line-height:1.62;">
-      <h1 style="margin:0 0 14px;font-size:21px;line-height:1.3;font-weight:600;color:${BRAND.ink};">${esc(heading)}</h1>
+      <h1 style="margin:0 0 14px;font-size:21px;line-height:1.3;font-weight:700;color:${BRAND.ink};">${esc(heading)}</h1>
       ${body}
     </td></tr>
     <tr><td style="padding:0 30px 24px;border-top:1px solid ${BRAND.rule};font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
@@ -174,6 +174,54 @@ function renderShell({ heading, body, preheader, unsubscribeUrl }) {
   </table>
 </td></tr></table>
 </body></html>`;
+}
+
+/* THE PLAIN-TEXT HALF OF EVERY MESSAGE.
+
+   Not a general HTML-to-text converter and not trying to be. It handles exactly
+   what renderShell and the templates emit: a hidden preheader span, a table
+   layout, headings, paragraphs, breaks and links. Anything else is stripped.
+
+   LINKS KEEP THEIR URL. `<a href="X">Y</a>` becomes `Y (X)` rather than just
+   `Y`, because in a text part a link that has lost its destination is a dead
+   end — the reader can see there was a link and has no way to follow it.
+
+   Entities are decoded LAST, after every tag has gone. Decoding first would
+   turn an escaped `&lt;b&gt;` back into a tag that the tag-stripper would then
+   remove, which is how a naive converter silently deletes text a customer
+   typed. */
+function htmlToText(html) {
+  let s = String(html || '');
+  // Anything never meant to be read: the head, styles, scripts, and the
+  // zero-height preheader span that exists only for the inbox preview line.
+  s = s.replace(/<head[\s\S]*?<\/head>/gi, '');
+  s = s.replace(/<(script|style)[\s\S]*?<\/\1>/gi, '');
+  s = s.replace(/<span[^>]*display:none[^>]*>[\s\S]*?<\/span>/gi, '');
+  // Links, before the generic tag strip, so the href survives.
+  s = s.replace(/<a\b[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi, (m, href, label) => {
+    const text = label.replace(/<[^>]+>/g, '').trim();
+    const url = String(href).trim();
+    if (!url || url === text) return text;
+    return text ? `${text} (${url})` : url;
+  });
+  // Structure that means "new line" in the rendered message.
+  s = s.replace(/<br\s*\/?>/gi, '\n');
+  s = s.replace(/<\/(p|h1|h2|h3|div|tr|li)>/gi, '\n');
+  s = s.replace(/<\/td>/gi, '  ');
+  s = s.replace(/<\/table>/gi, '\n');
+  s = s.replace(/<[^>]+>/g, '');
+  // Entities last, and &amp; last of those, or `&amp;lt;` decodes twice.
+  s = s.replace(/&nbsp;/gi, ' ')
+       .replace(/&lt;/gi, '<')
+       .replace(/&gt;/gi, '>')
+       .replace(/&quot;/gi, '"')
+       .replace(/&#39;/g, "'")
+       .replace(/&amp;/gi, '&');
+  /* Tidy. The source is indented for readability and none of that indentation
+     means anything once the tags are gone, so leading space goes, then trailing
+     space, then any run of blank lines longer than one. */
+  s = s.replace(/^[ \t]+/gm, '').replace(/[ \t]+$/gm, '').replace(/\n{3,}/g, '\n\n');
+  return s.trim();
 }
 
 /** Renders items as a table. Used by the order emails and the invoice. */
@@ -354,7 +402,7 @@ async function finishSend(logId, status, error, dedupeKey) {
  * @param {string}  [o.userId]
  * @returns {Promise<{sent:boolean, reason?:string, duplicate?:boolean}>}
  */
-async function sendMail({ to, subject, html, template, category, dedupeKey, userId }) {
+async function sendMail({ to, subject, html, text: textBody, template, category, dedupeKey, userId }) {
   const cat = category || CATEGORY.TRANSACTIONAL;
   const name = template || 'unknown';
   const recipient = String(to || '').trim();
@@ -402,12 +450,49 @@ async function sendMail({ to, subject, html, template, category, dedupeKey, user
     return { sent: false, reason: 'smtp_not_configured' };
   }
 
+  /* THE HEADERS BULK MAIL IS JUDGED ON, and none of them was being set.
+
+     Round 19 fixed the DNS half of deliverability — SPF, DKIM and DMARC
+     alignment — and the README documents that as configuration. This is the
+     half that lives in code:
+
+     1. LIST-UNSUBSCRIBE. Since February 2024 Gmail and Yahoo require one-click
+        unsubscribe on bulk mail, and a marketing message without it is filtered
+        on that basis alone. The pair below is RFC 8058: the URL, and the POST
+        header telling the client it can unsubscribe without opening anything.
+        Computed HERE, from the recipient, rather than passed in — a header
+        every marketing email must carry cannot depend on each call site
+        remembering to supply it.
+
+     2. A PLAIN-TEXT PART. An HTML-only message is one of the oldest and most
+        reliable spam signals there is, because very little legitimate mail is
+        sent that way. Everything now goes out multipart/alternative.
+
+     3. REPLY-TO. Mail from an address that bounces on reply reads as one-way
+        broadcast traffic. Falls back to From, so this is an improvement
+        wherever REPLY_TO_EMAIL is set and never a regression where it is not. */
+  const headers = {};
+  if (cat === CATEGORY.MARKETING) {
+    const listUnsubUrl = await unsubscribeUrlFor(recipient);
+    if (listUnsubUrl) {
+      headers['List-Unsubscribe'] = `<${listUnsubUrl}>`;
+      headers['List-Unsubscribe-Post'] = 'List-Unsubscribe=One-Click';
+    }
+  }
+
   try {
     await t.sendMail({
       from: process.env.FROM_EMAIL || process.env.SMTP_USER,
       to: recipient,
+      replyTo: process.env.REPLY_TO_EMAIL || process.env.FROM_EMAIL || undefined,
       subject,
-      html
+      html,
+      /* The caller's own plain text where it has it — the subscriber broadcast
+         does, because the admin typed plain text in the first place — and a
+         reduction of the HTML everywhere else. Having is better than deriving,
+         and both are far better than sending none. */
+      text: textBody || htmlToText(html),
+      headers
     });
     await finishSend(claim.id, 'sent', null, dedupeKey);
     logger.info('Email sent', { subject, template: name });
@@ -472,5 +557,7 @@ module.exports = {
   isSuppressed,
   unsubscribeUrlFor,
   getTransporter,
-  resetTransporter
+  resetTransporter,
+  // Exported for the tests that assert the plain-text half of a message.
+  htmlToText
 };

@@ -98,8 +98,7 @@ const harness = `<!doctype html><html><body><div id="grid"></div><script>
   function productHref(p){ return p && p.slug ? pathForRoute('product', p.slug) : pathForRoute('product', p && p.id); }
   function mediaStyle(){ return ''; }
   function productThumbInnerHTML(){ return '<span>img</span>'; }
-  function badgeInfo(b){ return { cssClass:'badge-x', text:String(b) }; }
-  function discountTagHTML(){ return ''; }
+  function badgeInfo(b){ return { key:String(b), text:String(b) }; }
   function catLabel(c){ return c; }
   // Added when productCardHTML started showing the full category path. A card
   // that throws renders nothing, and the symptom was a 30-second timeout on a
@@ -112,18 +111,32 @@ const harness = `<!doctype html><html><body><div id="grid"></div><script>
   function effectiveBadge(p){ return (p && p.badge) || ''; }
   function starsHTML(){ return '<span class="stars"></span>'; }
   function formatINR(n){ return '\\u20b9'+n; }
-  function cartQtyForProduct(){ return 0; }
+  /* Readable from the test, because the card has TWO shapes and the shape it
+     takes is decided by this number alone. Fixed at nought, half the control
+     was never rendered, let alone clicked. */
+  function cartQtyForProduct(){ return window.__qty || 0; }
   function ratingBlockHTML(){ return '<span>r</span>'; }
+  function hasRating(p){ return !!(Number(p && p.reviews) > 0 && Number(p && p.rating) > 0); }
   function toggleWishlist(id){ window.__calls.push('wishlist:'+id); }
   function openQuickView(id){ window.__calls.push('quickview:'+id); }
   function notifyStock(id){ window.__calls.push('notify:'+id); }
   function quickAdjust(id,d){ window.__calls.push('cart:'+id+':'+d); }
   function openProduct(id){ window.__calls.push('navigate:'+id); }
 
-  ${decl(/const PRICE_ANIMS = \d+;/, 'PRICE_ANIMS')}
-  ${decl(/let _priceAnim = Object\.create\(null\);/, '_priceAnim')}
-  ${fn('assignPriceAnims')}
-  ${fn('priceAnimClass')}
+  /* The badge's ground and movement are dealt per product with a neighbour
+     rule. This replaced the price chip's three treatments, which went with the
+     chip; the mechanism is the same one. */
+  ${decl(/const BADGE_COLORS = \d+;/, 'BADGE_COLORS')}
+  ${decl(/const BADGE_ANIMS = \d+;/, 'BADGE_ANIMS')}
+  ${decl(/let _badgeStyle = Object\.create\(null\);/, '_badgeStyle')}
+  ${fn('assignBadgeStyles')}
+  ${fn('badgeStyleClass')}
+
+  /* The REAL price sticker, not a stub. It is pure — a price, an MRP and
+     formatINR — so there is nothing to fake, and stubbing it would leave the
+     one element that now sits where the add button used to be untested. */
+  ${fn('priceRowHTML')}
+  ${fn('discountTagHTML')}
 
   ${fn('quickAddHTML')}
   ${fn('productCardHTML')}
@@ -137,7 +150,10 @@ const harness = `<!doctype html><html><body><div id="grid"></div><script>
   }, true);
 
   const product = { id:'p1', slug:'sphatik-shivling', name:'Sphatik Shivling', cat:'lingam',
-                    price:1299, mrp:1799, badge:null, stock:true, rating:4.5, reviews:12, material:'Quartz' };
+                    price:1299, mrp:1799, badge:'bestseller', stock:true, rating:4.5, reviews:12, material:'Quartz' };
+  /* The fixture carries a badge because the card's top-left corner is now one
+     of only three things on the photograph, and a null badge rendered none —
+     so the layout check below was asserting about an empty corner. */
   /* Render inside a try so a missing dependency reports ITSELF.
 
      productCardHTML is extracted from index.html and run against the stubs
@@ -187,9 +203,9 @@ const harness = `<!doctype html><html><body><div id="grid"></div><script>
 
   const results = [];
   for (const [label, sel] of [
-    ['wishlist heart', '.p-quick button:nth-of-type(1)'],
-    ['quick view eye', '.p-quick button:nth-of-type(2)'],
-    ['quick add (+)',  '.p-quickadd button']
+    ['wishlist heart', '.p-wish'],
+    ['quick view eye', '.p-qview'],
+    ['add to cart',    '.qa-cart']
   ]) {
     await page.evaluate(() => { window.__calls = []; });
     const before = page.url();
@@ -217,8 +233,133 @@ const harness = `<!doctype html><html><body><div id="grid"></div><script>
   if (!navOk) ok = false;
   console.log(`  ${navOk ? 'PASS' : 'FAIL'}  card image      -> handler: ${JSON.stringify(navCalls)} (must still open the product)`);
 
+  /* ---- the same button once something is in the basket ----
+     It becomes a stepper, and all three of its parts are targets. Two add, one
+     removes: pressing the cart in the middle means what it meant when this was
+     a single Add to Cart button, because a customer does not know the control
+     changed shape underneath them. */
+  await page.evaluate(() => {
+    window.__qty = 2;
+    document.getElementById('grid').innerHTML = productCardHTML(
+      { id: 'p1', name: 'Sphatik Shivling', slug: 'sphatik-shivling', cat: 'x',
+        price: 100, mrp: 200, stock: 5, rating: 5, reviews: 3, badge: 'bestseller' }, 0);
+  });
+  const stepResults = [];
+  for (const [label, sel, want] of [
+    ['minus removes one', '.qa-step-btn:nth-of-type(1)', 'cart:p1:-1'],
+    ['the cart adds one', '.qa-step-mid', 'cart:p1:1'],
+    ['plus adds one', '.qa-step-btn:nth-last-of-type(1)', 'cart:p1:1']
+  ]) {
+    await page.evaluate(() => { window.__calls = []; });
+    await page.click(sel);
+    await page.waitForTimeout(120);
+    const calls = await page.evaluate(() => window.__calls);
+    const good = calls.length === 1 && calls[0] === want;
+    if (!good) ok = false;
+    stepResults.push(`  ${good ? 'PASS' : 'FAIL'}  ${label.padEnd(18)} -> ${JSON.stringify(calls)}`);
+  }
+  console.log('\nThe same control once something is in the basket:\n');
+  stepResults.forEach((l) => console.log(l));
+  const stepShape = await page.evaluate(() => {
+    const st = document.querySelector('.qa-step');
+    return { targets: st.querySelectorAll('button').length,
+             count: (st.querySelector('.qa-step-n') || {}).textContent,
+             onIcon: !!st.querySelector('.qa-step-ic .qa-step-n'),
+             ring: getComputedStyle(st.querySelector('.qa-step-btn'), '::before').content };
+  });
+  const shapeChecks = [
+    ['three targets, no more', stepShape.targets === 3],
+    ['the count reads what is in the basket', stepShape.count === '2'],
+    ['and rides on the cart icon, not beside it', stepShape.onIcon],
+    ['no circle drawn behind the signs', stepShape.ring === 'none']
+  ];
+  for (const [label, good] of shapeChecks) {
+    if (!good) ok = false;
+    console.log(`  ${good ? 'PASS' : 'FAIL'}  ${label}`);
+  }
+  if (!shapeChecks.every((c) => c[1])) console.log('        got: ' + JSON.stringify(stepShape));
+  await page.evaluate(() => { window.__qty = 0; });
+  await page.goto('https://shop.test/');
+
   const href = await page.getAttribute('.p-media', 'href');
   console.log(`  ${href === '/product/sphatik-shivling' ? 'PASS' : 'FAIL'}  crawlable href  -> ${href}`);
+  if (href !== '/product/sphatik-shivling') ok = false;
+
+  /* ---- what is on the photograph, and what is in the body ----
+     The card has been through three arrangements. This pins the one it is in:
+     the photograph carries the badge and the two controls and nothing else, and
+     the body reads title, rating, price, button. */
+  const layout = await page.evaluate(() => {
+    const media = document.querySelector('.p-media');
+    const body = document.querySelector('.p-body');
+    const kids = [...body.children].map((el) => el.className.split(' ')[0]);
+    return {
+      onPhoto: { badge: !!media.querySelector('.badge'), wish: !!media.querySelector('.p-wish'),
+                 qview: !!media.querySelector('.p-qview'),
+                 priceOrAdd: !!media.querySelector('.p-pricerow, .p-cta, .p-pricetag, .p-quickadd') },
+      order: kids,
+      badgeGround: [...(document.querySelector('.badge') || { classList: [] }).classList]
+        .find((c) => /^bg-c\d$/.test(c)) || null,
+      badgeMove: [...(document.querySelector('.badge') || { classList: [] }).classList]
+        .find((c) => /^bg-a\d$/.test(c)) || null,
+      badgeKind: document.querySelector('.badge')
+        ? document.querySelector('.badge').dataset.badge : null
+    };
+  });
+  const layoutChecks = [
+    ['the photograph carries the badge and both controls',
+      layout.onPhoto.badge && layout.onPhoto.wish && layout.onPhoto.qview],
+    ['and nothing else — no price, no add control on it',
+      !layout.onPhoto.priceOrAdd],
+    /* p-material is filtered out: it is markup the LIST view uses and the grid
+       hides, so it is legitimately in the DOM and legitimately not on screen. */
+    ['the body reads name, rating, price, button in that order',
+      JSON.stringify(layout.order.filter((c) => c !== 'p-material'))
+        === JSON.stringify(['p-name', 'p-rating', 'p-pricerow', 'p-cta'])],
+    ['the badge takes a dealt ground and a dealt movement',
+      !!layout.badgeGround && !!layout.badgeMove],
+    /* Whatever key badgeInfo returned — the stub above returns the raw badge
+       value — must reach the markup as data rather than as a class. The real
+       badgeInfo maps 'bestseller' to 'best'; what is asserted here is the
+       plumbing, not the mapping, which badge-math owns. */
+    ['and names its kind in data, not in a class that styles nothing',
+      layout.badgeKind === 'bestseller']
+  ];
+  for (const [label, good] of layoutChecks) {
+    if (!good) ok = false;
+    console.log(`  ${good ? 'PASS' : 'FAIL'}  ${label}`);
+  }
+  if (!layoutChecks.every((c) => c[1])) console.log('        got: ' + JSON.stringify(layout));
+
+  /* Buy Now inherited the price chip's treatment, and the rule that came with
+     it: no two cards near each other may run the same movement. */
+  const anims = await page.evaluate(() => {
+    const mk = (id) => ({ id, name: id, slug: id, cat: 'x', price: 100, mrp: 200,
+                          stock: 5, rating: 5, reviews: 1, badge: 'new' });
+    const list = ['a1', 'b2', 'c3', 'd4'].map(mk);
+    assignBadgeStyles(list);
+    const host = document.createElement('div');
+    host.innerHTML = list.map((p, i) => productCardHTML(p, i)).join('');
+    return {
+      grounds: [...host.querySelectorAll('.badge')]
+        .map((b) => [...b.classList].find((c) => /^bg-c\d$/.test(c)) || null),
+      moves: [...host.querySelectorAll('.badge')]
+        .map((b) => [...b.classList].find((c) => /^bg-a\d$/.test(c)) || null)
+    };
+  });
+  const animChecks = [
+    ['every badge is dealt a ground and a movement',
+      anims.grounds.length === 4 && anims.grounds.every(Boolean) && anims.moves.every(Boolean)],
+    ['no two badges side by side share a ground',
+      anims.grounds.every((v, i) => i === 0 || v !== anims.grounds[i - 1])],
+    ['and no two share a movement either — the two axes are independent',
+      anims.moves.every((v, i) => i === 0 || v !== anims.moves[i - 1])]
+  ];
+  for (const [label, good] of animChecks) {
+    if (!good) ok = false;
+    console.log(`  ${good ? 'PASS' : 'FAIL'}  ${label}`);
+  }
+  if (!animChecks.every((c) => c[1])) console.log('        got: ' + JSON.stringify(anims));
 
   console.log('\n' + (ok ? '  ALL CARD INTERACTIONS CORRECT' : '  >> STILL BROKEN'));
   await browser.close();

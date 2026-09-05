@@ -70,7 +70,52 @@ try {
    same result on a laptop and in CI. */
 const { spawn } = require('child_process');
 const BASE = process.env.AUDIT_BASE || 'http://localhost:4173';
-const ROUTES = ['home', 'shop', 'cart', 'contact', 'puja', 'astrology', 'policies', 'about'];
+/* `blog` and `wishlist` were missing, and both are pages a customer reaches from
+   the header on every screen. The Journal is a card grid that reflows three
+   times between 320px and 1440px, and its cards became real anchors — which is
+   exactly the change that broke the product card once, by putting buttons
+   inside a link. The wishlist is where an empty state lives, and an empty state
+   is a layout like any other. Auditing eight of ten routes and calling it the
+   site is how a defect survives a green run. */
+const ROUTES = ['home', 'shop', 'cart', 'contact', 'puja', 'astrology', 'policies', 'about', 'blog', 'wishlist'];
+
+/* THE ADMIN CONSOLE, WHICH THIS HAD NEVER LOOKED AT.
+
+   Ten storefront routes were audited at eight widths and admin.html was audited
+   at none — and that is exactly where the next defect was: the dashboard's two
+   table panels sit in a CSS grid, a grid item's default `min-width` is `auto`,
+   so the cards refused to shrink and sat at 404px inside a 320px viewport. The
+   whole page scrolled sideways and the sidebar shifted with it, leaving a blank
+   strip down the right. Reported by the owner, not by the gate, because the
+   gate was not looking.
+
+   The console is a back office and it is used from a phone — an owner checks
+   an order on the way somewhere. The same five rules apply to it.
+
+   It needs more setup than a storefront route: a login gate to get past and an
+   API to answer. Both are stubbed IN THE PAGE rather than mocked at the network
+   layer, so what is measured is the real markup and the real stylesheet with
+   realistic rows in it. An empty table cannot overflow, so fixtures that are
+   too tidy would audit nothing. */
+const ADMIN_VIEWS = ['dashboard', 'products', 'orders', 'bookings', 'services',
+  'coupons', 'reviews', 'customers', 'inbox', 'auditlog', 'settings'];
+
+/* Deliberately wordy values — a long product name, a variant with two options,
+   a real SKU. The overflow this exists to catch is caused by content. */
+const ADMIN_FIXTURES = {
+  overview: { activeProducts: 11, totalOrders: 42, totalRevenuePaise: 12345600, pendingPujaBookings: 3, ordersNeedingPaymentReview: 1 },
+  topProducts: [
+    { id: 'p1', slug: 'bhagavat-puran', name: 'Bhagavat Puran (Complete Set, Hardbound)', category: 'book', subcategory: 'scripture', units_sold: 23, revenue_paise: 4600000 },
+    { id: 'p2', slug: 'natural-sphatik-lingam', name: 'Natural Sphatik Lingam', category: 'sphatik', subcategory: null, units_sold: 19, revenue_paise: 3800000 }
+  ],
+  lowProducts: [{ id: 'p4', slug: 'puja-table', name: 'Puja Table (Handpainted Wooden Chowki)', sku: 'tab-wod-han', stock_qty: 2, category: 'wooden' }],
+  lowVariants: [
+    { variant_id: 'v1', variant_sku: 'DHO-CTN-M', stock_qty: 1, product_id: 'p5', product_name: 'Cotton Dhoti', product_slug: 'dhoti', product_sku: 'dho-ctn',
+      option_values: [{ option: 'Size', value: 'Medium' }, { option: 'Colour', value: 'Off White' }] },
+    { variant_id: 'v2', variant_sku: 'DHO-CTN-L', stock_qty: 0, product_id: 'p5', product_name: 'Cotton Dhoti', product_slug: 'dhoti', product_sku: 'dho-ctn',
+      option_values: [{ option: 'Size', value: 'Large' }, { option: 'Colour', value: 'Off White' }] }
+  ]
+};
 /* 320 is the narrowest phone still in use; 1440 is a common desktop. The three
    in the middle are where the column counts and container queries change, which
    is where things break. */
@@ -84,12 +129,14 @@ function probe(opts) {
   const de = document.documentElement;
   const vw = de.clientWidth;
   const visible = (el) => {
-    /* Opacity has to be checked up the ANCESTORS, not just on the element. The
-       card's wishlist and quick-view buttons live in a .p-quick wrapper held at
-       opacity:0 until the card is hovered — they are full size and in the
-       layout, but nothing can see or reach them, and on a touch screen there is
-       no hover so they never appear at all. Reading opacity on the button alone
-       reports eight invisible desktop controls as undersized phone targets. */
+    /* Opacity has to be checked up the ANCESTORS, not just on the element. This
+       was written when the card's wishlist and quick-view buttons lived in a
+       wrapper held at opacity:0 until the card was hovered: full size and in
+       the layout, but invisible and unreachable, and on a touch screen they
+       never appeared at all. Those two are permanent now, but the check stays —
+       an ancestor at opacity:0 hides its subtree anywhere on the site, and
+       reading opacity on the element alone reports invisible controls as
+       undersized targets. */
     for (let n = el; n && n !== document.body; n = n.parentElement) {
       const cs = getComputedStyle(n);
       if (cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0') return false;
@@ -309,8 +356,112 @@ function probe(opts) {
       await page.waitForTimeout(120);
       const r = await page.evaluate(probe, { touch: width <= TOUCH_MAX_WIDTH, min: MIN_TARGET });
       findings.push({ width, route, ...r, jsErrors });
+
+      /* TWO STATES OF THE SHOP THAT HAD NEVER BEEN AUDITED.
+
+         The card's add control has two shapes — a button until something is in
+         the basket and a three-target stepper afterwards — and only the first
+         was ever rendered here, because a freshly loaded page has an empty
+         cart. The stepper's ends were 34px on an iPad for exactly as long as
+         that was true.
+
+         The shop also has a LIST view behind its toggle, and nothing had ever
+         switched it on: the row's cap on the button named two of its three
+         shapes, so the stepper stretched to 644px on a 1440px row, and the
+         out-of-stock wash was sized against the card rather than the picture
+         and covered the whole row. Both were found by hand. Neither could have
+         been found here.
+
+         One extra page load buys neither: the same page adds an item and then
+         flips the toggle, so this costs two probes per width, not two loads. */
+      if (route === 'shop') {
+        const settle = async () => {
+          await page.waitForTimeout(450);
+          await page.addStyleTag({ content: '*,*::before,*::after{transition:none!important;animation:none!important;}' });
+          await page.waitForTimeout(80);
+        };
+        const added = await page.evaluate(() => {
+          if (typeof quickAdjust !== 'function' || typeof getProduct !== 'function') return false;
+          const card = [...document.querySelectorAll('#shopGrid .p-card')].find((c) => {
+            const p = getProduct(c.dataset.id);
+            return p && p.stock &&
+              !(typeof requiresVariantChoice === 'function' && requiresVariantChoice(p));
+          });
+          if (!card) return false;
+          quickAdjust(card.dataset.id, 1, null);
+          return !!document.querySelector('#shopGrid .qa-step');
+        });
+        if (added) {
+          await settle();
+          const rs = await page.evaluate(probe, { touch: width <= TOUCH_MAX_WIDTH, min: MIN_TARGET });
+          findings.push({ width, route: 'shop (in the cart)', ...rs, jsErrors });
+        } else {
+          findings.push({ width, route: 'shop (in the cart)', unreachable: true,
+                          why: 'no product could be quick-added, so the stepper never rendered' });
+        }
+        const listed = await page.evaluate(() => {
+          const btns = [...document.querySelectorAll('.view-toggle button')];
+          if (btns.length < 2) return false;
+          btns[1].click();
+          const g = document.getElementById('shopGrid');
+          return !!g && g.classList.contains('list-view');
+        });
+        if (listed) {
+          await settle();
+          const rl = await page.evaluate(probe, { touch: width <= TOUCH_MAX_WIDTH, min: MIN_TARGET });
+          findings.push({ width, route: 'shop (list view)', ...rl, jsErrors });
+        } else {
+          findings.push({ width, route: 'shop (list view)', unreachable: true,
+                          why: 'the view toggle did not switch the grid' });
+        }
+      }
       await page.close();
     }
+
+    /* The admin console, every view, at this width. One page load per width
+       rather than one per view: switchView() is how an admin moves between them
+       and reloading would only re-run the same stubbing eleven times. */
+    const page = await browser.newPage({ viewport: { width, height: 900 } });
+    const adminErrors = [];
+    const adminNoise = (s) => /onrender\.com|ERR_FAILED|Access to fetch|Failed to load resource|net::|chart/i.test(s);
+    page.on('pageerror', (e) => { const s = String(e).slice(0, 120); if (!adminNoise(s)) adminErrors.push(s); });
+    try {
+      await page.goto(base + '/admin.html', { waitUntil: 'domcontentloaded', timeout: 20000 });
+      await page.waitForTimeout(700);
+      await page.evaluate((fx) => {
+        /* Replaces the console's own api() so nothing leaves the page. Returns
+           the shape each screen expects; anything unasked-for gets an empty
+           collection, which is a state these screens must render anyway. */
+        window.api = async function (p) {
+          if (p.indexOf('/api/admin/overview') === 0) return fx.overview;
+          if (p.indexOf('/api/admin/analytics/top-products') === 0) return { products: fx.topProducts };
+          if (p.indexOf('/api/admin/low-stock') === 0) return { products: fx.lowProducts, variants: fx.lowVariants, threshold: 5 };
+          if (p.indexOf('/api/admin/subscribers') === 0) return { subscribers: [], counts: { confirmed: 12, pending: 1, unsubscribed: 0 } };
+          return { products: [], orders: [], bookings: [], services: [], coupons: [], customers: [],
+                   messages: [], reviews: [], entries: [], waitlist: [], logs: [], settings: [],
+                   days: [], breakdown: [], subscribers: [], counts: {},
+                   pagination: { page: 1, limit: 50, totalCount: 0, totalPages: 1 } };
+        };
+        // Capabilities unknown means "show everything", which is what an audit
+        // of the layout wants: a control hidden by a grant is a control not
+        // measured.
+        window.adminCapabilities = null;
+        document.querySelector('#loginScreen').style.display = 'none';
+        document.querySelector('#app').style.display = 'block';
+        document.querySelectorAll('[data-cap]').forEach((el) => el.classList.add('cap-ok'));
+      }, ADMIN_FIXTURES);
+
+      for (const view of ADMIN_VIEWS) {
+        await page.evaluate((v) => { switchView(v); }, view);
+        await page.waitForTimeout(500);
+        await page.addStyleTag({ content: '*,*::before,*::after{transition:none!important;animation:none!important;}' });
+        const r = await page.evaluate(probe, { touch: width <= TOUCH_MAX_WIDTH, min: MIN_TARGET });
+        findings.push({ width, route: 'admin/' + view, ...r, jsErrors: adminErrors.slice() });
+      }
+    } catch (err) {
+      findings.push({ width, route: 'admin', unreachable: true, why: String(err).slice(0, 80) });
+    }
+    await page.close();
   }
   await browser.close();
   if (own) own.kill();

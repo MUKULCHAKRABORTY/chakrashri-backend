@@ -553,14 +553,20 @@ async function sendSubscriptionWelcome({ email, unsubscribeUrl }) {
 }
 
 /** One broadcast message. The caller supplies the copy; the engine enforces consent per recipient. */
-async function sendNewsletter({ email, subject, heading, bodyHtml, unsubscribeUrl, campaignId }) {
+async function sendNewsletter({ email, subject, heading, bodyHtml, bodyText, unsubscribeUrl, campaignId }) {
   return sendMail({
     to: email,
     category: CATEGORY.MARKETING,
     subject,
     template: 'newsletter',
     dedupeKey: campaignId ? `newsletter:${campaignId}:${String(email).toLowerCase()}` : null,
-    html: renderShell({ heading, body: bodyHtml, preheader: heading, unsubscribeUrl })
+    html: renderShell({ heading, body: bodyHtml, preheader: heading, unsubscribeUrl }),
+    /* The writer's own words, not a reduction of the HTML. Optional, so nothing
+       that calls this without one is broken — the engine derives a text part in
+       that case, which is strictly better than sending none. */
+    text: bodyText
+      ? `${heading}\n\n${bodyText}\n\n—\nUnsubscribe: ${unsubscribeUrl || ''}`.trim()
+      : undefined
   });
 }
 

@@ -10,8 +10,11 @@ const { restoreOrderStock, restoreOrderStockInTransaction, STOCK_RESTORED_STATUS
 const { issueRefund } = require('../utils/refunds');
 const {
   sendOrderStatusUpdate, sendRefundInitiated, sendAdminRefundIssued, sendReviewApproved,
-  sendContactReply
+  sendContactReply, sendNewsletter
 } = require('../utils/mailer');
+// The unsubscribe link a marketing email is required to carry. Built per
+// recipient by the engine, because it is signed with that address.
+const { unsubscribeUrlFor } = require('../utils/email/engine');
 const { loadOrderForEmail, fireAndForget } = require('../utils/orderEmails');
 const { getSettings, setSetting, DEFAULTS: SETTING_DEFAULTS } = require('../utils/settings');
 const { recomputeProductRating } = require('../utils/reviews');
@@ -621,12 +624,12 @@ router.get('/analytics/revenue-by-day', requireCapability(C.ANALYTICS_READ), asy
 router.get('/analytics/top-products', requireCapability(C.ANALYTICS_READ), asyncHandler(async (req, res) => {
   const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 10));
   const { rows } = await db.query(
-    `SELECT p.id, p.name, p.category, SUM(oi.quantity) AS units_sold, SUM(oi.line_total_paise) AS revenue_paise
+    `SELECT p.id, p.name, p.slug, p.category, SUM(oi.quantity) AS units_sold, SUM(oi.line_total_paise) AS revenue_paise
      FROM order_items oi
      JOIN orders o ON o.id = oi.order_id
      JOIN products p ON p.id = oi.product_id
      WHERE o.status IN ${REVENUE_STATUS_SQL}
-     GROUP BY p.id, p.name, p.category
+     GROUP BY p.id, p.name, p.slug, p.category
      ORDER BY units_sold DESC
      LIMIT $1`,
     [limit]
@@ -661,7 +664,7 @@ router.get('/low-stock', requireCapability(C.CATALOG_READ), asyncHandler(async (
      not a number anybody manages, and listing "Dhoti: 6 left" beside "Dhoti /
      Size M: 2 left" is noise that hides the actionable row. */
   const { rows: products } = await db.query(
-    `SELECT p.id, p.name, p.sku, p.stock_qty, p.category, p.subcategory
+    `SELECT p.id, p.name, p.slug, p.sku, p.stock_qty, p.category, p.subcategory
        FROM products p
       WHERE p.is_active = true
         AND p.stock_qty <= $1
@@ -674,8 +677,8 @@ router.get('/low-stock', requireCapability(C.CATALOG_READ), asyncHandler(async (
   const { rows: variants } = await db.query(
     `SELECT v.id AS variant_id, v.sku AS variant_sku, v.stock_qty,
             v.option_values,
-            p.id AS product_id, p.name AS product_name, p.sku AS product_sku,
-            p.category, p.subcategory
+            p.id AS product_id, p.name AS product_name, p.slug AS product_slug,
+            p.sku AS product_sku, p.category, p.subcategory
        FROM product_variants v
        JOIN products p ON p.id = v.product_id
       WHERE v.is_active = true AND p.is_active = true AND v.stock_qty <= $1
@@ -1009,7 +1012,7 @@ router.get('/subscribers', requireCapability(C.CUSTOMERS_READ), asyncHandler(asy
 // clearest reorder signal a small shop gets, and it is invisible anywhere else.
 router.get('/stock-waitlist', requireCapability(C.CATALOG_READ), asyncHandler(async (req, res) => {
   const { rows } = await db.query(
-    `SELECT p.id AS product_id, p.name, p.sku, p.stock_qty,
+    `SELECT p.id AS product_id, p.name, p.slug, p.sku, p.stock_qty,
             sn.variant_id, v.sku AS variant_sku,
             count(*)::int AS waiting,
             min(sn.created_at) AS waiting_since
@@ -1017,12 +1020,209 @@ router.get('/stock-waitlist', requireCapability(C.CATALOG_READ), asyncHandler(as
        JOIN products p ON p.id = sn.product_id
        LEFT JOIN product_variants v ON v.id = sn.variant_id
       WHERE sn.notified_at IS NULL
-      GROUP BY p.id, p.name, p.sku, p.stock_qty, sn.variant_id, v.sku
+      GROUP BY p.id, p.name, p.slug, p.sku, p.stock_qty, sn.variant_id, v.sku
       ORDER BY waiting DESC, waiting_since ASC
       LIMIT 200`
   );
   res.json({ waitlist: rows });
 }));
+
+/* ---------- Send one update to every confirmed subscriber ----------
+
+   THE ORPHAN THIS CONNECTS. templates.sendNewsletter has existed since the
+   email system was built — marketing category, per-campaign dedupe key,
+   unsubscribe link, consent check — and NOTHING has ever called it. The list
+   has been collecting confirmed subscribers who could never be written to, and
+   the only reason nobody noticed is that a feature with no screen looks exactly
+   like a feature that was never asked for.
+
+   WHAT THIS ROUTE IS RESPONSIBLE FOR, and what it deliberately leaves alone:
+
+   - It sends to CONFIRMED subscribers only. A pending address has clicked
+     nothing; mailing it is the definition of unsolicited.
+   - It does NOT re-implement consent, suppression or the unsubscribe footer.
+     sendMail already refuses a suppressed address, refuses one with no
+     marketing consent, refuses everything when the marketing switch is off, and
+     writes each outcome to email_log. Restating any of that here would create a
+     second place for it to drift.
+   - The body is PLAIN TEXT that an admin typed, and it is escaped and split
+     into paragraphs here. It is never passed through as markup: this is the one
+     route in the console that turns typed input into an email read by every
+     subscriber, so it is the last place to trust a string.
+   - campaignId is supplied by the caller and is the idempotency key. A
+     double-submit carries the same id, the engine's dedupe drops the second
+     copy per recipient, and nobody is mailed twice. A deliberate resend later
+     carries a new id and goes out. */
+router.post(
+  '/subscribers/broadcast',
+  requireCapability(C.CUSTOMERS_READ, C.SUBSCRIBERS_BROADCAST),
+  [
+    body('subject').trim().isLength({ min: 3, max: 200 })
+      .withMessage('A subject between 3 and 200 characters is required.'),
+    body('heading').optional({ nullable: true, checkFalsy: true }).trim().isLength({ max: 200 }),
+    body('message').trim().isLength({ min: 10, max: 5000 })
+      .withMessage('The update must be between 10 and 5000 characters.'),
+    body('campaignId').trim().isLength({ min: 8, max: 64 })
+      .withMessage('A campaign id is required so a double submit cannot send twice.')
+  ],
+  handleValidation,
+  asyncHandler(async (req, res) => {
+    const { subject, message, campaignId } = req.body;
+    const heading = (req.body.heading || '').trim() || subject;
+
+    const { rows: recipients } = await db.query(
+      `SELECT email FROM email_subscriptions
+        WHERE status = 'confirmed'
+        ORDER BY created_at ASC
+        LIMIT 5000`
+    );
+
+    if (!recipients.length) {
+      return res.status(400).json({ error: 'There are no confirmed subscribers to send to yet.' });
+    }
+
+    /* A blank line starts a paragraph; inside one, **bold** and [label](url)
+       become the only two tags this route can emit. Everything else the admin
+       typed is escaped, so their `<script>` reaches subscribers as the text
+       `<script>` — see renderUpdateInline for why the input is a syntax rather
+       than markup. */
+    const bodyHtml = String(message)
+      .split(/\r?\n\s*\r?\n/)
+      .map((para) => para.trim())
+      .filter(Boolean)
+      .map((para) => `<p style="margin:0 0 16px;">${renderUpdateInline(para)}</p>`)
+      .join('');
+
+    /* The plain-text half of the message, built from the SOURCE rather than
+       reduced back out of the HTML. The engine can derive one when it has to,
+       and here it does not have to: the admin typed plain text in the first
+       place, so this is the better of the two by construction. */
+    const bodyText = renderUpdatePlain(message);
+
+    const counts = { total: recipients.length, sent: 0, skipped: 0, failed: 0 };
+
+    /* Sequential, on purpose. This runs on a free-tier instance against a
+       shared SMTP account; firing five thousand concurrent sends is how an
+       account gets rate-limited or blocked, and a marketing send has no
+       deadline. Each recipient's failure is counted and the run continues — one
+       bad address must not stop the list. */
+    for (const r of recipients) {
+      try {
+        const result = await sendNewsletter({
+          email: r.email,
+          subject,
+          heading,
+          bodyHtml,
+          bodyText,
+          unsubscribeUrl: await unsubscribeUrlFor(r.email),
+          campaignId
+        });
+        if (result && result.sent) counts.sent += 1;
+        else counts.skipped += 1;
+      } catch (err) {
+        counts.failed += 1;
+        logger.error('Subscriber broadcast send failed', err, { campaignId });
+      }
+    }
+
+    await db.query(
+      `INSERT INTO admin_audit_log (admin_user_id, action, entity_type, entity_id, detail)
+       VALUES ($1, 'broadcast_subscribers', 'email_subscription', NULL, $2)`,
+      [req.user.id, JSON.stringify({ campaignId, subject, ...counts })]
+    );
+
+    res.json({ ok: true, ...counts });
+  })
+);
+
+/* Escapes a paragraph and keeps its single line breaks as <br>. An admin who
+   presses Enter once inside a paragraph means a line break; the alternative is
+   silently running their lines together. */
+function escapeHtmlLines(text) {
+  return escapeUpdateText(text).replace(/\r?\n/g, '<br>');
+}
+
+function escapeUpdateText(text) {
+  return String(text).replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
+}
+
+/* BOLD AND LINKS, FROM A SYNTAX RATHER THAN FROM MARKUP.
+
+   An owner writing to the whole subscriber list needs to emphasise a date and
+   link to a product. The obvious way to allow that is a rich-text box that
+   produces HTML, and it is the wrong way: it means accepting HTML from a form
+   and sanitising it, and a sanitiser is a denylist of everything an attacker
+   might try. On the one route in this application whose output is read by every
+   subscriber, that is the wrong shape of problem to take on.
+
+   So the input stays PLAIN TEXT and carries two markers:
+
+     **bold**                       ->  <strong>bold</strong>
+     [label](https://example.com)   ->  <a href="https://example.com">label</a>
+
+   and the HTML is produced by this function, which can emit those two tags and
+   nothing else. An admin who types `<script>` gets `<script>` shown to their
+   subscribers as the text they typed, because every piece of their input is
+   escaped on the way out — the tags here are added around escaped text, never
+   parsed out of it.
+
+   THE URL IS MATCHED, NOT TRUSTED. The pattern admits `https?://` followed by
+   characters that cannot terminate an attribute or a tag, so `javascript:`,
+   `data:` and a quote that would break out of the href are all simply not
+   matches — the text is left alone and shown literally. That is a whitelist,
+   which is the only kind of check worth having here. */
+const UPDATE_LINK_OR_BOLD =
+  /\[([^\]\n]{1,200})\]\((https?:\/\/[^\s()<>"'`]{1,500})\)|\*\*([^*\n]{1,300})\*\*/g;
+
+function renderUpdateInline(raw) {
+  let out = '';
+  let last = 0;
+  const re = new RegExp(UPDATE_LINK_OR_BOLD.source, 'g');
+  let m;
+  while ((m = re.exec(raw))) {
+    out += escapeUpdateText(raw.slice(last, m.index));
+    if (m[1] !== undefined) {
+      /* A link. The label may itself contain **bold**, so it goes through the
+         bold pass; the URL never does — it is escaped and nothing else. */
+      const label = renderUpdateBoldOnly(m[1]);
+      out += '<a href="' + escapeUpdateText(m[2]) + '"'
+        + ' style="color:#9a5b1d;text-decoration:underline;">' + label + '</a>';
+    } else {
+      out += '<strong>' + escapeUpdateText(m[3]) + '</strong>';
+    }
+    last = m.index + m[0].length;
+  }
+  out += escapeUpdateText(raw.slice(last));
+  /* A single newline inside a paragraph is a line break the writer meant; a
+     blank line has already split the paragraphs before this is called. */
+  return out.replace(/\r?\n/g, '<br>');
+}
+
+function renderUpdateBoldOnly(raw) {
+  let out = '';
+  let last = 0;
+  const re = /\*\*([^*\n]{1,300})\*\*/g;
+  let m;
+  while ((m = re.exec(raw))) {
+    out += escapeUpdateText(raw.slice(last, m.index));
+    out += '<strong>' + escapeUpdateText(m[1]) + '</strong>';
+    last = m.index + m[0].length;
+  }
+  return out + escapeUpdateText(raw.slice(last));
+}
+
+/* The same message with the markers resolved for the plain-text part. A link
+   keeps its URL in parentheses — in a text part a link that has lost its
+   destination is a dead end — and bold simply loses its asterisks. */
+function renderUpdatePlain(raw) {
+  return String(raw)
+    .replace(new RegExp(UPDATE_LINK_OR_BOLD.source, 'g'),
+      (whole, label, url, bold) => (label !== undefined ? `${label} (${url})` : bold))
+    .replace(/\r?\n{3,}/g, '\n\n')
+    .trim();
+}
 
 // ---------- Email delivery ----------
 // The question this answers is "did the customer actually get it?", which was

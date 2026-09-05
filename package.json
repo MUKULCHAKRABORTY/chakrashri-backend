@@ -26,6 +26,8 @@
     "//catalog:drift": "Answers 'is what visitors see still what the shop actually sells?'. Compares the live catalog against the catalog.json currently deployed and reports whether they differ. Read-only and safe to run any time. The scheduled workflow runs the same script WITHOUT --dry-run, which triggers a Netlify rebuild when they have drifted.",
     "catalog:drift": "node scripts/publish-catalog-if-changed.js --dry-run",
     "check:syntax": "node scripts/check-syntax.js",
+  "//check:api": "Answers 'is the frontend still talking to routes that exist?'. The two single-file frontends are joined to the API by string literals and nothing else, so a renamed or unmounted route keeps every test green and returns 404 to a customer — and apiFetch's friendly error makes that indistinguishable from a cold start, so nobody investigates. This reads every /api call site out of index.html and admin.html, walks the REAL Express router stack, and fails if any call cannot reach a route for the method it uses. Needs no database and sends no request. Run with --verbose to also list routes no browser ever calls.",
+  "check:api": "node scripts/check-api-wiring.js",
   "//check:config": "Reviews production configuration and secrets WITHOUT printing a single value: which env vars the code needs but render.yaml never declares, whether each secret carries enough entropy to be one, and whether anything is still a test key, a localhost URL or a placeholder. Read-only. Run it against the real production values before go-live with: npm run check:config -- --production",
   "check:config": "node scripts/check-config.js",
   "//preview": "Serves the repo root over http so the WHOLE storefront can be looked at in a real browser before pushing. Opened as a file:// document the page cannot fetch catalog.json, so every grid shows its skeleton and you are reviewing the loading state; served over http it hydrates from the committed snapshot with no API and no database. Also reproduces the two production routing rules: a prerendered product page beats the SPA fallback, and every other unknown path falls back to index.html.",
@@ -56,6 +58,8 @@
     "test:browser-settings": "node test/browser-settings.test.js",
     "test:browser-inbox": "node test/browser-inbox.test.js",
     "test:browser-orders": "node test/browser-orders.test.js",
+    "//test:browser-reviews": "Renders the review moderation screen against a stubbed API. It is the only check that a hide sends its REASON — the server refuses one without it — and that nothing a customer typed becomes markup, which matters more here than anywhere else in the console: a review is the most directly attacker-controlled text an admin ever reads.",
+    "test:browser-reviews": "node test/browser-reviews.test.js",
     "test:db-integration": "node test/db-integration.test.js",
 
     "test:db": "node scripts/test-db-connection.js",
@@ -71,7 +75,7 @@
     "setup:browser": "npx playwright install chromium",
 
     "//test": "Everything that runs with no external services. This is what CI gates on and what to run before every commit. The two browser suites (test:browser, test:browser-settings) need a Chromium binary that npm install does NOT fetch — run `npm run setup:browser` once per machine. Without it they skip (exit 0) and the chain continues; set REQUIRE_BROWSER_TESTS=true, as CI does, to turn that skip into a failure.",
-    "test": "npm run check:syntax && npm run check:chars && npm run sitemap && npm run prerender && npm run test:unit && npm run test:coupons && npm run test:http && npm run test:security && npm run test:frontend && npm run test:emails && npm run test:contrast && npm run test:browser && npm run test:browser-settings && npm run test:browser-inbox && npm run test:browser-orders && npm run test:drawer && npm run test:badges && npm run test:yantra && npm run css:conflicts && npm run audit:responsive && npm run seo:audit",
+    "test": "npm run check:syntax && npm run check:chars && npm run check:api && npm run sitemap && npm run prerender && npm run test:unit && npm run test:coupons && npm run test:http && npm run test:security && npm run test:frontend && npm run test:emails && npm run test:contrast && npm run test:browser && npm run test:browser-settings && npm run test:browser-inbox && npm run test:browser-orders && npm run test:browser-reviews && npm run test:drawer && npm run test:badges && npm run test:yantra && npm run css:conflicts && npm run audit:responsive && npm run seo:audit",
 
     "//verify": "The offline suite plus the integration tests and live connectivity checks. Two suites here CAN skip themselves: test:browser without a Chromium binary, and test:db-integration without a throwaway database. Both say so loudly, but a skip still leaves verify green — so this is the developer command, not the gate.",
     "verify": "npm run test && npm run test:db-integration && npm run test:db && npm run test:razorpay",

@@ -70,6 +70,19 @@ function rowsFor(sql) {
               user_id: '00000000-0000-0000-0000-0000000000u1', amount_paise: 180000,
               preferred_date: '2026-10-02', preferred_time: '09:00', service_name: 'Satyanarayan Puja' }];
   }
+  /* The REAL sendMail asks four questions before it sends, and [mail-5] runs it
+     for real rather than stubbing it — so each needs an answer here, or the
+     message is refused before it reaches the transport and the test reads as
+     "nothing was sent" rather than as what it is. */
+  if (/FROM\s+email_suppressions/i.test(s)) return [];                 // not suppressed
+  if (/SELECT status FROM email_subscriptions/i.test(s)) return [{ status: 'confirmed' }];
+  if (/unsubscribe_token/i.test(s)) return [{ unsubscribe_token: 'tok-123' }];
+  if (/INSERT INTO email_log/i.test(s)) return [{ id: 'log-1' }];      // the claim
+  /* The broadcast's own query. Three addresses, because "one" cannot show that
+     the loop runs per recipient and "none" takes the early return. */
+  if (/FROM\s+email_subscriptions/i.test(s)) {
+    return [{ email: 'one@example.com' }, { email: 'two@example.com' }, { email: 'three@example.com' }];
+  }
   if (/site_settings/i.test(s)) return [{ key: 'abandoned_cart_email_after_minutes', value: '20' }];
   if (/COUNT|SUM|COALESCE/i.test(s)) return [{ count: 3, total: 500000, n: 3 }];
   return [];
@@ -104,6 +117,21 @@ const T = require(path.join(ROOT, 'src/utils/email/templates.js'));
 const jobs = require(path.join(ROOT, 'scripts/send-scheduled-emails.js'));
 
 const XSS = '<script>alert(1)</script>';
+
+/* The broadcast handler, lifted out of the mounted router.
+
+   It is an Express route, and what needs testing is the part after the guards:
+   who it selects, what it hands the template, and what it writes to the audit
+   log. Pulling the final handler off the layer runs exactly the code that
+   ships, with the same stubs every other test in this file uses. */
+const adminRouter = require(path.join(ROOT, 'src/routes/admin.routes.js'));
+function broadcastHandler() {
+  const layer = adminRouter.stack.find((l) =>
+    l.route && l.route.path === '/subscribers/broadcast' && l.route.methods.post);
+  assert.ok(layer, 'the broadcast route is not mounted');
+  const stack = layer.route.stack;
+  return stack[stack.length - 1].handle;
+}
 
 // ============================================================
 section('[mail-1] Every template added this cycle actually renders');
@@ -239,6 +267,208 @@ section('[mail-3] Every scheduled job runs, and claims behave under failure');
     // fine and fails only when Postgres sees it, at 3am, on a money path.
     const leaked = queries.filter((q) => q.includes('${'));
     assert.deepStrictEqual(leaked.map((q) => q.slice(0, 60)), []);
+  });
+}
+
+// ============================================================
+section('[mail-4] One update to every subscriber, and what it refuses to do');
+// ============================================================
+/* This route sends through templates.sendNewsletter, which had existed since
+   the email system was built and which NOTHING had ever called — so the
+   subscriber list has been collecting confirmed addresses nobody could write
+   to. It is also the only irreversible one-to-many action in the console, so
+   what it selects and what it hands the template are worth running rather than
+   reading. */
+{
+  /* WAITS FOR THE RESPONSE, NOT FOR THE CALL.
+
+     asyncHandler deliberately does not return its promise — Express never
+     awaits a handler, so it wraps and forwards rejections instead. Awaiting the
+     handler therefore returns the moment the first `await` inside it yields,
+     which is before a single message has been composed. The first version of
+     this helper did exactly that and reported an empty send loop as a broken
+     one. Resolving on res.json() is the only honest signal that it finished. */
+  function runBroadcast(body) {
+    sent.length = 0;
+    queries.length = 0;
+    return new Promise((resolve, reject) => {
+      let status = 200;
+      const timer = setTimeout(() => reject(new Error('the handler never responded')), 5000);
+      const res = {
+        status(code) { status = code; return this; },
+        json(payload) { clearTimeout(timer); resolve({ status, payload }); return this; }
+      };
+      broadcastHandler()(
+        { body, user: { id: '00000000-0000-0000-0000-0000000000ad' } },
+        res,
+        (err) => { clearTimeout(timer); reject(err || new Error('next() with no error')); }
+      );
+    });
+  }
+
+  const GOOD = {
+    subject: 'Navratri opening hours',
+    message: 'We are open every evening.\n\nDo come by.',
+    campaignId: 'campaign-0001-abcd'
+  };
+
+  test('it writes to CONFIRMED subscribers only', async () => {
+    await runBroadcast(GOOD);
+    const q = queries.find((x) => /email_subscriptions/i.test(x));
+    assert.ok(q, 'it never queried the subscriber list');
+    assert.match(q, /status = 'confirmed'/,
+      'a pending address has clicked nothing — mailing it is the definition of unsolicited');
+  });
+
+  test('one message per recipient, as marketing, with an unsubscribe link', async () => {
+    const { payload } = await runBroadcast(GOOD);
+    assert.strictEqual(sent.length, 3, 'one send per confirmed subscriber');
+    assert.deepStrictEqual(payload && { sent: payload.sent, total: payload.total }, { sent: 3, total: 3 });
+    for (const m of sent) {
+      assert.strictEqual(m.category, 'marketing',
+        'transactional would bypass consent and the unsubscribe requirement');
+      assert.match(String(m.dedupeKey), /^newsletter:campaign-0001-abcd:/,
+        'the campaign id is the dedupe key, which is what makes a double submit safe');
+      assert.match(String(m.html), /unsubscribe/i);
+    }
+    // Each recipient gets their OWN key, or the second send would be dropped as
+    // a duplicate of the first and only one person would ever be mailed.
+    assert.strictEqual(new Set(sent.map((m) => m.dedupeKey)).size, 3);
+  });
+
+  test('THE INJECTION CASE: nothing an admin typed becomes markup', async () => {
+    await runBroadcast(Object.assign({}, GOOD, {
+      subject: 'Update ' + XSS,
+      message: XSS + '\n\nSecond <b>paragraph</b> & more.'
+    }));
+    for (const m of sent) {
+      assert.ok(!/<script>/i.test(m.html), 'a script tag reached the message body');
+      assert.ok(!/<b>paragraph<\/b>/.test(m.html), 'raw markup reached the message body');
+      assert.match(m.html, /&lt;script&gt;/, 'and it is still SHOWN, escaped, rather than dropped');
+      assert.match(m.html, /&amp; more/, 'an ampersand is escaped too');
+    }
+  });
+
+  test('a blank line starts a new paragraph, and a single one is a line break', async () => {
+    await runBroadcast(Object.assign({}, GOOD, { message: 'One.\nStill one.\n\nTwo.' }));
+    const html = sent[0].html;
+    assert.strictEqual((html.match(/<p style="margin:0 0 16px;">/g) || []).length, 2,
+      'two paragraphs, not three and not one');
+    assert.match(html, /One\.<br>Still one\./, 'a single newline is kept as a break');
+  });
+
+  test('every decision is written to the audit log, with its counts', async () => {
+    await runBroadcast(GOOD);
+    const audit = queries.find((x) => /admin_audit_log/i.test(x));
+    assert.ok(audit, 'nothing was recorded');
+    assert.match(audit, /'broadcast_subscribers'/);
+  });
+
+  test('a failed send is counted and the rest of the list still goes out', async () => {
+    MODE.failSends = true;
+    try {
+      const { payload } = await runBroadcast(GOOD);
+      assert.strictEqual(sent.length, 3, 'one bad address must not stop the list');
+      assert.strictEqual(payload.sent, 0);
+      assert.strictEqual(payload.skipped, 3,
+        'a send the engine refused is skipped, not silently counted as delivered');
+    } finally { MODE.failSends = false; }
+  });
+}
+
+// ============================================================
+section('[mail-5] What actually leaves the building');
+// ============================================================
+/* Every other test in this file stubs sendMail, which is right for asking what
+   a template renders and wrong for asking what is HANDED TO SMTP. The headers a
+   receiving server judges bulk mail on are set inside sendMail, so they are
+   invisible to a stub of it.
+
+   So this section stubs one layer lower: nodemailer's transport. The real
+   engine runs, and the object it passes to the transport is the message.
+
+   Round 19 fixed the DNS half of deliverability — SPF, DKIM, DMARC — and the
+   README records that as configuration. None of the code half was ever set. */
+{
+  const nodemailer = require('nodemailer');
+  const outbox = [];
+  const realCreate = nodemailer.createTransport;
+
+  async function send(opts) {
+    outbox.length = 0;
+    process.env.SMTP_HOST = 'smtp.stub.invalid';
+    process.env.FROM_EMAIL = 'Chakrashri <orders@chakrashri.com>';
+    process.env.REPLY_TO_EMAIL = 'support@chakrashri.com';
+    nodemailer.createTransport = () => ({
+      sendMail: async (msg) => { outbox.push(msg); return { messageId: 'stub' }; }
+    });
+    realEngine.resetTransporter();
+    try {
+      await realEngine.sendMail(opts);
+    } finally {
+      nodemailer.createTransport = realCreate;
+      realEngine.resetTransporter();
+      delete process.env.SMTP_HOST;
+    }
+    return outbox[0];
+  }
+
+  const HTML = realEngine.renderShell({
+    heading: 'Navratri opening hours',
+    preheader: 'Open late all week',
+    unsubscribeUrl: 'https://x.test/unsubscribe?token=tok',
+    body: '<p>Open <strong>every evening</strong>. <a href="https://x.test/shop">The shop</a>.</p>'
+  });
+
+  test('a marketing message carries one-click unsubscribe', async () => {
+    const msg = await send({
+      to: 'one@example.com', subject: 'Navratri opening hours', html: HTML,
+      template: 'newsletter', category: 'marketing', dedupeKey: 'k1'
+    });
+    assert.ok(msg, 'nothing reached the transport');
+    assert.ok(msg.headers, 'no headers were set at all');
+    assert.match(String(msg.headers['List-Unsubscribe']), /^<https?:\/\/.+>$/,
+      'Gmail and Yahoo have required this on bulk mail since February 2024');
+    assert.strictEqual(msg.headers['List-Unsubscribe-Post'], 'List-Unsubscribe=One-Click',
+      'without the POST header the URL is not one-click, which is what is required');
+  });
+
+  test('a transactional message does not — it is not a list', async () => {
+    const msg = await send({
+      to: 'one@example.com', subject: 'Your order', html: HTML,
+      template: 'order', category: 'transactional', dedupeKey: 'k2'
+    });
+    assert.ok(!msg.headers['List-Unsubscribe'],
+      'offering to unsubscribe from an order confirmation is offering the wrong thing');
+  });
+
+  test('every message goes out with a plain-text half', async () => {
+    const msg = await send({
+      to: 'one@example.com', subject: 'Your order', html: HTML,
+      template: 'order', category: 'transactional', dedupeKey: 'k3'
+    });
+    assert.ok(msg.text && msg.text.length > 20,
+      'an HTML-only message is one of the oldest spam signals there is');
+    assert.match(msg.text, /The shop \(https:\/\/x\.test\/shop\)/,
+      'and a link in it keeps its destination, or the reader has no way to follow it');
+    assert.ok(!/<p>|<strong>/.test(msg.text), 'no markup may survive into the text part');
+  });
+
+  test('the caller may supply a better text part than the HTML can produce', async () => {
+    const msg = await send({
+      to: 'one@example.com', subject: 'Update', html: HTML, text: 'The words as typed.',
+      template: 'newsletter', category: 'marketing', dedupeKey: 'k4'
+    });
+    assert.strictEqual(msg.text, 'The words as typed.');
+  });
+
+  test('the sender has a name and a reply reaches somebody', async () => {
+    const msg = await send({
+      to: 'one@example.com', subject: 'Your order', html: HTML,
+      template: 'order', category: 'transactional', dedupeKey: 'k5'
+    });
+    assert.match(String(msg.from), /Chakrashri </, 'a bare address reads as machine traffic');
+    assert.strictEqual(msg.replyTo, 'support@chakrashri.com');
   });
 }
 

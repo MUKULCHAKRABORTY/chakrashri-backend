@@ -179,7 +179,7 @@
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700;800&amp;family=Poppins:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&amp;family=Cinzel:wght@400;500;600;700;800&amp;family=Poppins:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&amp;display=swap" rel="stylesheet">
 <style>
 
 /* ============================================================
@@ -234,6 +234,13 @@
   /* -- type -- */
   --f-display: 'Cinzel', serif;
   --f-body: 'Poppins', -apple-system, BlinkMacSystemFont, sans-serif;
+  /* A condensed face, for the badge and nothing else so far. A badge has to say
+     a whole word in the corner of a 144px photograph without becoming the
+     photograph, and narrowing the letters buys that where shrinking them only
+     makes the word unreadable. 'Arial Narrow' is the fallback because it is on
+     essentially every Windows and macOS machine, so the shape survives even if
+     the web font never arrives. */
+  --f-condensed: 'Barlow Condensed', 'Arial Narrow', 'Helvetica Neue', var(--f-body);
 
   /* -- spacing scale -- */
   --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px; --sp-4: 16px;
@@ -464,23 +471,104 @@ p{ color: var(--text-soft); }
 /* ============================================================
    BADGES / TAGS / STARS
    ============================================================ */
-.badge{ display:inline-flex; align-items:center; padding:5px 13px; border-radius:var(--radius-full); font-size:.68rem; font-weight:700; letter-spacing:.06em; text-transform:uppercase; }
-.badge-sale{ background: var(--oxblood); color:#fff; }
-.badge-new{ background: var(--indigo); color:#fff; }
-/* Ink on marigold, not white on marigold.
+/* THE BADGE.
 
-   White gave 2.68:1 — less than half what WCAG AA needs for text this size, and
-   it looked washed out next to it. This badge used to appear only where an
-   admin had typed "bestseller" by hand, which was almost nowhere; now the shop
-   computes it for the top fifth of what sells, so a rare defect became a
-   common one on the busiest cards on the site.
+   SHORT, AND NARROW RATHER THAN SMALL. It sits in the corner of a photograph
+   that is 144px wide on the narrowest phone, and it has to say a whole word
+   there without becoming the picture. Narrowing the letters buys that; shrinking
+   them only makes the word unreadable. Hence --f-condensed, 700 weight, and the
+   letter-spacing at zero — a condensed face that is then tracked out is a wide
+   face again.
 
-   The brand marigold is untouched. Only the text colour moves, to 6.77:1. */
-.badge-best{ background: var(--marigold); color:var(--ink); }
-/* Same correction, same reason: white on this gold was 3.88:1, ink is 4.69:1. */
-.badge-custom{ background: var(--gold-dk, #9C7E1C); color:var(--ink); }
-.badge-soft{ background:rgba(122,17,40,.08); color:var(--oxblood); }
-.badge{ gap:5px; }
+   The vertical padding is 2px. That is the request and it is also right: the
+   cap height carries the chip's height, so anything more is the chip growing
+   for no reason. Horizontal padding stays generous enough for the pill's radius
+   to read as a radius.
+
+   text-rendering and the two smoothing hints are what keep a 600-weight
+   condensed face crisp rather than muddy on a high-density display, where the
+   stems land between physical pixels. */
+.badge{
+  display:inline-flex; align-items:center; gap:4px;
+  padding:2px 9px; border-radius:var(--radius-full);
+  font-family:var(--f-condensed);
+  font-size:clamp(.7rem, 4.6cqi, .82rem); font-weight:700;
+  letter-spacing:0; line-height:1.32; text-transform:uppercase;
+  white-space:nowrap;
+  text-rendering:optimizeLegibility;
+  -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;
+}
+
+/* SEVEN GROUNDS, ASSIGNED PER PRODUCT RATHER THAN PER MEANING.
+
+   The badge used to take its colour from what it said, so a grid of eight new
+   arrivals was eight identical chips and the badge stopped being a thing the
+   eye could pick out — which is its only job. assignBadgeStyles() deals these
+   out with the neighbour rule; the TEXT still says what is true.
+
+   Every one carries white text and every one was measured against it: the
+   figures are the contrast ratio to #fff, where AA asks for 4.5 on text this
+   size. Not one of them was chosen by eye. */
+.bg-c1{ background:#7A1128; }   /* oxblood        11.28:1 */
+.bg-c2{ background:#2E1B45; }   /* indigo         13.79:1 */
+.bg-c3{ background:#1F7D45; }   /* forest          5.29:1 */
+.bg-c4{ background:#B4560F; }   /* burnt orange    4.55:1 */
+.bg-c5{ background:#155E75; }   /* deep teal       6.66:1 */
+.bg-c6{ background:#7C3E00; }   /* bronze          7.53:1 */
+.bg-c7{ background:#5B2D82; }   /* plum            8.73:1 */
+.bg-c1, .bg-c2, .bg-c3, .bg-c4, .bg-c5, .bg-c6, .bg-c7{ color:#fff; }
+
+/* FOUR MOVEMENTS, ALSO DEALT OUT PER PRODUCT.
+
+   Every one of them is small on purpose. This sits on a photograph a customer
+   is trying to look at, so the brief is "catches the eye once, then stops
+   asking" — the amplitudes are a fraction of what looks right in isolation,
+   because eight of them are on screen at once.
+
+   `will-change` is deliberately absent: promoting eight badges to their own
+   layers costs more than it saves, and every one of these is a transform or a
+   shadow, which composite anyway. */
+.bg-a1{ animation:bgBreath 3.4s ease-in-out infinite; }
+@keyframes bgBreath{ 0%,100%{ transform:scale(1); } 50%{ transform:scale(1.055); } }
+
+.bg-a2{ animation:bgTilt 4s ease-in-out infinite; transform-origin:0% 50%; }
+@keyframes bgTilt{
+  0%,100%{ transform:rotate(-1.1deg); }
+  50%    { transform:rotate(1.1deg); }
+}
+
+/* A highlight crossing the face. Long pause, short pass: a band that crosses
+   constantly is a loading bar; one that catches the light every few seconds is
+   a label. overflow:hidden clips it to the pill's own rounded edge. */
+.bg-a3{ position:relative; overflow:hidden; isolation:isolate; }
+.bg-a3::after{
+  content:''; position:absolute; top:0; bottom:0; left:-50%; width:36%; z-index:-1;
+  background:linear-gradient(100deg, transparent, rgba(255,255,255,.5), transparent);
+  transform:skewX(-18deg);
+  animation:bgSheen 5s ease-in-out infinite;
+}
+@keyframes bgSheen{ 0%,64%{ left:-50%; } 100%{ left:130%; } }
+
+/* A glow that swells and settles. The only one that does not move the box, so
+   it is the one that reads as steady rather than restless. */
+.bg-a4{ animation:bgGlow 3s ease-in-out infinite; }
+@keyframes bgGlow{
+  0%,100%{ box-shadow:0 2px 6px rgba(43,10,18,.28); }
+  50%    { box-shadow:0 3px 14px rgba(43,10,18,.5); }
+}
+
+/* Every movement is removable and nothing is lost but the movement — the
+   colour, the word and the shape are all still there. */
+@media (prefers-reduced-motion:reduce){
+  .bg-a1, .bg-a2, .bg-a4{ animation:none; transform:none; }
+  .bg-a3::after{ animation:none; display:none; }
+}
+
+/* The kind of badge is carried in `data-badge` rather than in a class, because
+   it no longer paints anything — the dealt ground above does that. Two rules
+   still key off it, and both are about MEANING rather than colour: the flame
+   inside the hot badge's icon, and the count rolling up inside the limited one.
+   Both are below. */
 .b-ico{ width:12px; height:12px; flex-shrink:0; }
 .badge-hot{ background:linear-gradient(160deg, #E8552A, #B81E1E); color:#fff; }
 
@@ -522,46 +610,32 @@ p{ color: var(--text-soft); }
   50%    { transform:scaleY(1.15) translateY(-.4px); opacity:1; }
 }
 
-/* EACH BADGE MOVES LIKE THE THING IT NAMES.
+/* WHAT IS LEFT OF THE PER-BADGE TREATMENTS, AND WHY.
 
-   Not one animation applied to all four. A shared pulse would say "look at me"
-   four times in the same voice and the row would read as decoration; a badge
-   that moves the way its own word moves reads as information. Restraint is the
-   point — these sit on a grid of ten, and anything emphatic at that count is
-   noise rather than emphasis.
+   Four of these went. `.badge-hot` had its own glow, `.badge-best` a shine
+   across its face, `.badge-new` an entrance and `.badge-sale` a two-beat — one
+   movement per meaning. That idea has been replaced by four movements dealt out
+   per PRODUCT with a neighbour rule (see .bg-a1 to .bg-a4), because the old
+   scheme gave a grid of eight new arrivals eight identical chips and the badge
+   stopped being a thing the eye could pick out.
 
-     hot          heat haze: the glow breathes and the tint shifts, slowly
-     bestseller   a shine crossing the face, the way light moves over metal
-     new          one quiet settle on arrival, then still — new is a fact, not
-                  an ongoing event, so it must not pulse forever
-     sale         a soft two-beat, the only one meant to nag, and gently */
+   They could not simply coexist. `animation` is one property, so a semantic
+   loop and a dealt loop on the same element are two declarations fighting over
+   it and the later one silently wins; `.badge-best::after` and `.bg-a3::after`
+   are the same pseudo-element twice. `.badge-limited` additionally painted its
+   own background, which at equal specificity and a later source position beat
+   every dealt colour — so limited badges would have been the one badge the new
+   system could not colour.
 
-@keyframes bHot{
-  0%,100%{ box-shadow:0 0 0 0 rgba(232,85,42,0), 0 2px 8px rgba(184,30,30,.35); filter:saturate(1); }
-  50%    { box-shadow:0 0 14px 2px rgba(232,85,42,.45), 0 2px 8px rgba(184,30,30,.45); filter:saturate(1.18); }
-}
-.badge-hot{ animation:bHot 2.4s ease-in-out infinite; }
+   TWO SURVIVE, because neither is a chip decoration:
 
-/* The sweep is clipped to the badge and sits above its fill but below its text,
-   so the letters stay solid while the light passes behind them. */
-.badge-best{ position:relative; overflow:hidden; isolation:isolate; }
-.badge-best::after{
-  content:''; position:absolute; top:0; bottom:0; left:-70%; width:45%; z-index:-1;
-  background:linear-gradient(100deg, transparent, rgba(255,255,255,.75), transparent);
-  transform:skewX(-18deg); animation:bShine 3.6s ease-in-out infinite;
-}
-@keyframes bShine{ 0%,62%{ left:-70%; } 100%{ left:130%; } }
-
-@keyframes bNew{ from{ transform:translateY(-4px); opacity:0; } to{ transform:none; opacity:1; } }
-.badge-new{ animation:bNew .5s var(--ease) both; }
-
-@keyframes bSale{ 0%,88%,100%{ transform:scale(1); } 93%{ transform:scale(1.06); } }
-.badge-sale{ animation:bSale 4s ease-in-out infinite; }
-
-/* Limited: the number rolls in, once, and then holds. A count that keeps moving
-   is a count nobody believes. */
-.badge-limited{ background:linear-gradient(160deg, #C2410C, #8A2B08); color:#FFE9D6; }
-.badge-limited .b-txt{ display:inline-block; animation:bLimitRoll .85s cubic-bezier(.2,.8,.2,1) both; }
+     the flame   animates two paths INSIDE the icon, not the chip, so it stacks
+                 with any dealt movement rather than competing with it
+     the roll    animates .b-txt, and it carries meaning — the number counting
+                 up to "Only 3 left" is the badge saying the stock is moving.
+                 It runs once and holds, because a count that keeps moving is a
+                 count nobody believes. */
+.badge[data-badge="limited"] .b-txt{ display:inline-block; animation:bLimitRoll .85s cubic-bezier(.2,.8,.2,1) both; }
 @keyframes bLimitRoll{
   0%  { transform:translateY(-70%); opacity:0; filter:blur(2px); }
   55% { transform:translateY(6%);  opacity:1; filter:blur(0); }
@@ -569,12 +643,10 @@ p{ color: var(--text-soft); }
   100%{ transform:none; }
 }
 
-/* All four are ornament on top of a word that already reads. Remove them and
-   nothing is lost but the movement. */
+/* Ornament on top of a word that already reads. Remove it and nothing is lost
+   but the movement. */
 @media (prefers-reduced-motion:reduce){
-  .badge-hot, .badge-new, .badge-sale{ animation:none; }
-  .badge-best::after{ animation:none; display:none; }
-  .badge-limited .b-txt{ animation:none; }
+  .badge[data-badge="limited"] .b-txt{ animation:none; }
   .b-flame .fl-outer, .b-flame .fl-inner{ animation:none; }
 }
 
@@ -1252,12 +1324,12 @@ p{ color: var(--text-soft); }
 .product-grid .p-card:nth-child(9){ animation-delay:320ms; }
 .product-grid .p-card:nth-child(n+10){ animation-delay:360ms; }
 
-/* The add button grows into reach as the pointer arrives, instead of sitting at
-   full size waiting. Transform only, so it composites and never reflows the
-   photograph underneath it. */
-.p-atc button, .p-quick button{ transition:transform var(--dur) var(--ease), background var(--dur), color var(--dur); }
-.p-card:hover .p-quick button{ transform:scale(1.04); }
-.p-quick button:active, .p-atc button:active{ transform:scale(.94); }
+/* The two controls on the photograph respond to the pointer without moving
+   anything around them. Transform only, so it composites and never reflows the
+   picture underneath. */
+.p-wish, .p-qview{ transition:transform var(--dur) var(--ease), background var(--dur), color var(--dur); }
+.p-wish:hover, .p-qview:hover{ transform:scale(1.08); }
+.p-wish:active, .p-qview:active{ transform:scale(.94); }
 
 .p-card:hover, .p-card:focus-within{
   transform:translateY(-3px);
@@ -1269,7 +1341,7 @@ p{ color: var(--text-soft); }
   .p-card:hover, .p-card:focus-within{ transform:none; }
   /* No animation at all, so no fill state either — the cards are simply there. */
   .product-grid .p-card{ animation:none; }
-  .p-card:hover .p-quick button, .p-quick button:active, .p-atc button:active{ transform:none; }
+  .p-wish:hover, .p-qview:hover, .p-wish:active, .p-qview:active{ transform:none; }
 }
 
 /* The booking pages' service search. Deliberately the same shape as the
@@ -1292,17 +1364,95 @@ p{ color: var(--text-soft); }
 .svc-no-match strong{ display:block; color:var(--ink); font-size:1.02rem; margin-bottom:6px; }
 @media (hover:none), (max-width:980px){ .svc-search-clear{ width:44px; height:44px; } }
 
-.p-badges{ position:absolute; top:12px; left:12px; display:flex; flex-direction:column; gap:6px; z-index:3; }
-.p-quick{ position:absolute; top:12px; right:12px; display:flex; flex-direction:column; gap:8px; z-index:3; opacity:0; transform:translateX(8px); transition:opacity var(--dur), transform var(--dur); }
-.p-card:hover .p-quick{ opacity:1; transform:translateX(0); }
-.p-quick button{ width:38px; height:38px; border-radius:50%; background:rgba(255,255,255,.92); color:var(--ink); display:flex; align-items:center; justify-content:center; box-shadow:var(--shadow-sm); transition:background var(--dur), color var(--dur); }
-.p-quick button:hover{ background:var(--oxblood); color:#fff; }
-.p-quick button.active{ background:var(--oxblood); color:#fff; }
-.p-quick button svg{ width:16px; height:16px; }
-.p-atc{ position:absolute; left:0; right:0; bottom:0; transform:translateY(100%); transition:transform var(--dur) var(--ease); z-index:3; }
-.p-card:hover .p-atc{ transform:translateY(0); }
-.p-atc button{ width:100%; padding:13px; background:var(--ink); color:var(--gold-lt); font-size:.8rem; font-weight:600; letter-spacing:.04em; text-transform:uppercase; display:flex; align-items:center; justify-content:center; gap:8px; transition:background var(--dur); }
-.p-atc button:hover{ background:var(--oxblood-dk); }
+/* THREE THINGS SIT IN THE PHOTOGRAPH'S CORNERS, AND ONE NUMBER PLACES THEM.
+
+   The badge, the wishlist and the quick view are inset from the edges of the
+   picture by the same amount, or the corners stop reading as a set. That was
+   three hand-written numbers before, in three rules and two media queries, and
+   they had already drifted: on a phone the badge sat 9px in and both buttons
+   sat 18px in, because the buttons grow to a 44px target there while the disc
+   painted inside them does not, and nobody had subtracted the difference.
+
+   So the gap is declared once and the arithmetic is done by the stylesheet:
+
+     --photo-gap    how far the PAINTED edge is from the picture's edge
+     --photo-btn    the target, which a finger decides
+     --photo-disc   the circle, which the design decides
+     --photo-pad    the difference, halved — derived, never typed
+
+   A button is then positioned at `gap - pad`, which lands its disc at exactly
+   `gap`. Change the gap and all three corners move together; change the target
+   for touch and nothing moves at all. */
+.p-card{
+  --photo-gap:12px;
+  --photo-btn:34px;
+  --photo-disc:34px;
+  --photo-pad:calc((var(--photo-btn) - var(--photo-disc)) / 2);
+}
+/* A FINGER NEEDS 44px, AND THE PICTURE DOES NOT HAVE TO PAY FOR IT.
+
+   `hover:none` is the capability query for a touch screen and the width catches
+   a touch laptop that reports a hover it does not really have — the same pair
+   the filter rows and the category chips already use, so there is one idiom on
+   this site rather than two. It replaced a bare `max-width:767px`, which is a
+   PHONE breakpoint being asked a question about POINTERS: an iPad at 834px is
+   a finger and was getting 34px targets.
+
+   Only the target grows. The disc comes in 2px so the circle stays the size the
+   design drew, and --photo-pad moves the button out to keep it in the corner. */
+@media (hover:none), (max-width:980px){
+  .p-card{ --photo-btn:44px; --photo-disc:32px; }
+}
+.p-badges{
+  position:absolute; top:var(--photo-gap); left:var(--photo-gap);
+  display:flex; flex-direction:column; gap:6px; z-index:3;
+}
+/* ALWAYS VISIBLE, ON BOTH CORNERS OF THE RIGHT EDGE.
+
+   These lived in one hover-revealed column. A hover does not exist on a touch
+   screen, so on most of this site's traffic the wishlist and the quick view
+   were not merely hard to find — they were not there. They are now permanent,
+   the wishlist level with the badge at the top and the quick view at the
+   bottom, both inset from the right by the same amount so the edge reads as a
+   deliberate line rather than as two floating buttons.
+
+   34px with a 13px glyph. Being visible brings them inside the touch-target
+   rule they were exempt from while hidden — the responsive audit skips anything
+   an ancestor holds at zero opacity — so --photo-btn takes them to 44px on a
+   touch screen, which is the fingertip minimum and not a style choice. */
+.p-wish, .p-qview{
+  position:absolute; z-index:3;
+  right:calc(var(--photo-gap) - var(--photo-pad));
+  width:var(--photo-btn); height:var(--photo-btn); border-radius:50%;
+  background:none; color:var(--ink);
+  display:flex; align-items:center; justify-content:center;
+  cursor:pointer;
+}
+/* THE DISC IS A PSEUDO-ELEMENT, NOT THE BUTTON'S OWN BACKGROUND.
+
+   The button has to be 44x44 on a touch screen — that is the fingertip minimum
+   and the audit fails the build below it — but a 44px white disc on a 165px
+   card covers a quarter of the photograph it is sitting on. Painting the disc
+   on a pseudo-element lets the two sizes come apart: the TARGET grows on touch
+   and the disc stays where the design wants it, inset from the target's edge.
+   Nothing is traded; the finger gets its 44px and the picture keeps its space. */
+.p-wish::before, .p-qview::before{
+  content:''; position:absolute; inset:var(--photo-pad); border-radius:50%;
+  background:rgba(255,255,255,.94); box-shadow:var(--shadow-sm);
+  transition:background var(--dur);
+}
+.p-wish svg, .p-qview svg{ position:relative; }
+/* Level with the badge on the other side, so the top edge reads as one line.
+   `gap - pad` on the button puts the DISC at `gap`, which is where the badge is. */
+.p-wish{ top:calc(var(--photo-gap) - var(--photo-pad)); }
+.p-qview{ bottom:calc(var(--photo-gap) - var(--photo-pad)); }
+.p-wish svg, .p-qview svg{ width:13px; height:13px; }
+.p-wish:hover::before, .p-qview:hover::before,
+.p-wish:focus-visible::before, .p-qview:focus-visible::before{ background:var(--oxblood); }
+.p-wish:hover, .p-qview:hover, .p-wish:focus-visible, .p-qview:focus-visible{ color:#fff; }
+.p-wish.active::before{ background:var(--oxblood); }
+.p-wish.active{ color:#fff; }
+.p-wish:focus-visible, .p-qview:focus-visible{ outline:2px solid var(--gold); outline-offset:2px; }
 
 /* ============================================================
    #28 — Quick-add stepper, discount tag, fly-to-cart
@@ -1333,57 +1483,317 @@ p{ color: var(--text-soft); }
    sliced off. The button read as a half-moon rather than a button, at every
    screen size. Positive inset now, matched to the discount chip on the other
    side so the two sit on one line. */
-.p-quickadd{ position:absolute; right:6cqi; bottom:9px; z-index:4; }
 /* A step smaller at the top end. The floor stays at 44px, which is the minimum
    touch target and not something to trade away for looks. */
-.qa-add{ width:clamp(44px, 22cqi, 46px); height:clamp(44px, 22cqi, 46px);
-  border-radius:50%; background:#fff; color:var(--oxblood);
-  border:2px solid var(--oxblood); font-size:clamp(1.4rem, 8.4cqi, 1.62rem); font-weight:700; line-height:1;
-  display:flex; align-items:center; justify-content:center; box-shadow:0 4px 14px rgba(43,10,18,.2);
-  position:relative; overflow:hidden; isolation:isolate;
-  transition:transform .2s var(--ease), color .25s ease, border-color .25s ease; }
-/* The gold fill slides in from the bottom rather than simply fading — a
-   directional wipe reads as more deliberate than an opacity change. */
-.qa-add::before{ content:''; position:absolute; inset:0; z-index:-1;
-  background:linear-gradient(180deg, var(--gold-lt), var(--gold));
-  transform:translateY(100%); transition:transform .32s cubic-bezier(.22,.61,.36,1); }
-.qa-add:hover::before, .qa-add:focus-visible::before{ transform:translateY(0); }
-.qa-add:hover, .qa-add:focus-visible{ color:var(--ink); border-color:var(--gold); transform:scale(1.08); }
-.qa-add:active{ transform:scale(.93); }
+/* THE ADD-TO-CART BUTTON — one shape, the width of the card.
 
-.qa-stepper{ display:flex; align-items:center; background:#fff; border:1.5px solid var(--oxblood);
-  border-radius:var(--radius-full); box-shadow:0 3px 10px rgba(43,10,18,.16); overflow:hidden; }
-.qa-btn{ width:clamp(32px, 17cqi, 38px); height:clamp(38px, 20cqi, 46px);
-  color:var(--oxblood); font-size:clamp(1.1rem, 7cqi, 1.45rem); font-weight:700; line-height:1;
-  display:flex; align-items:center; justify-content:center; transition:background .15s; }
-.qa-btn:hover{ background:var(--parchment); }
-.qa-btn:active{ background:var(--gold-lt); }
-.qa-count{ min-width:30px; text-align:center; font-weight:700; font-size:1.02rem; color:var(--ink); }
-.qa-notify{ padding:9px 15px; border-radius:var(--radius-full); background:var(--ink); color:var(--gold-lt);
-  font-size:.72rem; font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
+   WHAT IT REPLACES. A round + floating over the photograph, a −/n/+ stepper
+   that took its place once something was in the basket, and a Buy Now beside
+   it: three shapes for one intention, none of them the width of the thing they
+   sat in, and the stepper's − was a 32px target on a phone.
 
-/* Discount tag — mirrored to the left of the stepper */
+   The plus went with them. It sat on the right as a second circle and read as a
+   second control, on a button where every pixel already does the same thing.
+   What it was really carrying was the COUNT — and a count belongs on the cart
+   it is counting, so it moved onto the icon.
 
-/* Four distinct treatments, chosen per product, so a grid doesn't repeat one
-   effect down the whole page. */
-.dt-pulse{ animation:dtPulse 2.2s ease-in-out infinite; }
-@keyframes dtPulse{ 0%,100%{ transform:scale(1);} 50%{ transform:scale(1.08);} }
-
-.dt-glow{ animation:dtGlow 2.6s ease-in-out infinite; }
-@keyframes dtGlow{
-  0%,100%{ box-shadow:0 3px 10px rgba(31,125,69,.4); }
-  50%{ box-shadow:0 3px 20px rgba(46,158,91,.85); }
+   THE TYPE. Poppins 700 at a container-relative size, tracked out by a hair
+   because a short all-caps-adjacent label set solid reads as a block rather
+   than as words. The two smoothing hints and optimizeLegibility are what keep
+   a 700 weight crisp rather than muddy at 2x and 3x, where the stems land
+   between physical pixels — this is the one piece of type on the card that a
+   customer looks at while deciding to press something. */
+.p-cta{ margin-top:auto; padding-top:2px; }
+.qa-cart{
+  width:100%; display:flex; align-items:center; justify-content:center; gap:9px;
+  /* MINIMAL PADDING, LARGER TYPE. The button's height comes from the 44px
+     fingertip minimum, not from padding, so padding here only pushes the label
+     around inside a box whose size is already decided. Taking it down and
+     putting the pixels into the type is the same button carrying more of what
+     it is for. */
+  min-height:46px; padding:7px 10px;
+  border-radius:12px; border:1.5px solid var(--oxblood);
+  background:var(--oxblood); color:#fff; cursor:pointer;
+  transition:background .22s var(--ease), color .22s var(--ease),
+             border-color .22s var(--ease), box-shadow .22s var(--ease),
+             transform .12s var(--ease);
+  text-rendering:optimizeLegibility;
+  -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;
+}
+/* The icon and its badge share a positioning context, so the badge can sit on
+   the cart's shoulder rather than beside it. */
+.qa-cart-ic{
+  position:relative; flex:0 0 auto; display:block;
+  width:clamp(19px, 10.5cqi, 22px); height:clamp(19px, 10.5cqi, 22px);
+}
+.qa-cart-ic svg{ width:100%; height:100%; display:block; }
+.qa-cart-txt{
+  flex:0 1 auto; min-width:0;
+  font-size:clamp(.82rem, 5.4cqi, .98rem); font-weight:700; letter-spacing:.015em;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
 }
 
-/* Sweep: a light band travels across the tag */
-.dt-sweep{ overflow:hidden; } /* clips the ::after sweep band to the tag */
-.dt-sweep::after{ content:''; position:absolute; top:0; left:-60%; width:45%; height:100%;
-  background:linear-gradient(90deg, transparent, rgba(255,255,255,.55), transparent);
-  transform:skewX(-20deg); animation:dtSweep 3s ease-in-out infinite; }
-@keyframes dtSweep{ 0%{ left:-60%; } 55%,100%{ left:130%; } }
+/* THE POP, AND ONLY ON THE CARD THAT CHANGED.
 
-.dt-bounce{ animation:dtBounce 2.4s ease-in-out infinite; }
-@keyframes dtBounce{ 0%,100%{ transform:translateY(0);} 45%{ transform:translateY(-4px);} 60%{ transform:translateY(0);} }
+   Used by the stepper's count below. The class is applied by the renderer when
+   this product's count went up, so a grid of eight does not flash eight badges
+   every time one thing is added. It overshoots and settles rather than simply
+   scaling up: a badge that grows and stops reads as a layout shift, one that
+   springs reads as a thing arriving. */
+@keyframes cartBadgePop{
+  0%  { transform:scale(.4); opacity:0; }
+  55% { transform:scale(1.28); opacity:1; }
+  78% { transform:scale(.94); }
+  100%{ transform:scale(1); }
+}
+
+/* HOVER: the Sri Yantra's own gold.
+
+   #F0D08A is the ring colour from the mark this shop is built around — see
+   scripts/generate-yantra.js, where it is the third band. It is the brightest
+   warm tone the brand already owns, and oxblood on it measures 7.27:1 where AA
+   asks for 4.5, so the inversion is legible rather than merely pretty. The
+   stepper below inverts with it too, or a gold count on a gold ground would
+   disappear. */
+.qa-cart:hover, .qa-cart:focus-visible{
+  background:#F0D08A; border-color:#D9B25C; color:var(--oxblood);
+  box-shadow:0 5px 18px rgba(201,162,39,.42);
+}
+.qa-cart:focus-visible{ outline:2px solid var(--oxblood); outline-offset:2px; }
+.qa-cart:active{ transform:scale(.985); }
+@media (prefers-reduced-motion:reduce){
+  .qa-cart:active{ transform:none; }
+}
+
+/* THE STEPPER — the same box, once something is in the basket.
+
+   Same height, same radius, same maroon, so the card's bottom row does not
+   change size when it changes state and a grid of eight does not twitch as one
+   of them is added to.
+
+   The two ends are the targets and the middle is a readout, which is why only
+   the ends are buttons. Each end is 44px wide on a phone, which is where the
+   `min-width` comes from — the old stepper's minus was 32px and people missed
+   it. The middle takes what is left. */
+.qa-step{
+  width:100%; display:flex; align-items:stretch;
+  min-height:46px; border-radius:12px; overflow:hidden;
+  border:1.5px solid var(--oxblood); background:var(--oxblood); color:#fff;
+  transition:background .22s var(--ease), color .22s var(--ease),
+             border-color .22s var(--ease), box-shadow .22s var(--ease);
+}
+/* 34px on a pointer, 44px on a finger (below). The ends are what the middle has
+   to fit around, and every pixel given to them is taken from the words: at 34 a
+   212px card leaves 113.5px between them and the icon plus the label want 110,
+   so they are shown; at 40 it left 97 and "Add to Cart" came out as "Add to C…".
+   A label that truncates is worse than a label that is absent, because the
+   absent one was a decision — see the threshold below. */
+.qa-step-btn{
+  position:relative; flex:0 0 auto; min-width:34px;
+  display:flex; align-items:center; justify-content:center;
+  color:inherit; cursor:pointer;
+}
+/* THE SIGNS CARRY THEMSELVES.
+
+   No ring around either one: two heavy strokes on a plain field, which is what
+   a stepper looks like everywhere it is done well. They were drawn inside 26px
+   circles for a revision, and the circles were doing a real job — telling the
+   eye where the press lands — but the glyphs do it themselves once they are
+   drawn large and heavy enough, which is why they step from 13px up to 16 here
+   and keep the 2.6 stroke. What now says where the press lands is the wash
+   below, and that is the shape of the target rather than a ring around a sign.
+
+   The target itself never depended on the circle: it is the full height of the
+   strip and 44px wide on a phone, and always was. */
+.qa-step-btn svg{
+  position:relative; width:clamp(16px, 8.6cqi, 18px); height:clamp(16px, 8.6cqi, 18px);
+  opacity:.92; transition:opacity .16s var(--ease), transform .16s var(--ease);
+}
+/* THE CLICK AREA, MADE VISIBLE.
+
+   The target was already the full height of the strip and its whole end — the
+   minus reaches the left edge, the plus the right — but nothing said so, and a
+   target you cannot see the edges of is one people aim at the glyph of. This
+   lights the actual rectangle: not a circle around the sign, the REAL box the
+   press lands in, so what the eye learns is true.
+
+   `background:currentColor` at low opacity rather than a fixed white: the strip
+   inverts to gold on hover, and a white wash would vanish on it while an
+   oxblood one would be invisible on maroon. One declaration covers both,
+   because currentColor is already whichever of the two is the foreground. */
+.qa-step-btn::before{
+  content:''; position:absolute; inset:4px 3px;
+  border-radius:10px; background:currentColor; opacity:0;
+  box-shadow:0 2px 10px rgba(0,0,0,.22);
+  transition:opacity .16s var(--ease);
+}
+/* Hover lights the area and the glyph comes to full strength inside it; the
+   press deepens the wash and dips the sign under the finger. */
+.qa-step-btn:hover::before{ opacity:.15; }
+.qa-step-btn:active::before{ opacity:.24; }
+.qa-step-btn:hover svg{ opacity:1; transform:scale(1.14); }
+.qa-step-btn:active svg{ transform:scale(.9); }
+.qa-step-btn:focus-visible{ outline:2px solid var(--gold-lt); outline-offset:-3px; border-radius:8px; }
+.qa-step-mid{
+  flex:1 1 auto; min-width:0; align-self:stretch; padding:0;
+  display:flex; align-items:center; justify-content:center; gap:9px;
+  font:inherit; color:inherit; cursor:pointer;
+}
+/* It presses like the button it used to be: the cart dips, nothing moves the
+   layout. The strip already turns gold when any part of it is hovered, so the
+   middle needs no ground of its own — it would only split one control into
+   three-looking ones. */
+.qa-step-mid:active .qa-step-ic{ transform:scale(.9); }
+.qa-step-mid .qa-step-ic{ transition:transform .14s var(--ease); }
+.qa-step-mid:focus-visible{ outline:2px solid var(--gold-lt); outline-offset:-3px; border-radius:8px; }
+/* The icon and its badge share a positioning context, so the count can sit on
+   the cart's shoulder rather than beside it. */
+.qa-step-ic{
+  position:relative; flex:0 0 auto; display:block;
+  width:clamp(19px, 10.5cqi, 22px); height:clamp(19px, 10.5cqi, 22px);
+}
+.qa-step-ic svg{ width:100%; height:100%; display:block; }
+/* Top-right of the glyph, the way every cart badge on every shop is drawn, so
+   it needs no explaining. `min-width` with padding lets "12" widen it without
+   ever letting "1" become an oval. */
+.qa-step-n{
+  position:absolute; top:-6px; right:-8px;
+  display:flex; align-items:center; justify-content:center;
+  min-width:16px; height:16px; padding:0 4px;
+  border-radius:999px;
+  background:var(--gold-lt); color:var(--ink);
+  font-size:.62rem; font-weight:800; line-height:1;
+  font-variant-numeric:tabular-nums;
+  box-shadow:0 0 0 1.5px var(--oxblood);
+  transition:background .22s var(--ease), color .22s var(--ease), box-shadow .22s var(--ease);
+}
+.qa-step-txt{
+  min-width:0; font-size:clamp(.82rem, 5.4cqi, .98rem); font-weight:700;
+  letter-spacing:.015em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+/* The same pop the badge had, on the same terms: only the card that changed. */
+.qa-step-n.is-bump{ animation:cartBadgePop .42s cubic-bezier(.2,.9,.25,1.2) both; }
+/* The hover is the button's, because it is the same control in another state.
+   The badge inverts with it, or a gold badge on a gold ground disappears. */
+.qa-step:hover, .qa-step:focus-within{
+  background:#F0D08A; border-color:#D9B25C; color:var(--oxblood);
+  box-shadow:0 5px 18px rgba(201,162,39,.42);
+}
+.qa-step:hover .qa-step-n, .qa-step:focus-within .qa-step-n{
+  background:var(--oxblood); color:#F7E7BF; box-shadow:0 0 0 1.5px #F0D08A;
+}
+@media (prefers-reduced-motion:reduce){
+  .qa-step-n.is-bump{ animation:none; }
+  .qa-step-btn:active::before{ transform:none; }
+}
+
+/* THE WORDS GO BEFORE THE LAYOUT DOES.
+
+   Below 190px of card the two 44px ends leave about 34px between them, which is
+   an icon and nothing else. The label is the first thing that can be spared:
+   a cart glyph carrying a count already says what this control is, and the
+   alternative — shrinking the ends — takes the fingertip minimum away from the
+   two things a customer is actually pressing.
+
+   208px, which is the same line the price row splits on and for the same
+   reason: it sits BETWEEN the two card widths the desktop grids produce, 205px
+   at four across and 212px at five. Measured, 205 leaves 109px of middle and
+   the words need about 111 — so four across drops them and five keeps them,
+   and every card in a given grid resolves the same way. */
+@container (max-width: 208px){
+  .qa-step-txt{ display:none; }
+  .qa-step-mid{ gap:0; }
+}
+/* Just above that line the words DO fit, but by three pixels. Measured: a
+   209.5px container leaves 113.5px of middle and the icon plus a 9px gap plus
+   the label want 110. Three pixels is not a margin, it is a coincidence — so
+   the gap closes to 7 for every card narrow enough to be near the edge, which
+   buys back two more and changes no decision about what is shown. */
+@container (max-width: 240px){
+  .qa-step-mid{ gap:7px; }
+}
+/* A FINGERTIP AT EACH END, AND THE WORDS RE-MEASURED AROUND IT.
+
+   Same capability query as the photograph's two controls, and for the same
+   reason: the question is what is pointing at this, not how wide the window is.
+   A bare `max-width:767px` left an iPad at 834px with 34px ends.
+
+   The ends widening by ten pixels each takes twenty out of the middle, so the
+   line where the label stops fitting moves with them. Measured the same way as
+   the 208px above: with 44px ends the middle is the card less 117, and the icon
+   plus the label want 110, so a card needs about 227 — 232 here, for the same
+   few pixels of margin the 240px gap rule buys. Without this the words would
+   have started truncating on any touch device wide enough to keep showing them,
+   which is precisely the failure the 208px line exists to prevent. */
+@media (hover:none), (max-width:980px){
+  .qa-step-btn{ min-width:44px; }
+  @container (max-width: 232px){
+    .qa-step-txt{ display:none; }
+    .qa-step-mid{ gap:0; }
+  }
+  /* THREE FINGERTIPS DO NOT FIT ON THE NARROWEST CARD, SO THERE ARE TWO.
+
+     Measured: the strip is the card less about 111px, so the middle reaches 44
+     only once the card does 156. Two across on a 320px phone gives 143.5, and
+     the middle came out 32 wide between two 44px ends — a small target with a
+     large one either side of it, which is the arrangement people mis-tap.
+
+     The PLUS is what goes, because it is the one thing here that is redundant:
+     the middle already adds, and it is the biggest area on the strip. What is
+     left is a minus at the left end and a large add everywhere else, which is
+     the same two things the card could do a moment ago. display:none rather
+     than pointer-events, so it leaves the tab order with it and a keyboard is
+     not offered a control a finger cannot reach. */
+  @container (max-width: 152px){
+    .qa-step-btn:last-of-type{ display:none; }
+    /* Its space stays on the right, so the cart is padded back over the middle
+       of the strip. The padding is inside the button, so the target is still
+       every pixel the plus used to occupy — only the glyph moves. */
+    .qa-step-mid{ padding-right:44px; }
+  }
+}
+/* A NESTED CONTAINER WAS TRIED HERE AND REMOVED, and the reason is worth
+   keeping: `container-type:inline-size` applies inline-size containment, so the
+   element stops sizing to its content. Putting it on the stepper's middle to
+   measure the middle collapsed the middle — the label vanished at every desktop
+   width, which is the opposite of what it was added to prevent.
+
+   The threshold above is measured against the card widths this grid actually
+   produces, which is the honest way to decide this. `text-overflow:clip` is the
+   remaining guard: if the words ever do not fit they are cut without an
+   ellipsis rather than half-said, because "Add to C…" tells a customer less
+   than the cart glyph beside it already does. */
+.qa-step-txt{ text-overflow:clip; }
+
+/* "ADD TO CART" MUST NOT BECOME "ADD TO C…".
+
+   At a 144px card the button is 122px and the label was being ellipsised — the
+   one thing on it that says what it does. Everything around the words gives way
+   first: the gap, the padding and the icon each come down a step, which buys
+   the label the room it needs. Measured at the 144px and 165px cards the phone
+   grid produces. */
+@container (max-width: 175px){
+  .qa-cart{ gap:7px; padding:7px 6px; }
+  .qa-cart-txt{ font-size:.8rem; }
+  .qa-cart-ic{ width:18px; height:18px; }
+}
+@container (max-width: 150px){
+  .qa-cart{ gap:6px; padding:7px 4px; }
+  .qa-cart-txt{ font-size:.75rem; letter-spacing:.005em; }
+  .qa-cart-ic{ width:17px; height:17px; }
+}
+
+.qa-notify{ width:100%; min-height:44px; padding:10px 14px; border-radius:12px;
+  background:var(--ink); color:var(--gold-lt); cursor:pointer;
+  font-size:clamp(.68rem, 4.2cqi, .78rem); font-weight:700;
+  text-transform:uppercase; letter-spacing:.04em; }
+/* A LIGHT GREEN THAT MEANS "we will tell you", not "buy this".
+
+   #BFF0C8 with black on it measures 15.9:1 — this is the one control on the
+   card that is a promise rather than a purchase, and giving it the buy button's
+   maroon made the two read as the same offer. */
+.qa-notify:hover, .qa-notify:focus-visible{ background:#BFF0C8; color:#000; }
+.qa-notify:focus-visible{ outline:2px solid var(--gold); outline-offset:2px; }
 
 /* The count chip that flies into the cart icon */
 /* #33 — Slower and gentler. The previous 0.6s with an overshoot curve read as
@@ -1399,6 +1809,35 @@ p{ color: var(--text-soft); }
      stays smooth on a phone. */
   will-change:transform, opacity; }
 
+/* A FEATHERED RING AROUND IT, SO THE CHIP READS AS SOMETHING IN FLIGHT.
+
+   A hard pill crossing the page is a rectangle moving. The halo is a soft
+   radial glow behind it, larger than the chip and fading to nothing at its
+   edge, and it BREATHES on its own clock — slower than the swing, so the two
+   never fall into step and the whole thing keeps looking alive for the two and
+   a half seconds it is on screen.
+
+   On the pseudo-element rather than the chip's own box-shadow because it has to
+   scale independently: a shadow would shrink with the chip and disappear
+   exactly when the effect is meant to be softest. z-index:-1 puts it behind the
+   number, which stays crisp. */
+.fly-chip::before{
+  content:''; position:absolute; inset:-14px; z-index:-1; border-radius:999px;
+  background:radial-gradient(circle,
+    rgba(240,208,138,.55) 0%,
+    rgba(240,208,138,.28) 45%,
+    rgba(240,208,138,0) 72%);
+  animation:flyHalo 1.05s ease-in-out infinite;
+}
+@keyframes flyHalo{
+  0%,100%{ transform:scale(.86); opacity:.75; }
+  50%    { transform:scale(1.14); opacity:1; }
+}
+/* The flight itself is decorative and already skipped under reduced motion —
+   flyToCart returns early and shakes the cart instead — but the halo would
+   still breathe on anything that reached it another way. */
+@media (prefers-reduced-motion:reduce){ .fly-chip::before{ animation:none; } }
+
 .cart-shake{ animation:cartShake .6s cubic-bezier(.36,.07,.19,.97); }
 @keyframes cartShake{
   0%,100%{ transform:translateX(0) rotate(0); }
@@ -1409,18 +1848,10 @@ p{ color: var(--text-soft); }
   80%{ transform:translateX(-1px) rotate(-2deg); }
 }
 
-@media (max-width:560px){
-  /* Sizes are container-driven now, so no viewport step-down here. Only the
-     count keeps a breakpoint: it is text, and text does not scale with cqi. */
-  .p-quickadd{ bottom:7px; }
-  .qa-count{ min-width:24px; font-size:.9rem; }
-}
 @media (prefers-reduced-motion: reduce){
-  .dt-pulse,.dt-glow,.dt-bounce{ animation:none; }
-  .dt-sweep::after{ animation:none; display:none; }
   .cart-shake{ animation:none; }
 }
-.p-atc button svg{ width:15px; height:15px; }
+
 /* A COMPACT BODY, SO TWO ROWS FIT ON A SCREEN.
 
    Measured before this change: 213px of photo and 194px of text made a 409px
@@ -1429,8 +1860,19 @@ p{ color: var(--text-soft); }
    trims text, never the photograph — the photograph is the product. */
 /* Padding trimmed by the two pixels the larger name adds back, so the card
    stays at the height that let two rows fit on a laptop screen. */
-.p-body{ padding:11px 14px 13px; flex:1; display:flex; flex-direction:column; gap:5px; }
-.p-meta{ display:flex; align-items:center; justify-content:space-between; gap:10px; min-height:16px; }
+/* THE BODY'S RHYTHM.
+
+   Four things now — name, rating, price, button — where there were six, so the
+   gap does more work and is worth stating rather than inheriting. 7px between
+   rows is close enough to read as one block and far enough that the rating does
+   not touch the name's descenders. The button carries its own margin-top:auto,
+   which is what keeps every card in a grid ending on the same line however long
+   a name wrapped. */
+.p-body{ padding:11px 13px 13px; flex:1; display:flex; flex-direction:column; gap:7px; }
+/* .p-meta held the category beside the rating on one row. The category came
+   out of the card — it repeated what the customer had just filtered by — and
+   the rating has the row to itself now. .p-cat survives because the quick-view
+   modal still prints one. */
 /* Truncates rather than wrapping: a two-line category would put the rating on
    its own line and undo the row. */
 .p-cat{ font-size:clamp(.6rem, 3.9cqi, .68rem); color:var(--text-mute); text-transform:uppercase;
@@ -1461,38 +1903,53 @@ p{ color: var(--text-soft); }
   font-size:clamp(.88rem, 5.9cqi, 1.04rem); font-weight:700; color:var(--ink);
   line-height:1.34; cursor:pointer; transition:color var(--dur);
   display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
-  overflow:hidden; min-height:2.7em; margin:0;
+  overflow:hidden; margin:0; min-height:26px;
 }
+/* THE 26px IS A TAP ROW, NOT THE OLD TWO-LINE RESERVE.
+
+   What was here before was a min-height of 2.7em, which held two lines open so
+   that cards with a one-word name ended level with the rest. The Add to Cart
+   button carries `margin-top:auto` now and does that properly — it pushes
+   itself to the bottom whatever is above it — so the reserve went, and a card
+   called "Gita" stopped paying for the same alignment twice.
+
+   Taking it out ALL the way was the mistake, and the responsive audit caught
+   it: a one-line title is 19px tall on a 320px phone, and the audit asks 24 of
+   a text link, because that is the row a finger lands on. This is that floor
+   and nothing more. It costs a short name about five pixels of air and leaves
+   every two-line name untouched, since two lines are 2.68em and already past
+   it. */
 .p-name:hover{ color:var(--oxblood); }
 /* Kept in the markup for the list view, which has the room for it and is the
    one place a material genuinely helps someone comparing two malas. */
 .p-material{ display:none; }
-.p-rating{ display:flex; align-items:center; gap:5px; margin:0; flex-shrink:0; }
-.p-score{ display:inline-flex; align-items:center; gap:4px; }
-/* A hard-stopped gradient clipped to the glyph: everything left of the score is
-   gold, everything right of it is the hairline grey. */
+/* THE RATING ROW.
+
+   One star, the average in bold, then how many people wrote it in brackets and
+   quieter. Two numbers of equal weight side by side are two numbers somebody
+   has to stop and separate, so the gap and the colour do the separating. */
+.p-rating{ display:flex; align-items:center; margin:0; min-width:0; }
+.p-score{ display:inline-flex; align-items:center; gap:6px; }
+/* Larger and drawn rather than typed. The ★ glyph's arms are as thin as the
+   typeface decided, and at 15px that read as a speck; an SVG can be given the
+   geometry a rating widget wants. See STAR_PATH for the inner radius that makes
+   the arms broad. */
 .p-star{
-  font-size:.92rem; line-height:1;
-  background:linear-gradient(90deg, var(--gold) var(--fill), var(--line) var(--fill));
-  -webkit-background-clip:text; background-clip:text; color:transparent;
+  width:clamp(15px, 8.4cqi, 18px); height:clamp(15px, 8.4cqi, 18px);
+  flex:0 0 auto; fill:var(--gold-dk); display:block;
 }
-/* Without background-clip the glyph would be transparent — invisible, not
-   degraded. A whole gold star is the honest fallback. */
-@supports not ((-webkit-background-clip:text) or (background-clip:text)){
-  .p-star{ background:none; color:var(--gold); }
+.p-score .rv{
+  font-size:clamp(.78rem, 5cqi, .88rem); font-weight:800; color:var(--ink);
+  font-variant-numeric:tabular-nums; line-height:1;
 }
-.p-score .rv{ font-size:.76rem; font-weight:700; color:var(--ink); font-variant-numeric:tabular-nums; }
-/* Nothing to say, so say nothing. "No reviews yet" occupied a whole line on a
-   new shop's every card to report an absence. The category beside it holds the
-   row's height, so hiding this shifts nothing. */
+/* Nothing to say, so say nothing. The card omits the row entirely when there
+   are no reviews; this covers the product page, which keeps the sentence. */
 .no-rating{ display:none; }
-/* ONE rule for the review count. There were three: .p-score .cnt at .72rem,
-   .p-rating .cnt at .74rem overriding it at equal specificity, and a third at
-   .68rem inside a 560px block. Three sizes for one number, and which you got
-   depended on source order rather than on anything anyone decided. */
+/* ONE rule for the review count. There were three, at three sizes, and which
+   you got depended on source order rather than on anything anyone decided. */
 .p-score .cnt, .p-rating .cnt{
-  font-size:clamp(.68rem, 5.2cqi, .74rem); color:var(--text-mute);
-  font-variant-numeric:tabular-nums;
+  font-size:clamp(.68rem, 4.6cqi, .76rem); color:var(--text-mute);
+  font-variant-numeric:tabular-nums; line-height:1;
 }
 /* THE PRICE SITS ON SOMETHING, AND ONLY WHEN THERE IS A SAVING.
 
@@ -1506,150 +1963,114 @@ p{ color: var(--text-soft); }
    ring so only the edge shows. It is slow — nine seconds for a full turn — so it
    reads as light moving across metal rather than as something demanding a click.
    The fill underneath is a flat warm tint; the sparkle is the edge only. */
-.p-price{ margin-top:auto; display:flex; align-items:baseline; gap:8px; padding-top:2px; }
-.p-price.has-off{
-  position:relative; isolation:isolate;
-  /* The sheen below travels across the chip and must be cut off at its rounded
-     edge, not allowed to run on into the card. */
-  overflow:hidden;
-  padding:6px 11px; margin-top:auto; border-radius:var(--radius-full);
-  background:linear-gradient(180deg, #FFF6E4, #FBEBCB);
-  align-self:flex-start;
+/* THE PRICE ROW — what it costs, what it cost, and what that saves.
+
+   Full body width. The saving is pushed to the far right by `margin-left:auto`
+   rather than by a spacer, so a product at full price leaves nothing holding
+   empty space open.
+
+   It is ALLOWED to wrap, and that is the opposite of the decision made for the
+   old action row. Three items of text cannot be squeezed below legibility on a
+   116px card, and a price that has been shrunk to fit is worse than a price on
+   two lines. The button below is what keeps every card in a grid ending on the
+   same line, so a wrap here costs the grid nothing. */
+.p-pricerow{
+  display:flex; align-items:baseline; flex-wrap:wrap;
+  gap:4px 5px; min-width:0;
 }
-/* THE RING IS STATIC, AND THAT IS THE FIX.
-
-   This was a conic gradient with `animation:rotate` on the pseudo-element, which
-   is the trick everyone reaches for. It does not work: rotating the ELEMENT
-   rotates the ring with it, so a 102x38 chip turned through 257 degrees became
-   103px tall and the gold edge came out of the chip as a diagonal streak across
-   the whole card — on every discounted product on the page.
-
-   Rotating the gradient instead of the box needs an @property registered angle,
-   which is not something to depend on for decoration. So the ring stays put and
-   the movement is a highlight travelling underneath it, clipped by the chip's
-   own overflow. Same read, and nothing can escape the box. */
-.p-price.has-off::before{
-  content:''; position:absolute; inset:0; z-index:-1; border-radius:inherit; padding:1.2px;
-  background:linear-gradient(135deg, #E8CE72, #8C6E14 28%, #F3E3AE 52%, #C9A227 74%, #8C6E14);
-  /* Mask the fill away so only the 1.2px ring is painted. */
-  -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-          mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite:xor; mask-composite:exclude;
+.pr-now{
+  font-family:var(--f-display); font-weight:800; color:var(--oxblood);
+  font-size:clamp(1rem, 6.6cqi, 1.22rem); line-height:1.1;
+  white-space:nowrap;
 }
-/* THREE TREATMENTS, SO A GRID DOES NOT REPEAT ONE DOWN THE PAGE.
-   Which tag gets which is decided in assignPriceAnims(); the rule there is that
-   no two cards near each other may share one. */
-
-/* 1 — a highlight sweeps across the face. Long pause, short pass: a highlight
-       that crosses constantly is a loading bar, one that catches the light every
-       few seconds is a price tag. */
-.p-price.pa-1::after{
-  content:''; position:absolute; top:0; bottom:0; left:-45%; width:38%; z-index:-1;
-  background:linear-gradient(100deg, transparent, rgba(255,255,255,.85), transparent);
-  transform:skewX(-18deg);
-  animation:priceSheen 5.5s ease-in-out infinite;
+/* Pale, so it reads as the number that no longer applies. #A8434F on white is
+   4.94:1, which clears AA for text this size — a prettier, lighter red does
+   not, and this is a number people compare against. */
+.pr-mrp{
+  font-size:clamp(.64rem, 4.2cqi, .72rem); color:#A8434F;
+  white-space:nowrap; line-height:1.1;
 }
-@keyframes priceSheen{ 0%, 62%{ left:-45%; } 100%{ left:125%; } }
+.pr-mrp s{ text-decoration:line-through; text-decoration-thickness:1.2px; }
+.pr-lbl{ font-weight:700; letter-spacing:.02em; }
 
-/* 2 — the tag rocks: the left corner lifts as the right drops, then back the
-       other way. Under a degree either side, because this sits next to a price
-       and has to stay readable — a tag that visibly wobbles reads as broken. */
-.p-price.pa-2{ transform-origin:50% 50%; animation:priceRock 2.2s ease-in-out infinite; }
-/* Four stops rather than two, and a little lift with each tilt, so it reads as a
-   shake rather than a metronome. Still under two degrees: this sits beside a
-   price somebody has to read. */
-@keyframes priceRock{
-  0%, 100%{ transform:rotate(-1.7deg) translateY(-0.7px); }
-  25%     { transform:rotate(0.9deg)  translateY(0.6px); }
-  50%     { transform:rotate(1.7deg)  translateY(0.7px); }
-  75%     { transform:rotate(-0.9deg) translateY(-0.6px); }
+/* WHERE THE ROW CANNOT HOLD ALL THREE, IT BREAKS THE SAME WAY ON EVERY CARD.
+
+   Left to itself the wrap lands wherever each product's own price happens to
+   put it, so one grid showed three cards with the saving beside the price and
+   five with it underneath — the same defect, in a different row, that the old
+   Buy Now had. Below 200px of card the saving takes its own line on every card;
+   above it, the three sit together on one.
+
+   The threshold is measured, not guessed, and it sits BETWEEN the two card
+   widths the desktop grids produce: 205px at four across and 212px at five. At
+   205 the widest realistic set — a four-digit price, a four-digit MRP and a
+   two-digit saving — does not fit its 179px row, and two cards in eight wrapped
+   while six did not. At 212 it does. 208 puts every card in a given grid on the
+   same side of the line, which is the property that matters: a row of cards
+   with two layouts in it looks like a bug, and one consistent layout does not.
+
+   A container query, because what decides this is the width of the CARD: the
+   same 1440px desktop gives a 212px card in the shop grid and far more in list
+   view. */
+@container (max-width: 208px){
+  .p-discount{ flex:0 0 auto; margin-left:0; }
+  .p-pricerow{ row-gap:5px; }
+  /* A full-width line-break element, so the saving always starts a new line
+     rather than sometimes fitting beside the MRP. Cheaper and more reliable
+     than guessing at flex-basis values that depend on the price's digits. */
+  .p-pricerow::before{ content:''; order:1; flex-basis:100%; height:0; }
+  .p-discount{ order:2; }
 }
+/* THE SAVING, AS A PILL AT THE END OF THE PRICE ROW.
 
-/* 3 — a bright point runs continuously round the border.
+   It was a chip on the photograph competing with the badge, the wishlist and
+   the quick view for the same picture. Beside the two numbers it is the
+   difference between, it needs no animation to be noticed — and a pulsing chip
+   six pixels from a price somebody is reading is noise. The four tiers stay,
+   because 60% off should not look like 5% off and the badge maths suite pins which
+   percentage lands in which one; only the movement went.
 
-   The ANGLE of the gradient is animated, not the element. An earlier attempt
-   span the pseudo-element itself, which turns the ring with it: a 102x38 chip
-   rotated through 257 degrees became 103px tall and the gold edge came out of
-   the chip as a diagonal streak across the whole card. Registering the angle as
-   a custom property is what makes a conic gradient animatable at all; where
-   @property is unsupported the comet simply sits still on the ring, which is a
-   static bright point rather than a broken one. */
-@property --comet{ syntax:'<angle>'; initial-value:0deg; inherits:false; }
-/* A HEAD WITH A TAIL BEHIND IT, NOT A BRIGHT SMUDGE.
-
-   The gradient turns clockwise, so a stop at a LARGER angle leads and a smaller
-   one trails. The tail is therefore the long fade from 8deg up to the head at
-   46deg, and it cuts off sharply just past it — a comet is bright at the front
-   and fades behind, and reversing that reads as a smear.
-
-   The ring is thicker on this treatment alone, because a one-pixel edge cannot
-   carry a highlight; the drop-shadow is what makes the head actually glow
-   rather than merely being pale. */
-.p-price.pa-3::before{
-  padding:1.9px;
-  background:
-    conic-gradient(from var(--comet),
-      rgba(255,244,200,0)   0deg,
-      rgba(255,231,150,.18) 8deg,
-      rgba(255,238,175,.45) 26deg,
-      rgba(255,247,214,.80) 39deg,
-      #FFFFFF               46deg,
-      rgba(255,245,205,.42) 50deg,
-      rgba(255,244,200,0)   58deg),
-    linear-gradient(135deg, #E8CE72, #8C6E14 28%, #F3E3AE 52%, #C9A227 74%, #8C6E14);
-  filter:drop-shadow(0 0 2.5px rgba(255,238,175,.95));
-  animation:cometRun 3.4s linear infinite;
-}
-@keyframes cometRun{ to{ --comet:360deg; } }
-
-/* The gold edge stays in all three; only the movement goes. A static gold ring
-   is still a gold ring, so nothing is lost but the motion. */
-@media (prefers-reduced-motion:reduce){
-  .p-price.pa-1::after{ animation:none; display:none; }
-  .p-price.pa-2{ animation:none; transform:none; }
-  .p-price.pa-3::before{ animation:none; }
-}
-/* The chip sits bottom-left of the photo, opposite the add button, so the two
-   read as a pair anchored to the same edge. */
+   `margin-left:auto` is what makes the row span the full body width without a
+   spacer element holding it open. */
 .p-discount{
-  position:absolute; left:6cqi; bottom:9px; z-index:4;
-  display:inline-flex; align-items:center; gap:3px;
-  padding:5px 10px 5px 7px; border-radius:var(--radius-full);
-  font-size:clamp(.7rem, 4.4cqi, .8rem); font-weight:800; color:#fff; letter-spacing:.01em;
+  margin-left:auto; flex:0 0 auto;
+  display:inline-flex; align-items:center; gap:2px;
+  padding:3px 7px 3px 4px; border-radius:var(--radius-full);
+  font-size:clamp(.6rem, 3.8cqi, .7rem); font-weight:600; color:#fff;
+  letter-spacing:.01em; line-height:1.35; white-space:nowrap;
 }
-.p-discount svg{ width:12px; height:12px; }
+.p-discount b{ font-weight:800; }
+.p-discount svg{ width:clamp(10px, 5.4cqi, 12px); height:clamp(10px, 5.4cqi, 12px); flex:0 0 auto; }
 
-/* under 25% — stated, not sold */
-.dt-low { background:#2F8A57; box-shadow:0 2px 8px rgba(47,138,87,.32); }
+/* Each tier is a flat fill dark enough to carry white text: 4.62, 5.29, 4.55
+   and 8.19 to one, where AA asks for 4.5. Measured, not chosen by eye. */
+.dt-low { background:#2F7D4F; }
+.dt-mid { background:#1F7D45; }
+.dt-high{ background:#B4560F; }
+.dt-max { background:#A81B2C; }
 
-/* 25-49% — a slow breath */
-.dt-mid { background:linear-gradient(135deg, #2E9E5B, #1F7D45); box-shadow:0 3px 10px rgba(31,125,69,.40);
-          animation:dtBreathe 3.2s ease-in-out infinite; }
-@keyframes dtBreathe{ 0%,100%{ transform:scale(1); } 50%{ transform:scale(1.045); } }
+/* No reduced-motion rule for these any more: none of the four moves. The tiers
+   used to breathe, sweep and pulse on the photograph, and beside a price those
+   read as noise rather than emphasis. The colour is the information. */
 
-/* 50-74% — light crossing the face */
-.dt-high{ background:linear-gradient(135deg, #F0A02A, #D2691E); box-shadow:0 3px 12px rgba(210,105,30,.45);
-          position:absolute; overflow:hidden; isolation:isolate; }
-.dt-high::after{
-  content:''; position:absolute; top:0; bottom:0; left:-60%; width:42%; z-index:-1;
-  background:linear-gradient(100deg, transparent, rgba(255,255,255,.7), transparent);
-  transform:skewX(-18deg); animation:dtSweep 2.8s ease-in-out infinite;
-}
-@keyframes dtSweep{ 0%,58%{ left:-60%; } 100%{ left:130%; } }
+/* SMALLER ON A PHONE, BOTH OF THEM.
 
-/* 75%+ — the only tier allowed to be emphatic */
-.dt-max { background:linear-gradient(135deg, #C0202E, #7A1128); box-shadow:0 4px 14px rgba(122,17,40,.5);
-          animation:dtUrgent 1.9s ease-in-out infinite; }
-@keyframes dtUrgent{
-  0%,100%{ transform:scale(1) translateY(0); box-shadow:0 4px 14px rgba(122,17,40,.5); }
-  50%    { transform:scale(1.07) translateY(-1px); box-shadow:0 6px 20px rgba(192,32,46,.62); }
-}
-
-/* Every tier keeps its colour and its number; only the movement goes. The
-   colour is the information, so removing motion loses nothing. */
-@media (prefers-reduced-motion:reduce){
-  .dt-mid, .dt-max{ animation:none; }
-  .dt-high::after{ animation:none; display:none; }
+   The badge is an annotation ON a photograph and the saving sits in a row with
+   two numbers; both were set for a desktop card. On a 144px card the badge ran
+   to 68px against a picture 144px wide, and the saving crowded the price it
+   modifies. Type and padding come down. Neither is a control, so no touch
+   minimum applies to either — which is exactly why these two are the ones that
+   CAN come down, where Notify Me could only come down in width. */
+@media (max-width:767px){
+  .badge{ padding:2px 7px; font-size:.6rem; }
+  /* The corners come in with the badge, and the two buttons come in with them,
+     because all three read the same variable. Setting it here rather than on
+     .p-badges alone is what stopped the wishlist and the quick view sitting
+     nine pixels further in than the badge they are supposed to line up with. */
+  .p-card{ --photo-gap:9px; }
+  .p-badges{ gap:5px; }
+  .p-discount{ padding:2px 6px 2px 3px; font-size:clamp(.56rem, 3.6cqi, .64rem); }
+  .p-discount svg{ width:9px; height:9px; }
 }
 
 /* THE CATEGORY IS BACK ON A PHONE, BECAUSE THE REASON IT WENT HAS GONE.
@@ -1684,14 +2105,12 @@ p{ color: var(--text-soft); }
 @media (max-width:413px){
   .p-cat{ font-size:clamp(.56rem, 4.2cqi, .68rem); letter-spacing:.02em; }
 }
-/* The selling price is the one number somebody is hunting for, so it is a step
-   larger and properly bold. The struck-through MRP is deliberately left where it
-   was: raising both together would restore the very sameness this fixes. */
-.p-price .now{ font-family:var(--f-display); font-size:clamp(1.14rem, 7.8cqi, 1.42rem); color:var(--oxblood); font-weight:800; }
-/* Container-relative, so the phone step-down lives here rather than in a second
-   rule at a viewport breakpoint. The floor is the size the old .82/.75 phone
-   overrides produced, so nothing moves; there is simply one rule now. */
-.p-price .was{ font-size:clamp(.75rem, 6cqi, .85rem); color:var(--text-mute); text-decoration:line-through; }
+/* Announced, never shown. A strikethrough is a visual convention and carries no
+   meaning to a screen reader, so the word it stands for is said out loud. */
+.sr-only{
+  position:absolute; width:1px; height:1px; padding:0; margin:-1px;
+  overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0;
+}
 /* The veil belongs over the PHOTO, not over the whole card.
 
    inset:0 laid a cream wash across the price and the name as well, which is why
@@ -1704,10 +2123,14 @@ p{ color: var(--text-soft); }
    sits above centre so the Notify Me bar below stays clear. The name and price
    underneath remain at full strength: a customer deciding whether to wait for
    restock still needs to read them. */
+/* z-index 2, UNDER the corner controls rather than over them. At 4 the wash
+   sat on top of the wishlist and the quick view and greyed them out, and both
+   still work on a product that is out of stock — wishlisting one is how a
+   customer says "tell me when this is back". */
 .p-stock-out{
-  position:absolute; top:0; left:0; right:0; aspect-ratio:1/1;
+  position:absolute; inset:0;
   background:rgba(250,243,228,.78); display:flex; align-items:flex-start;
-  justify-content:center; padding-top:34%; z-index:4; pointer-events:none;
+  justify-content:center; padding-top:34%; z-index:2; pointer-events:none;
 }
 .p-stock-out span{ background:var(--ink); color:var(--ivory); padding:8px 18px; border-radius:var(--radius-full); font-size:.74rem; font-weight:700; letter-spacing:.06em; text-transform:uppercase; box-shadow:0 4px 14px rgba(43,10,18,.3); }
 
@@ -1718,8 +2141,17 @@ p{ color: var(--text-soft); }
 /* .p-desc was removed when the duplicate product name was fixed; list view
    now gives the material line more room instead. */
 .product-grid.list-view .p-material{ display:block; font-size:.85rem; color:var(--text-soft); margin:8px 0 12px; }
-.product-grid.list-view .p-atc{ position:static; transform:none; margin-top:14px; }
-.product-grid.list-view .p-atc button{ border-radius:var(--radius-full); width:auto; padding:12px 26px; }
+/* The list row is far wider than a grid card and a button stretched across all
+   of it reads as a banner, so it takes the width it needs and no more. */
+.product-grid.list-view .p-cta{ margin-top:14px; }
+/* ALL THREE SHAPES, or the cap is not a cap.
+   .qa-step is what .qa-cart BECOMES once something is in the basket. It was
+   left out when the stepper was added and stretched to 644px on a 1440px row —
+   the exact banner this rule exists to prevent, appearing the moment a customer
+   pressed the button it was capping. */
+.product-grid.list-view .qa-cart,
+.product-grid.list-view .qa-notify,
+.product-grid.list-view .qa-step{ width:auto; min-width:230px; max-width:320px; }
 
 /* FEATURED ONLY — scoped by id so the shop, related and wishlist grids keep
    the four-across layout they were designed for. Five is a denser, more
@@ -2905,7 +3337,13 @@ input[type="range"]{ width:100%; accent-color:var(--oxblood); height:4px; }
 .blog-cover svg{ width:34%; height:34%; }
 .blog-cat-tag{ position:absolute; top:14px; left:14px; background:rgba(255,255,255,.92); color:var(--oxblood); font-size:.68rem; font-weight:700; letter-spacing:.05em; text-transform:uppercase; padding:6px 12px; border-radius:var(--radius-full); }
 .blog-body{ padding:22px 22px 24px; flex:1; display:flex; flex-direction:column; }
-.blog-body h3{ font-size:1.08rem; margin-bottom:10px; line-height:1.4; }
+/* h2 AND h3. The card renders an <h2 class="h3"> — h2 because the Journal grid
+   sits under the page's h1 and a card title that skips to h3 breaks the heading
+   order the SEO audit checks. This rule named only `h3`, so it never applied to
+   the element that exists: every card title fell back to the global .h3 size of
+   up to 1.5rem, three-quarters larger than the 1.08rem written here, which left
+   the title and its 0.87rem excerpt with no proportion between them. */
+.blog-body h2, .blog-body h3{ font-size:1.08rem; margin-bottom:10px; line-height:1.4; }
 .blog-body p{ font-size:.87rem; margin-bottom:16px; flex:1; }
 .blog-meta{ display:flex; align-items:center; gap:10px; font-size:.76rem; color:var(--text-mute); padding-top:14px; border-top:1px solid var(--line); }
 .blog-meta .dot{ width:3px; height:3px; border-radius:50%; background:var(--text-mute); }
@@ -3010,32 +3448,55 @@ a.p-media:focus-visible, a.p-name:focus-visible{ outline:2px solid var(--oxblood
 /* ============================================================
    TOUCH TARGETS
    ============================================================
-   Every control at 767px and below must be at least 44x44 CSS pixels. That is
+   Every control a FINGER can reach must be at least 44x44 CSS pixels. That is
    not a style preference: below it a fingertip covers more than the control and
    people miss, tap the thing next to it, and decide the site is broken.
 
+   THE QUESTION IS THE POINTER, NOT THE WINDOW, and for a long time this block
+   asked the wrong one. `max-width:767px` is a phone breakpoint, so an iPad at
+   834px — a finger, with no mouse anywhere near it — was getting the desktop
+   sizes: the view toggle at 32px, pagination at 40, the footer's social buttons
+   at 38, the sort menu at 35 and every footer link at 20. Every number this
+   block exists to prevent, on a device it never looked at.
+
+   `hover:none` is the capability query for that, and the width catches a touch
+   laptop that reports a hover it does not really have. It is the same pair the
+   category chips, the service search and the filter rows already use, and the
+   same pair the card's own --photo-btn uses, so there is one idiom here rather
+   than two. Measured after the change at 768, 834, 900 and 980 on four routes:
+   no horizontal scroll and nothing escaping its container.
+
    Found by measuring rather than by reading — scripts/responsive-audit.js
-   renders all eight routes at eight widths and reports every control under the
-   minimum. These were the ones that failed: the shop's view toggle at 32px, the
-   footer's social buttons at 38, the filter button and pagination at 40, the
-   featured tabs at 42, the sort menu at 37, and every footer link at 19.
+   renders every storefront route at eight widths and reports every control
+   under the minimum. These were the ones that failed: the shop's view toggle at
+   32px, the footer's social buttons at 38, the filter button and pagination at
+   40, the featured tabs at 42, the sort menu at 37, and every footer link at 19.
 
    Stated ONCE here rather than sprinkled through the component blocks, so there
    is one place to look and nothing to keep in sync. Only min-height is used
-   where the control has its own padding, so nothing is resized on a desktop and
-   no layout below is disturbed.
+   where the control has its own padding, so what changes is the row a finger
+   lands on and not the layout around it.
 
    AND IT SITS AT THE END OF THE STYLESHEET ON PURPOSE. Written earlier it lost:
    .footer-social, .view-toggle and .pagination all declare their sizes further
    down the file, and at equal specificity the later rule wins, so three of these
    silently did nothing. Same trap as the card's three phone blocks. Anything
    whose job is to override every component must come after every component. */
-@media (max-width:767px){
+@media (hover:none), (max-width:980px){
   .tab-btn,
   .mobile-filter-btn,
   .btn-sm,
   .qa-notify,
   .shop-toolbar select{ min-height:44px; }
+
+  /* THE TWO CONTROLS ON THE PHOTOGRAPH ARE NOT HERE ANY MORE, deliberately.
+
+     They were sized in this block, and this block asks about a WIDTH. What
+     decides whether a control needs 44px is the pointer, and an iPad at 834px
+     is a finger with a 34px target under that rule. They moved up to the card's
+     own --photo-btn, which a `hover:none` query raises — see the variables
+     above .p-badges, where the same change also keeps their painted circles
+     level with the badge instead of nine pixels further in. */
 
   /* The logo is a link, so its tap area is its own box. The mark inside is
      untouched; only the area around it grows. */
@@ -3631,7 +4092,10 @@ a.p-media:focus-visible, a.p-name:focus-visible{ outline:2px solid var(--oxblood
     </div>
   </section>
 
-  <section class="section tight">
+  <!-- Hidden entirely by renderDealGrid when nothing is actually discounted:
+       the copy and the countdown below are a claim, and a countdown to an
+       offer that does not exist is worse than no panel. -->
+  <section class="section tight" id="dealSection">
     <div class="container">
       <div class="deal-panel reveal">
         <div class="deal-info">
@@ -4645,13 +5109,22 @@ a.p-media:focus-visible, a.p-name:focus-visible{ outline:2px solid var(--oxblood
             <svg class="fc-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
           </button>
         </h2>
+        <!-- REPLACED AT RUNTIME by renderFooterShopLinks(), from the same
+             category rows that build the home rail. This static copy is only
+             the pre-hydration fallback.
+
+             It used to be the whole list, and it had already drifted from the
+             shop it links to: "Spiritual Books" pointed at category=books when
+             the real category is `book`, and Bracelets pointed at a category
+             with no products in it — so two of the six footer links landed a
+             customer on an empty shop, while the largest category on the site
+             had no footer link at all. A hand-written list of something the
+             admin can change is a list that is wrong as soon as they do. -->
         <ul id="fcListShop">
           <li><a href="/shop?category=lingam" onclick="openShopWithCategory('lingam'); return false;">Sphatik Lingams</a></li>
           <li><a href="/shop?category=yantra" onclick="openShopWithCategory('yantra'); return false;">Sri Yantras</a></li>
           <li><a href="/shop?category=idols" onclick="openShopWithCategory('idols'); return false;">Idols &amp; Murtis</a></li>
           <li><a href="/shop?category=malas" onclick="openShopWithCategory('malas'); return false;">Malas</a></li>
-          <li><a href="/shop?category=bracelets" onclick="openShopWithCategory('bracelets'); return false;">Bracelets</a></li>
-          <li><a href="/shop?category=books" onclick="openShopWithCategory('books'); return false;">Spiritual Books</a></li>
         </ul>
       </div>
       <div class="footer-col fc-collapsible" data-fc="company">
@@ -4925,7 +5398,7 @@ const CAT_LABELS = { lingam:'Sphatik Lingams', yantra:'Sri Yantras', idols:'Idol
 // typed that wasn't already in this hardcoded list. Categories are meant to
 // be admin-defined, not restricted to a fixed set, so every display site
 // now goes through this function instead.
-// Returns { cssClass, text } for a badge value. 'bestseller' and 'new' get
+// Returns { key, text } for a badge value. 'bestseller' and 'new' get
 // their existing distinct colors; any other admin-entered text (e.g.
 // "Certified", "Limited Edition") is now shown VERBATIM with a generic
 // style — previously any value other than exactly 'bestseller'/'new' was
@@ -5290,7 +5763,7 @@ function catLabel(key){
   return label || 'Uncategorized';
 }
 
-// Returns { cssClass, text } for a badge value. 'bestseller' and 'new' get
+// Returns { key, text } for a badge value. 'bestseller' and 'new' get
 // their existing distinct colors; any other admin-entered text (e.g.
 // "Certified", "Limited Edition") is now shown VERBATIM with a generic
 // style — previously any value other than exactly 'bestseller'/'new' was
@@ -5301,20 +5774,20 @@ function badgeInfo(badge, product){
   if(key === 'limited'){
     const n = Math.max(1, Number(product && product.stockQty) || 1);
     return {
-      cssClass:'badge-limited', text:'Only ' + n + ' left',
+      key:'limited', text:'Only ' + n + ' left',
       // The roll starts a little above the truth and settles on it.
       countTo:n
     };
   }
-  if(key === 'bestseller') return { cssClass:'badge-best', text:'Bestseller' };
-  if(key === 'new') return { cssClass:'badge-new', text:'New' };
-  if(key === 'sale') return { cssClass:'badge-sale', text:'Sale' };
-  /* Hot earns its own class rather than falling into badge-custom, because it
+  if(key === 'bestseller') return { key:'best', text:'Bestseller' };
+  if(key === 'new') return { key:'new', text:'New' };
+  if(key === 'sale') return { key:'sale', text:'Sale' };
+  /* Hot earns its own key rather than falling into the custom one, because it
      is the one word here that describes a temperature and can move like one. */
   /* A flame, not a word describing one. The glyph is what carries the meaning
      at this size; the label is the caption. */
   if(key === 'hot') return {
-    cssClass:'badge-hot', text:'Hot',
+    key:'hot', text:'Hot',
     icon:'<svg class="b-ico b-flame" viewBox="0 0 24 24" aria-hidden="true">' +
       '<path class="fl-outer" d="M12 2c.6 3.2-1.4 4.6-2.8 6.2C7.6 10 6.5 11.6 6.5 14a5.5 5.5 0 0011 0c0-2.2-1-3.6-2.2-5.2C14 7 13.4 5.4 13.6 4c-.6.9-1.3 1.5-1.6 1.9C11.7 4.6 11.8 3.2 12 2z"/>' +
       '<path class="fl-inner" d="M12 12c.3 1.5-.6 2.2-1.2 2.9-.5.6-.9 1.2-.9 2a2.1 2.1 0 004.2 0c0-.9-.4-1.5-1-2.2-.5-.6-.9-1.4-.8-2.1-.1.2-.2.3-.3.4z"/>' +
@@ -5322,7 +5795,7 @@ function badgeInfo(badge, product){
   };
   // Badges are stored lowercase (see migration 012), so anything custom must
   // be title-cased here or "certified" shows where "Certified" is intended.
-  return { cssClass:'badge-custom', text: titleCaseTerm(key) };
+  return { key:'custom', text: titleCaseTerm(key) };
 }
 
 /* Mirrors displayTerm() in src/utils/text.js — the storefront must title-case
@@ -5782,9 +6255,88 @@ const CAT_ICONS = {
   malas:'<circle cx="24" cy="24" r="14" stroke-dasharray="2.6 3.4"/><circle cx="24" cy="38" r="3.2" fill="currentColor"/>',
   bracelets:'<ellipse cx="24" cy="24" rx="15" ry="10" stroke-dasharray="2.6 3.2"/>',
   books:'<path d="M8 10h12a4 4 0 014 4v24a4 4 0 00-4-4H8z"/><path d="M40 10H28a4 4 0 00-4 4v24a4 4 0 014-4h12z"/>',
-  samagri:'<path d="M12 18h24l-2.5 20h-19z"/><path d="M18 18v-4a6 6 0 0112 0v4"/>'
+  samagri:'<path d="M12 18h24l-2.5 20h-19z"/><path d="M18 18v-4a6 6 0 0112 0v4"/>',
+  /* Added because the shop actually sells these and each was drawing the
+     anonymous fallback below. A crystal, drawn as a faceted point rather than
+     a lingam, so sphatik and lingam do not read as the same category. */
+  sphatik:'<path d="M24 5l11 12-11 26L13 17z"/><path d="M13 17h22"/><path d="M24 5v38"/>',
+  /* Draped cloth: a panel that falls from a gathered top to a WAVY hem. The
+     first attempt was a rectangle with a band and a centre fold, and at 48px
+     that reads as a gift box — the hem is the line that makes it fabric. */
+  dhoti:'<path d="M14 8c3.5 2 16.5 2 20 0"/><path d="M14 8l-2 28c4 2.5 8 3.6 12 3.6s8-1.1 12-3.6l-2-28"/><path d="M12.4 30c3.8 2.2 7.7 2.2 11.6 0s7.8-2.2 11.6 0"/>',
+  /* A chowki — the low wooden altar table — seen from the front. */
+  wooden:'<path d="M8 17h32v6H8z"/><path d="M13 23v16M35 23v16"/><path d="M8 12c5-2.5 11-3.7 16-3.7S35 9.5 40 12"/>',
+  /* A brass diya with a flame: the catch-all for lamps and puja metalware. */
+  diya:'<path d="M9 28h30c0 6.5-6.7 11-15 11S9 34.5 9 28z"/><path d="M24 27c0-4 3.5-5.5 3.5-9.5 0-2.6-1.6-4.6-3.5-6-1.9 1.4-3.5 3.4-3.5 6 0 4 3.5 5.5 3.5 9.5z"/>',
+  /* An incense stick with rising smoke. */
+  incense:'<path d="M24 42V20"/><path d="M20 42h8"/><path d="M24 17c3-2 3-5 1-7-2.5 2.5-4.5 4-4.5 7.5"/>'
 };
+
+/* HOW A CATEGORY FINDS ITS ICON, INCLUDING ONE CREATED TOMORROW.
+
+   THE DEFECT THIS REPLACES: the lookup was `CAT_ICONS[c.category]`, an exact
+   match on the database's own slug. The map's key was `books` and the shop's
+   category is `book`, so the single largest category on the site — four of
+   eleven products — drew the anonymous double circle. So did sphatik, dhoti
+   and wooden, which have no entry at all. Half the rail was the same glyph,
+   and a rail where half the tiles look identical is not a rail.
+
+   An exact map cannot be right for long, because categories are created by an
+   admin typing into a form. `book`, `books`, `holy-books` and `Spiritual Books`
+   are the same shelf to a customer and four different keys to an exact lookup.
+
+   So the match is on WORDS the key contains. Each entry lists the words that
+   mean it, and a category matches an icon when it contains one of them.
+
+   Where two words both match, the one LATEST in the name wins, because these
+   names are English compounds and the head noun comes last: a `sphatik-lingam`
+   is a lingam, a `rudraksha-bracelet` is a bracelet, a `wooden-chowki` is a
+   chowki. Longest-word-wins was the first rule tried and it called a rudraksha
+   bracelet a mala, because "rudraksha" is the longer word. Length only breaks a
+   tie at the same position, which is what keeps `book` and `books` landing
+   together. A category invented next year still lands somewhere, as long as it
+   is named in words a customer would use.
+
+   Nothing here changes what a category IS — catLabel still names it and the
+   href still carries the raw slug. This only decides which drawing sits on the
+   tile, so an unrecognised category is a plainer tile, never a broken one. */
+const CAT_ICON_WORDS = [
+  ['lingam',   ['lingam', 'linga', 'shivling', 'shivling']],
+  ['yantra',   ['yantra', 'yantras', 'geometry']],
+  ['idols',    ['idol', 'idols', 'murti', 'murtis', 'statue', 'deity']],
+  ['malas',    ['mala', 'malas', 'rudraksh', 'rudraksha', 'bead', 'beads', 'japa']],
+  ['bracelets',['bracelet', 'bracelets', 'kada', 'wrist']],
+  ['books',    ['book', 'books', 'scripture', 'scriptures', 'granth', 'puran', 'gita', 'ramayan']],
+  ['samagri',  ['samagri', 'kit', 'kits', 'pooja-kit']],
+  ['sphatik',  ['sphatik', 'crystal', 'quartz']],
+  ['dhoti',    ['dhoti', 'cloth', 'vastra', 'apparel', 'asan', 'asana']],
+  ['wooden',   ['wooden', 'wood', 'chowki', 'table', 'furniture']],
+  ['diya',     ['diya', 'lamp', 'deepak', 'brass', 'metal', 'copper', 'panchdhatu']],
+  ['incense',  ['incense', 'dhoop', 'agarbatti', 'fragrance']]
+];
 const DEFAULT_CAT_ICON = '<circle cx="24" cy="24" r="17"/><circle cx="24" cy="24" r="6"/>';
+
+function catIcon(key){
+  const k = String(key || '').toLowerCase();
+  if(!k) return DEFAULT_CAT_ICON;
+  if(CAT_ICONS[k]) return CAT_ICONS[k];              // an exact slug still wins
+  let best = null, bestAt = -1, bestLen = 0;
+  for(let i = 0; i < CAT_ICON_WORDS.length; i++){
+    const words = CAT_ICON_WORDS[i][1];
+    for(let j = 0; j < words.length; j++){
+      const at = k.indexOf(words[j]);
+      if(at < 0) continue;
+      // Latest position wins (the head noun of the compound), length breaks a
+      // tie at the same position so "books" beats "book" on "holy-books".
+      if(at > bestAt || (at === bestAt && words[j].length > bestLen)){
+        best = CAT_ICONS[CAT_ICON_WORDS[i][0]];
+        bestAt = at;
+        bestLen = words[j].length;
+      }
+    }
+  }
+  return best || DEFAULT_CAT_ICON;
+}
 
 /* #6 — Homepage puja showcase, populated from the SAME booking_services
    catalog the booking page uses, so a price change in the admin is reflected
@@ -5848,7 +6400,7 @@ function renderTopCategories(cats){
     return;
   }
   grid.innerHTML = cats.map(function(c){
-    const icon = CAT_ICONS[c.category] || DEFAULT_CAT_ICON;
+    const icon = catIcon(c.category);
     const count = c.product_count === 1 ? '1 item' : c.product_count + ' items';
     // jsAttr, not escapeHtml: this value goes into a JS STRING inside an HTML
     // attribute, and escapeHtml only handles the second of those two layers.
@@ -5866,6 +6418,31 @@ function renderTopCategories(cats){
     '</a>';
   }).join('');
   grid.dataset.state = 'ready';
+  /* The footer's Shop column is the same question asked in a second place —
+     "which categories does this shop have?" — so it is answered from the same
+     rows rather than from a list somebody typed. Called from here, not from
+     each of renderTopCategories' two callers, so the rail and the footer
+     cannot be filled from different data. */
+  renderFooterShopLinks(cats);
+}
+
+/* The footer's Shop column, derived from the categories that actually exist.
+
+   Six, because the column sits beside Company and Get In Touch and a footer
+   that scrolls is a footer nobody reads. The rows arrive ranked by units sold,
+   so the six shown are the six people actually buy from — and a category
+   created next week appears here the moment it has a product in it, with no
+   edit to this file. */
+function renderFooterShopLinks(cats){
+  const list = qs('#fcListShop');
+  if(!list || !cats || !cats.length) return;   // leave the static fallback alone
+  list.innerHTML = cats.slice(0, 6).map(function(c){
+    // jsAttr for the handler, escapeHtml for the markup — a category with an
+    // apostrophe in it breaks a different layer in each position.
+    return '<li><a href="/shop?category=' + encodeURIComponent(c.category) + '" ' +
+      'onclick="openShopWithCategory(' + jsAttr(c.category) + '); return false;">' +
+      escapeHtml(catLabel(c.category)) + '</a></li>';
+  }).join('');
 }
 
 /* HOW MANY CATEGORIES THE DRAWER SHOWS BEFORE "All Categories" takes over.
@@ -6239,21 +6816,41 @@ function validateField(id, type){
    a 4.6 shows a genuinely 92%-filled star rather than rounding to five whole
    ones. aria-label carries the real value, because a clipped gradient says
    nothing to a screen reader. */
+/* THE RATING, THE WAY A LARGE SHOP PRINTS IT: one filled star, the average in
+   bold, then the number of people who wrote it, in brackets and quieter.
+
+   THE STAR IS DRAWN, NOT TYPED. It was the ★ glyph with a clipped gradient
+   across it to show a partial score, which is clever and gives a star whose
+   arms are as thin as the typeface decided — at 15px it read as a speck. An
+   SVG can be given the geometry it needs: this one has a much larger inner
+   radius, so the arms are wide and the points are blunt, and it holds its shape
+   at any size. The partial fill goes with it, and nothing is lost: the exact
+   figure is printed beside the star, which is what people actually read.
+
+   The count is deliberately NOT bold and NOT the same colour. Two numbers of
+   equal weight side by side are two numbers somebody has to stop and separate.
+
+   Shared with the product detail page, which calls this too. */
 function ratingBlockHTML(rating, reviewCount){
   const count = Number(reviewCount || 0);
   const value = Number(rating);
   if(!count || !(value > 0)){
     return '<span class="no-rating">No reviews yet</span>';
   }
-  const pct = Math.max(0, Math.min(100, (value / 5) * 100));
   const shown = (Math.round(value * 10) / 10).toFixed(1);
   return '<span class="p-score" role="img" aria-label="Rated ' + shown + ' out of 5 from '
       + count + ' review' + (count === 1 ? '' : 's') + '">' +
-      '<span class="p-star" style="--fill:' + pct.toFixed(1) + '%" aria-hidden="true">\u2605</span>' +
+      '<svg class="p-star" viewBox="0 0 24 24" aria-hidden="true"><path d="' + STAR_PATH + '"/></svg>' +
       '<span class="rv">' + shown + '</span>' +
       '<span class="cnt">(' + count + ')</span>' +
     '</span>';
 }
+
+/* A five-pointed star with an inner radius of 0.55 of the outer, where the
+   textbook figure uses 0.382. That single number is the difference between thin
+   spikes and the broad, blunt star a rating widget wants. Generated once and
+   pasted, so nothing computes geometry at render time. */
+const STAR_PATH = 'M12 1.6l3.09 6.26 6.91 1-5 4.87 1.18 6.87L12 17.35 5.82 20.6 7 13.73l-5-4.87 6.91-1z';
 
 function starsHTML(rating){
   const value = Number(rating) || 0;
@@ -6918,6 +7515,23 @@ function setPageStructuredData(pageId, meta, url){
     data = { '@context': 'https://schema.org', '@type': 'WebPage', name: meta.title,
              description: meta.description, url: url,
              breadcrumb: crumbs([home, { name: 'Policies', path: '/policies' }]) };
+  } else if(pageId === 'blog-post' && meta.article){
+    /* BlogPosting, not WebPage: it is the type that can carry a headline, an
+       author and a publication date, which is what a search result for an
+       article actually shows. Only emitted when the article is resolved — a
+       schema describing an article nobody could load would be worse than none.
+       The breadcrumb names the Journal so the article is not an orphan. */
+    data = {
+      '@context': 'https://schema.org', '@type': 'BlogPosting',
+      headline: meta.article.headline, description: meta.description, url: url,
+      mainEntityOfPage: { '@type': 'WebPage', '@id': url },
+      datePublished: meta.article.datePublished,
+      author: { '@type': 'Organization', name: meta.article.author || 'Chakrashri' },
+      publisher: { '@type': 'Organization', name: 'Chakrashri', url: SITE_ORIGIN },
+      articleSection: meta.article.section,
+      image: SITE_ORIGIN + '/og-cover.png',
+      breadcrumb: crumbs([home, { name: 'Journal', path: '/blog' }])
+    };
   }
 
   if(!data){
@@ -7105,9 +7719,11 @@ function navigateTo(pageId, opts){
     }
   }
 
-  // Product pages set their own title/description/JSON-LD once the product is
-  // resolved below, since those come from the product itself.
-  if(pageId !== 'product'){
+  // Product and article pages set their own title/description/JSON-LD once the
+  // item is resolved below, since those come from the item itself. Calling the
+  // generic version first would publish the wrong canonical and the wrong title
+  // for a frame, which is long enough for a share sheet to capture it.
+  if(pageId !== 'product' && pageId !== 'blog-post'){
     updatePageMeta(pageId, param);
     injectProductJsonLd(null);
   }
@@ -7139,6 +7755,40 @@ function navigateTo(pageId, opts){
      heartbeat, so it never runs where it is not needed. */
   keepBackendWarm(pageId === 'checkout' || pageId === 'cart' || pageId === 'puja' || pageId === 'astrology');
   if(pageId === 'blog') renderBlogGrid();
+  if(pageId === 'blog-post'){
+    /* The id comes from the URL when there is one, so a reload or a shared
+       link reconstructs the article — currentBlogId is an in-memory variable
+       and resets on every reload, which is exactly why this page used to come
+       back blank. It stays as the fallback for an in-page navigation that has
+       already set it. */
+    const postId = param || currentBlogId;
+    const post = postId ? BLOG_POSTS.find(function(p){ return p.id === postId; }) : null;
+    if(post){
+      currentBlogId = post.id;
+      /* Meta before render, same order as a product page: a share sheet opened
+         mid-render must not capture the previous page's title. */
+      updatePageMeta('blog-post', post.id, {
+        title: post.title + ' | Chakrashri Journal',
+        description: String(post.excerpt || '').slice(0, 300),
+        // Read by setPageStructuredData to emit BlogPosting. Passed rather than
+        // looked up there, so that function keeps knowing nothing about how
+        // posts are stored.
+        article: {
+          headline: post.title,
+          datePublished: post.date,
+          author: post.author,
+          section: post.category
+        }
+      });
+      renderBlogPostDetail(post.id);
+    } else {
+      // An id that matches no post — an old link, or a post that was removed.
+      // The Journal index is the honest destination; a blank article is not.
+      toast('That article could not be found — it may have been removed.', 'err');
+      navigateTo('blog');
+      return;
+    }
+  }
   if(pageId === 'orders') renderOrdersPage();
   if(pageId === 'product'){
     // The product's slug is encoded in the hash (#product/<slug>) specifically
@@ -7188,10 +7838,18 @@ function openProduct(id){
   navigateTo(p && p.slug ? ('product/' + p.slug) : 'product');
 }
 
+/* The address of one article. Every Journal article shared the single URL
+   /blog-post before this, which meant: reloading the page you were reading
+   showed a blank article, sharing a link sent someone to that blank article,
+   and Google had one URL for six pieces of writing. The route already
+   supported a parameter — /product/<slug> uses the same mechanism — so an
+   article carries its id the same way a product carries its slug. */
+function blogHref(post){
+  return post && post.id ? pathForRoute('blog-post', post.id) : '/blog';
+}
 function openBlogPost(id){
   currentBlogId = id;
-  navigateTo('blog-post');
-  renderBlogPostDetail(id);
+  navigateTo('blog-post/' + id);
 }
 
 function openShopWithCategory(cat, subcat){
@@ -7251,22 +7909,124 @@ function openProductTab(tabName){
    The count shown is the quantity of this product ALREADY in the cart, so the
    card and the cart can never disagree — it is read from the cart, not held
    as separate UI state. */
-function quickAddHTML(p){
+/* ONE FULL-WIDTH BUTTON, AND THE WHOLE OF IT ADDS TO THE CART.
+
+   WHAT THIS REPLACES. Three separate shapes lived here: a round + floating over
+   the photograph, a −/n/+ stepper that took its place once something was in the
+   basket, and a Buy Now beside it. Three shapes for one intention, none of them
+   the width of the thing they sat in, and the stepper's − was a 32px target on
+   a phone.
+
+   Now: a cart icon, the words, and a circle on the right that shows how many are
+   already in the basket. Pressing ANY of it adds one — the circle is a state,
+   not a second control, which is why there is no second click target inside a
+   button and no way to press the wrong half.
+
+   The quantity is not decremented from here any more. That moved to the cart
+   drawer and the cart page, both of which have the room for a real stepper and
+   both of which are one tap away. A card is for choosing; a cart is for
+   adjusting.
+
+   `data-qa` is what syncAllQuickAddControls finds to re-render this in place
+   after any cart change, so it stays on the wrapper. */
+/* ONE FULL-WIDTH BUTTON, AND THE COUNT RIDES ON THE CART.
+
+   WHAT THIS REPLACES. A round + floating over the photograph, a −/n/+ stepper
+   that took its place once something was in the basket, and a Buy Now beside
+   it: three shapes for one intention, none of them the width of the thing they
+   sat in, and the stepper's − was a 32px target on a phone.
+
+   THE PLUS IS GONE TOO. It sat on the right as a second circle and read as a
+   second control — on a button where every pixel already does the same thing,
+   that is a target inviting a wrong press. What it was really carrying was the
+   COUNT, and a count belongs on the cart it is counting, so it moved onto the
+   icon as a badge. The button now says one thing and does one thing.
+
+   `bump` is passed by syncAllQuickAddControls when THIS product's count went up,
+   and only then. Without it every badge in the grid would replay its animation
+   whenever any product was added, because the sync re-renders all of them.
+
+   `data-qty` is written into the DOM so the next sync can tell what changed.
+   The alternative is a parallel map that has to be kept in step with the render,
+   which is one more thing to get wrong. */
+function quickAddHTML(p, bump){
   if(!p.stock) {
-    return '<div class="p-quickadd"><button class="qa-notify" onclick="event.preventDefault(); event.stopPropagation(); notifyStock(\'' + p.id + '\')">Notify Me</button></div>';
+    return '<div class="p-cta"><button class="qa-notify" onclick="event.preventDefault(); event.stopPropagation(); notifyStock(\'' + p.id + '\')">Notify Me</button></div>';
   }
   const qty = cartQtyForProduct(p.id);
+
+  /* TWO STATES, ONE SHAPE.
+
+     Empty, the whole button adds — one target, no way to press the wrong half.
+     Once something is in the basket the SAME rounded rectangle becomes a
+     stepper: minus at one end, plus at the other, the count between them.
+
+     Why the shape is kept rather than a stepper appearing beside the button:
+     the card's bottom row is what a customer's eye returns to, and a control
+     that changes size when it changes state makes the whole grid twitch. Same
+     box, same height, different contents.
+
+     A stepper is also the answer to the one thing the single button could not
+     do. Removing an item meant opening the cart; it is two taps here, on the
+     card the customer is already looking at. */
   if(qty > 0){
-    return '<div class="p-quickadd" data-qa="' + p.id + '">' +
-      '<div class="qa-stepper">' +
-        '<button class="qa-btn qa-minus" aria-label="Remove one" onclick="event.preventDefault(); event.stopPropagation(); quickAdjust(\'' + p.id + '\',-1,this)">−</button>' +
-        '<span class="qa-count">' + qty + '</span>' +
-        '<button class="qa-btn qa-plus" aria-label="Add one" onclick="event.preventDefault(); event.stopPropagation(); quickAdjust(\'' + p.id + '\',1,this)">+</button>' +
+    return '<div class="p-cta" data-qa="' + p.id + '" data-qty="' + qty + '">' +
+      '<div class="qa-step" role="group" aria-label="Quantity of ' + escapeHtml(p.name) + ' in your cart">' +
+        '<button class="qa-step-btn" aria-label="Remove one" ' +
+          'onclick="event.preventDefault(); event.stopPropagation(); quickAdjust(\'' + p.id + '\',-1,this)">' +
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg>' +
+        '</button>' +
+        /* THE MIDDLE ADDS, TOO.
+
+           Pressing the cart is what pressing the cart meant a moment ago, when
+           this control was a single Add to Cart button, and a customer does not
+           know the control changed shape underneath them — they know they
+           pressed the cart and it worked. So the middle keeps that meaning: it
+           adds one, the same as the plus beside it. Only the minus takes away.
+
+           That leaves exactly one subtracting target out of three, which is the
+           right ratio for a control on a grid card: adding is the common act
+           and is now hard to miss, while removing needs a deliberate press. */
+        '<button class="qa-step-mid" aria-label="Add to cart, ' + qty + ' in your cart" ' +
+          'onclick="event.preventDefault(); event.stopPropagation(); quickAdjust(\'' + p.id + '\',1,this)">' +
+          /* The count rides ON the cart, not beside it — the same badge the
+             empty state's icon would carry, in the same place, so the two
+             states read as one control in two conditions rather than as two
+             different controls. */
+          '<span class="qa-step-ic">' +
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+              '<circle cx="9" cy="20" r="1.6"/><circle cx="18" cy="20" r="1.6"/>' +
+              '<path d="M2.5 3h2.6l2.2 11.2a1.8 1.8 0 001.8 1.4h8.6a1.8 1.8 0 001.8-1.4L21 7H6"/></svg>' +
+            '<span class="qa-step-n' + (bump ? ' is-bump' : '') + '">' + (qty > 99 ? '99+' : qty) + '</span>' +
+          '</span>' +
+          /* The words stay while there is room for them and go when there is
+             not. A card 144px wide has 34px between the two controls, which is
+             an icon and nothing else; the label is the first thing that can be
+             spared, because the cart glyph and the count already say what this
+             is. It ships either way and CSS decides, so the accessible name
+             never changes with the viewport. */
+          '<span class="qa-step-txt">Add to Cart</span>' +
+        '</button>' +
+        '<button class="qa-step-btn" aria-label="Add one" ' +
+          'onclick="event.preventDefault(); event.stopPropagation(); quickAdjust(\'' + p.id + '\',1,this)">' +
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>' +
+        '</button>' +
       '</div></div>';
   }
-  return '<div class="p-quickadd" data-qa="' + p.id + '">' +
-    '<button class="qa-add" aria-label="Add to cart" onclick="event.preventDefault(); event.stopPropagation(); quickAdjust(\'' + p.id + '\',1,this)">+</button></div>';
+
+  return '<div class="p-cta" data-qa="' + p.id + '" data-qty="0">' +
+    '<button class="qa-cart" aria-label="Add to cart"' +
+      ' onclick="event.preventDefault(); event.stopPropagation(); quickAdjust(\'' + p.id + '\',1,this)">' +
+      '<span class="qa-cart-ic">' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+          '<circle cx="9" cy="20" r="1.6"/><circle cx="18" cy="20" r="1.6"/>' +
+          '<path d="M2.5 3h2.6l2.2 11.2a1.8 1.8 0 001.8 1.4h8.6a1.8 1.8 0 001.8-1.4L21 7H6"/></svg>' +
+      '</span>' +
+      '<span class="qa-cart-txt">Add to Cart</span>' +
+    '</button></div>';
 }
+
+
 
 /* Total quantity of a product in the cart, summed across variants — the card
    represents the product, so it must reflect every line for it. */
@@ -7360,17 +8120,34 @@ function flyToCart(origin){
     chip.textContent = '+1';
     document.body.appendChild(chip);
 
-    /* A straight CSS transition looked mechanical. This traces a quadratic
-       Bézier instead: the control point sits above and between the two ends,
-       so the chip lifts away from the button, arcs across, and settles into
-       the cart — the way a thrown object actually moves. Driven by
-       requestAnimationFrame so the curve, scale and fade can be shaped
-       independently over the flight. */
-    const DURATION = 1500; // slow enough for the eye to follow comfortably
+    /* THE PATH, AND WHY IT IS SHAPED THE WAY IT IS.
+
+       A straight CSS transition looked mechanical, so this drew a quadratic
+       Bézier — one arc, up and over. That is better and it is still the motion
+       of a thrown object, which is not what this is: nothing is being thrown,
+       something is being CARRIED to the cart, and the eye should be able to
+       follow it the whole way.
+
+       So the arc stays as the spine of the path and a decaying sine is added
+       across it. The chip drifts left and right of the arc as it travels, three
+       full swings, each smaller than the last — a zigzag that settles rather
+       than a wobble that stops. The displacement is applied PERPENDICULAR to
+       the direction of travel, not simply on x, or a flight that is mostly
+       vertical would swing along its own line and read as a stutter.
+
+       2600ms rather than 1500. At the old speed the count arrived before the
+       eye had found it, which is the one thing this effect exists to prevent. */
+    const DURATION = 2600;
     const ctrlX = (origin.x + endX) / 2;
     // Lift proportional to the distance, capped so it never flies off-screen.
     const lift = Math.min(190, Math.max(90, Math.abs(endX - origin.x) * 0.45));
     const ctrlY = Math.min(origin.y, endY) - lift;
+
+    /* The swing is a fraction of the journey, so a short hop wanders less than
+       a long one, and it is capped for the same reason the lift is. */
+    const span = Math.hypot(endX - origin.x, endY - origin.y);
+    const SWING = Math.min(46, Math.max(16, span * 0.11));
+    const SWINGS = 3;
 
     const started = performance.now();
     function frame(now){
@@ -7380,15 +8157,31 @@ function flyToCart(origin){
       const inv = 1 - t;
 
       // Quadratic Bézier: (1-t)^2*P0 + 2(1-t)t*P1 + t^2*P2
-      const x = inv*inv*origin.x + 2*inv*t*ctrlX + t*t*endX;
-      const y = inv*inv*origin.y + 2*inv*t*ctrlY + t*t*endY;
+      let x = inv*inv*origin.x + 2*inv*t*ctrlX + t*t*endX;
+      let y = inv*inv*origin.y + 2*inv*t*ctrlY + t*t*endY;
+
+      /* The curve's own tangent, from the derivative of the Bézier, so the
+         zigzag is measured across the path rather than across the screen. */
+      const dx = 2*inv*(ctrlX - origin.x) + 2*t*(endX - ctrlX);
+      const dy = 2*inv*(ctrlY - origin.y) + 2*t*(endY - ctrlY);
+      const len = Math.hypot(dx, dy) || 1;
+      // Normal = the tangent turned a quarter turn.
+      const nx = -dy / len, ny = dx / len;
+      // Decays to nothing by the end, so it arrives on the line rather than
+      // beside it.
+      const wave = Math.sin(t * Math.PI * 2 * SWINGS) * SWING * (1 - t);
+      x += nx * wave;
+      y += ny * wave;
 
       // Shrinks as it travels, and only fades near the very end so it stays
       // readable for most of the flight.
       const scale = 1 - 0.55 * t;
-      const opacity = raw < 0.75 ? 1 : 1 - ((raw - 0.75) / 0.25);
+      const opacity = raw < 0.82 ? 1 : 1 - ((raw - 0.82) / 0.18);
 
-      chip.style.transform = 'translate(' + (x - 18) + 'px,' + (y - 14) + 'px) scale(' + scale + ')';
+      /* The halo turns as the chip swings, so the trail reads as something
+         following it rather than a ring stuck to it. */
+      chip.style.transform = 'translate(' + (x - 18) + 'px,' + (y - 14) + 'px) scale(' + scale + ')'
+        + ' rotate(' + (wave * 0.55) + 'deg)';
       chip.style.opacity = String(opacity);
 
       if(raw < 1){ requestAnimationFrame(frame); }
@@ -7435,53 +8228,105 @@ function productHref(p){
 
    A grid where the loudest chip is always the best deal can be scanned by
    colour alone, which is what the rotation prevented. */
+
+
+/* THE SAVING, BESIDE THE PRICE IT MODIFIES.
+
+   This was a chip on the photograph, bottom-left, competing with the badge, the
+   wishlist control and the quick view for the same picture. It belongs next to
+   the two numbers it is the difference between, so it is the third item in the
+   price row.
+
+   The four tiers stay. They are a real signal — 60% off should not look like 5%
+   off — and the badge maths suite pins which percentage lands in which tier.
+   What went is the ANIMATION each tier used to carry: a pulsing chip is fine on
+   a photograph and is noise six pixels from a price somebody is reading. */
 function discountTagHTML(p){
   if(!(p.mrp > p.price)) return '';
   const pct = Math.round((1 - p.price / p.mrp) * 100);
   if(pct < 1) return '';
   const tier = pct >= 75 ? 'dt-max' : pct >= 50 ? 'dt-high' : pct >= 25 ? 'dt-mid' : 'dt-low';
-  return '<div class="p-discount ' + tier + '">' +
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true">' +
+  return '<span class="p-discount ' + tier + '">' +
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true">' +
       '<path d="M12 5v14M6 13l6 6 6-6"/></svg>' +
-    '<span>' + pct + '%</span></div>';
+    '<b>' + pct + '%</b> off</span>';
 }
 
-/* WHICH TAG GETS WHICH TREATMENT.
+/* WHICH BADGE GETS WHICH LOOK.
+
+   THE PROBLEM THIS SOLVES. A badge used to take its colour from what it said,
+   so a grid of eight new arrivals was eight identical chips and the badge
+   stopped being a thing the eye could pick out — which is the only job it has.
+   Seven colours and four movements now, assigned per product.
 
    "Assign randomly" and "neighbours must not look the same" pull against each
-   other, and random loses: with three treatments, two cards side by side land on
-   the same one time in three, and a fresh draw on every re-render would change a
-   price tag's animation while somebody is looking at it.
+   other, and random loses: with seven colours two cards side by side match one
+   time in seven, and a fresh draw on every re-render would change a badge while
+   somebody is looking at it.
 
    So the starting point is a hash of the product id — stable for that product,
-   and irregular enough that the grid never reads as a mechanical 1-2-3 repeat —
-   and then it steps forward until it clashes with neither of the two cards
-   before it. Two back covers the card to the left in every grid this site uses,
-   and the card directly above on the two-across phone layout. With three
-   treatments and at most two to avoid, a free one always exists, so this cannot
-   loop or fall through to a duplicate. */
-const PRICE_ANIMS = 3;
-let _priceAnim = Object.create(null);
+   and irregular enough that the grid never reads as a mechanical repeat — and
+   then it steps forward until it clashes with neither of the two cards before
+   it. Two back covers the card to the left in every grid this site uses, and
+   the card directly above on the two-across phone layout.
 
-function assignPriceAnims(list){
-  _priceAnim = Object.create(null);
-  const taken = [];
-  list.forEach(function(p, i){
-    const s = String(p.id || p.name || i);
+   COLOUR AND MOVEMENT ARE ASSIGNED SEPARATELY, each with its own history, so
+   two neighbours can share neither. With seven and four options against at most
+   two to avoid, a free one always exists on both axes, so this cannot loop or
+   fall through to a duplicate.
+
+   This replaces assignPriceAnims(), which did the same job for the price chip
+   that no longer exists. The mechanism is unchanged; only what it decorates. */
+const BADGE_COLORS = 7;
+const BADGE_ANIMS = 4;
+let _badgeStyle = Object.create(null);
+
+function assignBadgeStyles(list){
+  _badgeStyle = Object.create(null);
+  const takenC = [];
+  const takenA = [];
+  (list || []).forEach(function(p, i){
+    const s = String((p && p.id) || (p && p.name) || i);
     let h = 0;
     for(let k = 0; k < s.length; k++) h = (h * 31 + s.charCodeAt(k)) >>> 0;
-    let v = h % PRICE_ANIMS;
-    for(let step = 0; step < PRICE_ANIMS && (v === taken[i - 1] || v === taken[i - 2]); step++){
-      v = (v + 1) % PRICE_ANIMS;
+    /* The two axes are seeded from DIFFERENT parts of the hash. Seeding both
+       from `h` makes colour and movement move together, so the grid shows seven
+       fixed pairings instead of twenty-eight combinations. */
+    /* FOUR BACK FOR THE COLOUR, NOT TWO.
+
+       Two covers the card to the LEFT and, on the two-across phone layout, the
+       card directly above. It does not cover the card above on a four-across
+       desktop grid, which is four back — and that is the pairing the eye
+       notices most, because the two sit in the same column. With seven grounds
+       and at most four to avoid, three are always free, so this still cannot
+       loop or fall through to a duplicate.
+
+       The movement below keeps two: there are only four of them, and avoiding
+       four of four leaves nothing. Two neighbours can therefore share a
+       movement while never sharing a ground, which is the right way round —
+       colour is what the eye groups by. */
+    let c = h % BADGE_COLORS;
+    const clash = (v) => v === takenC[i - 1] || v === takenC[i - 2]
+                      || v === takenC[i - 3] || v === takenC[i - 4];
+    for(let step = 0; step < BADGE_COLORS && clash(c); step++){
+      c = (c + 1) % BADGE_COLORS;
     }
-    taken[i] = v;
-    _priceAnim[String(p.id)] = v + 1;
+    let a = (h >>> 8) % BADGE_ANIMS;
+    for(let step = 0; step < BADGE_ANIMS && (a === takenA[i - 1] || a === takenA[i - 2]); step++){
+      a = (a + 1) % BADGE_ANIMS;
+    }
+    takenC[i] = c;
+    takenA[i] = a;
+    _badgeStyle[String(p && p.id)] = { c: c + 1, a: a + 1 };
   });
 }
 
-/* Falls back to the first treatment rather than to none, so a card rendered
-   outside the grid still gets a finished-looking tag. */
-function priceAnimClass(p){ return ' pa-' + (_priceAnim[String(p.id)] || 1); }
+/* Falls back to the first of each rather than to none, so a card rendered
+   outside a grid still gets a finished-looking badge. */
+function badgeStyleClass(p){
+  const v = _badgeStyle[String(p && p.id)] || { c: 1, a: 1 };
+  return ' bg-c' + v.c + ' bg-a' + v.a;
+}
 
 function productCardHTML(p, idx){
   const wished = wishlist.indexOf(p.id) > -1;
@@ -7489,52 +8334,182 @@ function productCardHTML(p, idx){
   // computed truth as the Featured tabs, or the two disagree on the same page.
   const autoBadge = effectiveBadge(p);
   const bi = autoBadge ? badgeInfo(autoBadge, p) : null;
-  /* bi.icon is SVG this file authored — never a product field — so it is the one
-     thing here that is inserted unescaped. bi.text still goes through escapeHtml
+  /* THE BADGE'S LOOK IS NOT ITS MEANING ANY MORE.
+
+     It used to take its colour from what it said — gold for a bestseller, blue
+     for new — which gave a grid of eight "New" products eight identical chips.
+     The colour and the movement are now drawn from seven and four options and
+     assigned per product, with the same neighbour rule the card has always
+     used: see assignBadgeStyles(). The TEXT still says what is true.
+
+     bi.icon is SVG this file authored — never a product field — so it is the
+     one thing here inserted unescaped. bi.text still goes through escapeHtml
      because a custom badge is typed by a person. */
-  const badgeHTML = bi ? ('<span class="badge ' + bi.cssClass + '">'
+  /* THE SEMANTIC NAME IS AN ATTRIBUTE, NOT A CLASS, and that follows from the
+     colour change above. `badge-best`, `badge-new`, `badge-sale` and
+     the fallback one existed to paint a ground; the ground is dealt now, so
+     those four styled nothing — four class names in the markup that no
+     stylesheet mentioned, which [fe-8] correctly reports as the silent-failure
+     shape it watches for. A name that identifies without styling is what a data
+     attribute is for, and the two rules that DO still key off the kind of badge
+     select on it. */
+  const badgeHTML = bi ? ('<span class="badge' + badgeStyleClass(p) + '" data-badge="' + escapeHtml(bi.key) + '">'
     + (bi.icon || '') + '<span class="b-txt">' + escapeHtml(bi.text) + '</span></span>') : '';
-  const wasHTML = p.mrp > p.price ? ('<span class="was">' + formatINR(p.mrp) + '</span>') : '';
-  const offPct = p.mrp > p.price ? Math.round((1 - p.price / p.mrp) * 100) : 0;
+
   return '' +
   '<div class="p-card" data-id="' + p.id + '">' +
-    (!p.stock ? '<div class="p-stock-out"><span>Out of Stock</span></div>' : '') +
     '<a class="p-media" href="' + productHref(p) + '" style="' + mediaStyle(p.cat, idx) + '" onclick="openProduct(\'' + p.id + '\'); return false;" aria-label="' + escapeHtml(p.name) + '">' +
       productThumbInnerHTML(p) +
+      /* THE SCRIM IS A CHILD OF THE PICTURE, not of the card.
+
+         It was a sibling sized with `aspect-ratio:1/1` against the CARD, which
+         is the same box as the picture in a grid and nothing like it in the
+         list view: on a 1440px row it painted a 916px-tall wash over the title,
+         the price and the Notify Me button. Inside the picture it is `inset:0`
+         and needs no arithmetic, no breakpoint and no second rule to keep in
+         step with the two the list view already has. */
+      (!p.stock ? '<div class="p-stock-out"><span>Out of Stock</span></div>' : '') +
       '<div class="p-badges">' + badgeHTML + '</div>' +
-      discountTagHTML(p) +
-      '<div class="p-quick">' +
-        '<button class="' + (wished?'active':'') + '" onclick="event.preventDefault(); event.stopPropagation(); toggleWishlist(\'' + p.id + '\')" aria-label="Add to wishlist" title="Wishlist"><svg viewBox="0 0 24 24" fill="' + (wished?'currentColor':'none') + '" stroke="currentColor" stroke-width="1.8"><path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.6l-1-1a5.5 5.5 0 10-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 000-7.8z"/></svg></button>' +
-        '<button onclick="event.preventDefault(); event.stopPropagation(); openQuickView(\'' + p.id + '\')" aria-label="Quick view" title="Quick view"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg></button>' +
-      '</div>' +
-      quickAddHTML(p) +
+      /* BOTH OF THESE ARE ALWAYS VISIBLE, and that is the change.
+
+         They lived in a wrapper held at opacity:0 until the card was hovered,
+         which means they did not exist at all on a touch screen — there is no
+         hover there, so the wishlist and the quick view were desktop-only
+         features on a site where most traffic is a phone. Always-on costs two
+         small controls on the photograph and gains the feature on every device.
+
+         Being visible also brings them inside the touch-target rule they were
+         previously exempt from: the responsive audit skips anything an
+         ancestor holds at zero opacity, so 38px passed while they were hidden
+         and would not now. They are 44px at 767px and below. */
+      '<button class="p-wish' + (wished ? ' active' : '') + '" onclick="event.preventDefault(); event.stopPropagation(); toggleWishlist(\'' + p.id + '\')" aria-label="Add to wishlist" title="Wishlist">' +
+        '<svg viewBox="0 0 24 24" fill="' + (wished ? 'currentColor' : 'none') + '" stroke="currentColor" stroke-width="2"><path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.6l-1-1a5.5 5.5 0 10-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 000-7.8z"/></svg></button>' +
+      '<button class="p-qview" onclick="event.preventDefault(); event.stopPropagation(); openQuickView(\'' + p.id + '\')" aria-label="Quick view" title="Quick view">' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg></button>' +
     '</a>' +
     '<div class="p-body">' +
-      /* Category left, rating right, on ONE row.
+      /* TITLE, RATING, PRICE, ACTION — in that order and nothing else.
 
-         They were two stacked rows, and between them plus the material line the
-         body ran to 194px against a 213px photo — a card 409px tall, so two
-         rows of products did not fit on a laptop screen and the second row was
-         never seen without scrolling. Every large shop puts these facing each
-         other across one line for exactly this reason. */
-      '<div class="p-meta">' +
-        '<span class="p-cat">' + escapeHtml(catPath(p)) + '</span>' +
-        '<span class="p-rating">' + ratingBlockHTML(p.rating, p.reviews) + '</span>' +
-      '</div>' +
+         The category and sub-category line came out. It repeated what the
+         customer had just filtered or navigated by, and on a 144px card it was
+         a line of grey capitals between the photograph and the name. */
       '<a class="p-name" href="' + productHref(p) + '" onclick="openProduct(\'' + p.id + '\'); return false;">' + escapeHtml(p.name) + '</a>' +
-      // Material instead of shortDesc here: shortDesc falls back to the
-      // product NAME when a product has no description set, which is what
-      // made the name appear twice on every card.
+      // Kept for the list view, which has the room for it and is the one place
+      // a material genuinely helps somebody comparing two malas. Hidden in the
+      // grid by CSS, so it costs the grid nothing.
       (p.material ? '<div class="p-material">' + escapeHtml(p.material) + '</div>' : '') +
-      /* The saving sits with the price, which is the number it modifies, and
-         is right-aligned so a row of cards reads as one column of percentages.
-         It used to be a pill on the photo — the fourth thing competing for the
-         same image, alongside the badge, the wishlist controls and the add
-         button, one in each corner. */
-      '<div class="p-price' + (p.mrp > p.price ? ' has-off' + priceAnimClass(p) : '') + '">' +
-        '<span class="now">' + formatINR(p.price) + '</span>' + wasHTML +
-      '</div>' +
+      /* The rating row is OMITTED, not emptied, when nothing has been written.
+         An empty row still takes the body's gap, so a card with no reviews
+         would carry a hole where other cards carry a number. */
+      (hasRating(p) ? '<div class="p-rating">' + ratingBlockHTML(p.rating, p.reviews) + '</div>' : '') +
+      priceRowHTML(p) +
+      quickAddHTML(p) +
     '</div>' +
+  '</div>';
+}
+
+/* Has anybody actually reviewed this? One predicate, because the card asks it
+   to decide whether to render the row and ratingBlockHTML asks it to decide
+   what to render, and the two answering differently is how an empty row
+   appears. */
+function hasRating(p){
+  return !!(Number(p && p.reviews) > 0 && Number(p && p.rating) > 0);
+}
+
+/* THE PRICE, THE PRICE IT REPLACED, AND WHAT THAT SAVES — one row, in that
+   order, because that is the order the questions are asked in: what does this
+   cost, what did it cost, how much am I saving.
+
+   It spans the body's full width. The saving is pushed to the far right by
+   `margin-left:auto` rather than by a spacer, so with no discount the price
+   simply sits alone and nothing is left holding empty space open. */
+function priceRowHTML(p){
+  const off = p.mrp > p.price;
+  return '<div class="p-pricerow">' +
+    '<span class="pr-now">' + formatINR(p.price) + '</span>' +
+    (off
+      ? '<span class="pr-mrp"><span class="pr-lbl">MRP</span> ' +
+        /* The strikethrough is a visual convention and says nothing to a screen
+           reader, so <s> carries the meaning and the hidden word says it. */
+        '<s><span class="sr-only">was </span>' + formatINR(p.mrp) + '</s></span>'
+      : '') +
+    discountTagHTML(p) +
+  '</div>';
+}
+
+/* WHAT AN EMPTY GRID SAYS DEPENDS ENTIRELY ON WHICH GRID IT IS.
+
+   THE DEFECT THIS REPLACES: every grid on the site is painted by
+   renderGridInto, and it carried ONE empty state — "No products found. Try
+   adjusting your filters, or ask Chakra AI for a recommendation." with a Clear
+   Filters button. That sentence is only true on the shop page. Everywhere else
+   it described a problem the visitor did not have and offered a control that
+   did nothing: clearShopFilters() resets the SHOP's filters and re-renders the
+   SHOP's grid, so pressed from the wishlist it changed nothing at all on the
+   screen the person was looking at.
+
+   Where it was reached:
+     - an empty wishlist, which is EVERY first-time visitor who opens it;
+     - the home page's Bestsellers tab, until enough orders exist to compute a
+       percentile — so a brand new shop;
+     - the home page's New Arrivals tab, whenever nothing has been added for 30
+       days, which for a small catalogue is most of the year;
+     - Deal Of The Day, whenever nothing is discounted.
+
+   The product page's related rail had already been fixed for exactly this and
+   the other four were missed, which is why the rule now lives in one place
+   keyed by the grid rather than being restated per caller.
+
+   A grid added later with no entry here gets the neutral default rather than
+   the shop's filter message, so the wrong sentence cannot come back by
+   omission. */
+function emptyGridHTML(containerId){
+  const ICON = {
+    search: '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>',
+    heart:  '<path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.6l-1-1a5.5 5.5 0 10-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 000-7.8z"/>',
+    tag:    '<path d="M20.6 13.4L12 22l-9-9V3h10z"/><circle cx="7.5" cy="7.5" r="1.4"/>',
+    star:   '<path d="M12 3l2.6 5.7 6.2.7-4.6 4.2 1.3 6.1L12 16.6 6.5 19.7l1.3-6.1L3.2 9.4l6.2-.7z"/>'
+  };
+  const browse = '<button class="btn btn-primary" onclick="openShopWithCategory(\'all\')">Browse The Collection</button>';
+
+  /* Keyed on the container, because the container IS the context. The featured
+     grid additionally depends on which tab is showing — "no bestsellers yet"
+     and "nothing new this month" are different facts and a customer told the
+     wrong one learns nothing. */
+  let state;
+  if(containerId === 'wishlistGrid'){
+    state = { icon:'heart', h:'Your wishlist is empty',
+      p:'Tap the heart on any product to keep it here while you decide.', cta:browse };
+  } else if(containerId === 'dealGrid'){
+    state = { icon:'tag', h:'No offer running right now',
+      p:'Every price on the site is our everyday price. New offers appear here first.', cta:browse };
+  } else if(containerId === 'featuredGrid'){
+    if(featuredTab === 'bestseller'){
+      state = { icon:'star', h:'Bestsellers are still being counted',
+        p:'This shelf fills itself from what people actually buy. It appears as orders come in.', cta:browse };
+    } else if(featuredTab === 'new'){
+      state = { icon:'star', h:'Nothing new in the last 30 days',
+        p:'Newly added pieces appear here for their first month. The full collection is always open.', cta:browse };
+    } else if(featuredTab === 'sale'){
+      state = { icon:'tag', h:'Nothing is discounted today',
+        p:'Every price on the site is our everyday price. Offers appear here first.', cta:browse };
+    } else {
+      state = { icon:'star', h:'The shelf is being restocked',
+        p:'Our featured pieces are on their way back. The full collection is still open.', cta:browse };
+    }
+  } else {
+    /* The shop grid, and the honest default for any grid added later: this is
+       the only place on the site where a filter is what emptied the list. */
+    state = { icon:'search', h:'No products found',
+      p:'Try adjusting your filters, or ask Chakra AI for a recommendation.',
+      cta:'<button class="btn btn-primary" onclick="clearShopFilters()">Clear Filters</button>' };
+  }
+
+  return '<div class="empty-state" style="grid-column:1/-1;">' +
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4">' + ICON[state.icon] + '</svg>' +
+    '<h2 class="h3">' + state.h + '</h2>' +
+    '<p>' + state.p + '</p>' +
+    state.cta +
   '</div>';
 }
 
@@ -7571,16 +8546,11 @@ function renderGridInto(containerId, list){
   }
 
   if(list.length === 0){
-    el.innerHTML = '<div class="empty-state" style="grid-column:1/-1;">' +
-      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>' +
-      '<h2 class="h3">No products found</h2>' +
-      '<p>Try adjusting your filters, or ask Chakra AI for a recommendation.</p>' +
-      '<button class="btn btn-primary" onclick="clearShopFilters()">Clear Filters</button>' +
-    '</div>';
+    el.innerHTML = emptyGridHTML(containerId);
     return;
   }
   // Decided across the whole list, because the rule is about neighbours.
-  assignPriceAnims(list);
+  assignBadgeStyles(list);
   el.innerHTML = list.map(function(p,i){ return productCardHTML(p,i); }).join('');
 }
 
@@ -7775,31 +8745,94 @@ function byBestsellerThenReviews(a, b){
   return (Number(b.reviews) || 0) - (Number(a.reviews) || 0);
 }
 
-function renderFeaturedGrid(){
+/* The products behind ONE tab. Split out of renderFeaturedGrid so the same rule
+   that fills a tab also decides whether that tab is worth offering — asking
+   "does this tab have anything?" by re-deriving the filter beside it is how the
+   two answers drift apart. */
+function featuredListFor(tab){
   /* Filtered on the COMPUTED badge, so a tab shows what is true rather than
      what somebody typed. Bestsellers are ordered by units sold — a "top
      sellers" tab in an arbitrary order is not a top-sellers tab — and new
      arrivals by how new they are. */
-  let list;
-  if(featuredTab === 'bestseller'){
-    list = PRODUCTS.filter(isBestseller)
+  if(tab === 'bestseller'){
+    return PRODUCTS.filter(isBestseller)
       .sort(function(a, b){ return (b.unitsSold || 0) - (a.unitsSold || 0); });
-  } else if(featuredTab === 'new'){
-    list = PRODUCTS.filter(isNewArrival)
-      .sort(function(a, b){ return Date.parse(b.createdAt || 0) - Date.parse(a.createdAt || 0); });
-  } else if(featuredTab === 'sale'){
-    list = PRODUCTS.filter(function(p){ return p.mrp > p.price; });
-  } else {
-    list = PRODUCTS.filter(function(p, i){ return i % 3 === 0 || effectiveBadge(p); });
   }
+  if(tab === 'new'){
+    return PRODUCTS.filter(isNewArrival)
+      .sort(function(a, b){ return Date.parse(b.createdAt || 0) - Date.parse(a.createdAt || 0); });
+  }
+  if(tab === 'sale'){
+    return PRODUCTS.filter(function(p){ return p.mrp > p.price; });
+  }
+  return PRODUCTS.filter(function(p, i){ return i % 3 === 0 || effectiveBadge(p); });
+}
+
+/* A TAB THAT LEADS NOWHERE IS NOT OFFERED.
+
+   Two of these four tabs empty themselves with no code change and no admin
+   action. Bestsellers is a percentile over real sales, so it is empty until
+   enough orders exist — every new shop. New Arrivals is a 30-day window, so it
+   is empty whenever nothing has been added for a month, which for a small
+   catalogue is most of the year. On Sale empties the day the last discount
+   ends. Each of those used to put an empty shelf in the middle of the home
+   page, under a tab the customer had just been invited to press.
+
+   So the tab row is derived from the catalogue, not authored: a tab appears
+   only when something is behind it, and if the tab someone is ON empties — a
+   background catalogue refresh can do that under them — the view falls back to
+   one that has content rather than going blank.
+
+   Deliberately not applied during cold start: while catalogSource is null every
+   list is empty because nothing has loaded, and hiding three tabs for a second
+   on every visit is a worse lie than the one this fixes. */
+function syncFeaturedTabs(){
+  const buttons = qsa('#featuredTabs .tab-btn');
+  if(!buttons.length || !catalogSource) return;
+
+  const counts = {};
+  buttons.forEach(function(b){ counts[b.dataset.tab] = featuredListFor(b.dataset.tab).length; });
+  const anyFilled = buttons.some(function(b){ return counts[b.dataset.tab] > 0; });
+
+  buttons.forEach(function(b){
+    // With NOTHING in the catalogue there is no meaningful choice to offer, so
+    // every tab stays put and the grid's own empty state carries the message.
+    b.style.display = (anyFilled && !counts[b.dataset.tab]) ? 'none' : '';
+  });
+
+  if(anyFilled && !counts[featuredTab]){
+    const fallback = buttons.filter(function(b){ return counts[b.dataset.tab] > 0; })[0];
+    if(fallback){
+      featuredTab = fallback.dataset.tab;
+      buttons.forEach(function(b){ b.classList.toggle('active', b === fallback); });
+    }
+  }
+}
+
+function renderFeaturedGrid(){
+  syncFeaturedTabs();
   // 10, not 8: the grid is five across on a desktop, and 8 leaves a ragged
   // row of three under a full row of five.
-  renderGridInto('featuredGrid', list.slice(0, 10));
+  renderGridInto('featuredGrid', featuredListFor(featuredTab).slice(0, 10));
 }
 
 /* ---------- Deal of the day ---------- */
+/* THE PANEL IS A CLAIM, SO IT ONLY APPEARS WHEN THE CLAIM IS TRUE.
+
+   This section says "Today Only — Extra Savings" and runs a countdown clock
+   beside it. With nothing discounted it said that, ran the clock, and showed an
+   empty grid underneath — an offer that does not exist, being counted down.
+   Hiding the whole section is the honest state, and it is the same rule the
+   puja showcase already follows for a shop with no services configured.
+
+   Cold start is deliberately NOT the hidden case: while catalogSource is null
+   nothing is known yet, so the section stays and renderGridInto paints its
+   skeletons. Hiding it there would make the panel appear a second later on
+   every visit, which reads as a page still loading rather than a shop. */
 function renderDealGrid(){
+  const section = qs('#dealSection');
   const deals = PRODUCTS.filter(function(p){ return p.mrp > p.price; }).slice(0,4);
+  if(section) section.style.display = (catalogSource && !deals.length) ? 'none' : '';
   renderGridInto('dealGrid', deals);
 }
 /* ---------- Cart logic ---------- */
@@ -8526,7 +9559,17 @@ function syncAllQuickAddControls(){
   qsa('[data-qa]').forEach(function(holder){
     const id = holder.getAttribute('data-qa');
     const p = getProduct(id);
-    if(p) holder.outerHTML = quickAddHTML(p);
+    if(!p) return;
+    /* THE BADGE ANIMATES ONLY ON THE CARD THAT CHANGED.
+
+       This runs after EVERY cart change, for every card on screen, and it
+       replaces each one's markup outright — so an animation that plays on mount
+       plays on all of them whenever any one of them is touched. Reading the
+       previous count off the DOM and passing whether it went up is what keeps
+       the pop on the card the customer actually pressed. */
+    const before = Number(holder.getAttribute('data-qty') || 0);
+    const after = cartQtyForProduct(id);
+    holder.outerHTML = quickAddHTML(p, after > before);
   });
 }
 function updateWishUI(){
@@ -8579,8 +9622,16 @@ function toggleWishlist(id){
   else { wishlist.push(id); toast(p.name + ' added to wishlist'); }
   saveWishlist();
   updateWishUI();
-  qsa('.p-card[data-id="' + id + '"] .p-quick button[aria-label="Add to wishlist"]').forEach(function(btn){
-    btn.classList.toggle('active', wishlist.indexOf(id) > -1);
+  /* The heart is its own element now rather than the first child of a
+     hover-revealed column, so it is addressed by class. The SVG's fill has to
+     move with the class or the heart stays hollow while its button reads as
+     active — the fill is an attribute the renderer set, not something the
+     class can reach. */
+  qsa('.p-card[data-id="' + id + '"] .p-wish').forEach(function(btn){
+    const on = wishlist.indexOf(id) > -1;
+    btn.classList.toggle('active', on);
+    const svg = btn.querySelector('svg');
+    if(svg) svg.setAttribute('fill', on ? 'currentColor' : 'none');
   });
   if(qs('#page-wishlist') && qs('#page-wishlist').classList.contains('active')) renderWishlistGrid();
 }
@@ -13486,28 +14537,150 @@ document.addEventListener('DOMContentLoaded', init);
 /* ============================================================
    BLOG
    ============================================================ */
+/* ---------------------------------------------------------------------------
+   THE JOURNAL COVER, DERIVED FROM THE POST INSTEAD OF ITS POSITION IN AN ARRAY
+
+   TWO DEFECTS THIS REPLACES, both visible on the page today.
+
+   1. THE SAME PICTURE ON EVERY POST. Every card and every article hero drew
+      one hardcoded book glyph, so six posts about malas, kundli readings, the
+      Sri Yantra, a griha pravesh and idol care were six identical drawings.
+      A cover carrying no information is a cover doing no work — and the
+      Journal is the page that has to make a stranger want to read something.
+
+   2. THE SAME POST WEARING THREE DIFFERENT COLOURS. The gradient was picked by
+      ARRAY INDEX, and the three places a post appears index it differently:
+      the grid sorts by date and passes the sorted position, the article page
+      passes the post's UNSORTED position, and the related rail passes 0, 1, 2.
+      So a post was one colour on the Journal, another on its own page, and a
+      third in the rail beside it — three identities for one article, which
+      quietly undoes the only visual cue tying a card to the page it opens.
+
+   Both come from the same mistake: the cover was a property of WHERE the post
+   was rendered rather than of the post. Now it is derived from the post itself
+   — the icon from its category, the palette from a hash of its id — so it is
+   stable everywhere, and a post written next year gets its own cover with no
+   artwork to commission and no code to change. */
+
+/* Cover icons by subject. Matched on the words a post uses, for the same reason
+   the shop's category icons are: `category` is free text an author types, so
+   "Puja Guides", "Pujas" and "Puja & Ritual" have to land in the same place. */
+const BLOG_ICONS = {
+  mala:    '<circle cx="12" cy="11.5" r="6.6" stroke-dasharray="1.5 2"/><circle cx="12" cy="18.1" r="1.7" fill="currentColor" stroke="none"/>',
+  yantra:  '<circle cx="12" cy="12" r="9"/><polygon points="12,5 18,16 6,16"/><polygon points="12,19 6,8 18,8"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/>',
+  puja:    '<path d="M4 16h16c0 3.3-3.6 5.5-8 5.5S4 19.3 4 16z"/><path d="M12 15.4c0-2.2 2-3 2-5.2 0-1.5-.9-2.6-2-3.4-1.1.8-2 1.9-2 3.4 0 2.2 2 3 2 5.2z"/>',
+  astro:   '<circle cx="12" cy="12" r="9"/><path d="M12 3v18M3 12h18"/><path d="M5.6 5.6l12.8 12.8M18.4 5.6L5.6 18.4"/>',
+  /* Care is polish, not rating. A four-pointed shine with a smaller one beside
+     it reads as "clean and looked after" at 34% of a card; the five-pointed
+     star that was here first read as a review score. */
+  care:    '<path d="M10 3.5l1.7 4.3 4.3 1.7-4.3 1.7L10 15.5 8.3 11.2 4 9.5l4.3-1.7z"/><path d="M17.5 14l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z"/>',
+  crystal: '<path d="M12 2.5l5.5 6-5.5 13-5.5-13z"/><path d="M6.5 8.5h11"/><path d="M12 2.5v19"/>',
+  idol:    '<circle cx="12" cy="6.5" r="2.8"/><path d="M6.5 20c0-4.4 2.5-7.7 5.5-7.7s5.5 3.3 5.5 7.7z"/><path d="M3.5 19.5c1-.8 2.1-1.2 2.9-1.2M20.5 19.5c-1-.8-2.1-1.2-2.9-1.2"/>',
+  product: '<path d="M20.6 13.4L12 22l-9-9V3h10z"/><circle cx="7.5" cy="7.5" r="1.4"/>',
+  book:    '<path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/><path d="M9 7h7M9 11h7"/>'
+};
+
+/* SUBJECT words name what a piece is ABOUT. GENERIC words name what kind of
+   piece it is. They are separated because a generic word must never beat a
+   subject one: "Puja Guides" is a guide TO A PUJA, and the first version of
+   this — latest-word-wins over one flat list — put a price tag on it, because
+   "guides" comes after "puja". Same for "Product Guides" on an article about
+   choosing a rudraksha mala. */
+const BLOG_SUBJECT_WORDS = [
+  ['mala',    ['mala', 'rudraksha', 'bead', 'japa']],
+  ['yantra',  ['yantra', 'geometry', 'sri yantra']],
+  ['puja',    ['puja', 'pooja', 'ritual', 'ceremony', 'festival', 'pravesh', 'havan', 'aarti']],
+  ['astro',   ['astrolog', 'kundli', 'horoscope', 'jyotish', 'gemstone', 'birth chart']],
+  ['crystal', ['sphatik', 'crystal', 'shivling', 'lingam', 'quartz']],
+  ['idol',    ['idol', 'murti', 'statue', 'deity']],
+  ['care',    ['care', 'caring', 'clean', 'polish', 'maintain']]
+];
+const BLOG_GENERIC_WORDS = [
+  ['product', ['product', 'guide', 'buying', 'shopping', 'choose']]
+];
+/* The book is the last fallback rather than a match, so a category nobody
+   anticipated still gets something that means "an article". */
+const BLOG_ICON = BLOG_ICONS.book;
+
+function blogMatchIcon(text, table){
+  const k = String(text || '').toLowerCase();
+  if(!k) return null;
+  let best = null, bestAt = -1, bestLen = 0;
+  for(let i = 0; i < table.length; i++){
+    const words = table[i][1];
+    for(let j = 0; j < words.length; j++){
+      const at = k.indexOf(words[j]);
+      if(at < 0) continue;
+      // Latest, then longest, within one level of specificity.
+      if(at > bestAt || (at === bestAt && words[j].length > bestLen)){
+        best = BLOG_ICONS[table[i][0]];
+        bestAt = at; bestLen = words[j].length;
+      }
+    }
+  }
+  return best;
+}
+
+/* Category first, then title, then the kind of piece it is.
+
+   The category is the author's own classification, so it outranks the title:
+   an article filed under Product Care is about care even though its title
+   mentions idols. The title is consulted next because it is where the subject
+   usually lives when the category is generic — "Product Guides" says nothing,
+   while "How To Choose Your First Rudraksha Mala" says mala. */
+function blogIcon(post){
+  const category = (post && post.category) || '';
+  const title = (post && post.title) || '';
+  return blogMatchIcon(category, BLOG_SUBJECT_WORDS)
+      || blogMatchIcon(title, BLOG_SUBJECT_WORDS)
+      || blogMatchIcon(category, BLOG_GENERIC_WORDS)
+      || BLOG_ICON;
+}
+
+/* A small, stable integer from a string. Any post id, however it is written,
+   picks the same hue every time and on every device — which is the whole point:
+   the colour has to be a property of the post, not of the render. */
+function blogHash(s){
+  let h = 0;
+  const str = String(s || '');
+  for(let i = 0; i < str.length; i++){ h = ((h << 5) - h + str.charCodeAt(i)) | 0; }
+  return Math.abs(h);
+}
+
 const BLOG_HUES = [8, 28, 45, 198, 340, 18];
-function blogCoverStyle(idx){
-  const h = BLOG_HUES[idx % BLOG_HUES.length];
+function blogCoverStyle(post){
+  /* A number is still accepted so nothing that has not been updated breaks;
+     an object is hashed on its id. */
+  const key = (post && typeof post === 'object') ? (post.id || post.title || '') : post;
+  const h = BLOG_HUES[(typeof key === 'number' ? key : blogHash(key)) % BLOG_HUES.length];
   return 'background:linear-gradient(135deg, hsl(' + h + ',48%,93%), hsl(' + (h+16) + ',52%,83%)); color: hsl(' + (h-8) + ',50%,30%);';
 }
-const BLOG_ICON = '<path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/><path d="M9 7h7M9 11h7"/>';
-function blogIconSVG(big){
-  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="' + (big?'1.2':'1.5') + '">' + BLOG_ICON + '</svg>';
+function blogIconSVG(big, post){
+  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="' + (big?'1.2':'1.5') + '">' + blogIcon(post) + '</svg>';
 }
 function formatBlogDate(iso){
   try{ return new Date(iso + 'T00:00:00').toLocaleDateString('en-IN', { day:'numeric', month:'long', year:'numeric' }); }
   catch(e){ return iso; }
 }
+/* A REAL ANCHOR, NOT A DIV WITH AN ONCLICK.
+
+   The card was a <div onclick>, which means: a crawler could not follow it, so
+   no article on this site was discoverable; middle-click and ctrl-click did
+   nothing, so an article could not be opened in a new tab; and the keyboard
+   could not reach it at all. The product card was made a real <a> for exactly
+   these reasons and the Journal card was missed — the same rule, one page over.
+
+   `idx` is still accepted so nothing calling this with a position breaks, and
+   deliberately unused: the cover now comes from the post. */
 function blogCardHTML(post, idx){
-  return '<div class="blog-card" onclick="openBlogPost(\'' + post.id + '\')">' +
-    '<div class="blog-cover" style="' + blogCoverStyle(idx) + '">' + blogIconSVG() + '<span class="blog-cat-tag">' + escapeHtml(post.category) + '</span></div>' +
+  return '<a class="blog-card" href="' + escapeHtml(blogHref(post)) + '" onclick="openBlogPost(\'' + post.id + '\'); return false;">' +
+    '<div class="blog-cover" style="' + blogCoverStyle(post) + '">' + blogIconSVG(false, post) + '<span class="blog-cat-tag">' + escapeHtml(post.category) + '</span></div>' +
     '<div class="blog-body">' +
       '<h2 class="h3">' + escapeHtml(post.title) + '</h2>' +
       '<p>' + escapeHtml(post.excerpt) + '</p>' +
       '<div class="blog-meta"><span>' + escapeHtml(post.author) + '</span><span class="dot"></span><span>' + formatBlogDate(post.date) + '</span><span class="dot"></span><span>' + escapeHtml(post.readTime) + '</span></div>' +
     '</div>' +
-  '</div>';
+  '</a>';
 }
 function renderBlogGrid(){
   const el = qs('#blogGrid');
@@ -13523,13 +14696,12 @@ function renderBlogGrid(){
 function renderBlogPostDetail(id){
   const post = BLOG_POSTS.find(function(p){ return p.id === id; });
   if(!post) return;
-  const idx = BLOG_POSTS.indexOf(post);
   qs('#blogPostHead').innerHTML =
     '<span class="blog-cat-tag">' + escapeHtml(post.category) + '</span>' +
     '<h1>' + escapeHtml(post.title) + '</h1>' +
     '<div class="blog-post-meta-row"><span>' + escapeHtml(post.author) + '</span><span class="dot"></span><span>' + formatBlogDate(post.date) + '</span><span class="dot"></span><span>' + escapeHtml(post.readTime) + '</span></div>';
-  qs('#blogPostCover').innerHTML = blogIconSVG(true);
-  qs('#blogPostCover').setAttribute('style', blogCoverStyle(idx));
+  qs('#blogPostCover').innerHTML = blogIconSVG(true, post);
+  qs('#blogPostCover').setAttribute('style', blogCoverStyle(post));
   const paragraphs = String(post.content).split(/\n\s*\n/).map(function(p){ return '<p>' + escapeHtml(p.trim()) + '</p>'; }).join('');
   qs('#blogPostBody').innerHTML = paragraphs;
   const related = BLOG_POSTS.filter(function(p){ return p.id !== post.id; }).slice(0,3);

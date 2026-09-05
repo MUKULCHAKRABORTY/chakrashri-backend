@@ -104,6 +104,19 @@ jobs:
         # All three happened during this work.
         run: npm run check:syntax
 
+      - name: API wiring — every frontend call reaches a route that exists
+        # The two frontends are single files with no build step, so the only
+        # thing joining `apiFetch('/api/admin/low-stock')` to the route that
+        # answers it is a string literal. Rename a route or drop a mount and
+        # every existing test still passes while the feature 404s — and because
+        # apiFetch turns that into a friendly "could not load", it is
+        # indistinguishable from the free-tier instance waking up, which is the
+        # one failure nobody investigates.
+        #
+        # Runs here, next to the other cheap static checks: it requires the app
+        # rather than starting one, stubs the database, and sends no request.
+        run: npm run check:api
+
       - name: Audit dependencies
         # Advisory only for moderate and below; a high or critical advisory fails
         # the build. A transitive vulnerability in a payments backend is not
@@ -302,6 +315,21 @@ jobs:
         env:
           REQUIRE_BROWSER_TESTS: 'true'
         run: npm run test:browser-orders
+
+      - name: Admin review moderation browser test
+        # The screen this covers is new, and what it replaces was not a broken
+        # screen but no screen: the review endpoints have existed since
+        # migration 005 and nothing ever called them, so a review went live the
+        # moment it was written and the only way to take one down was SQL.
+        #
+        # Two things here can only be answered by running it. A hide must carry
+        # its REASON — the server returns 400 without one and it is what the
+        # audit log records — and nothing a customer typed may become markup. A
+        # review is the most directly attacker-controlled text in this console:
+        # anyone who buys one item can write one.
+        env:
+          REQUIRE_BROWSER_TESTS: 'true'
+        run: npm run test:browser-reviews
 
       - name: Database integration tests
         # These run against the live Postgres service above and cover the things

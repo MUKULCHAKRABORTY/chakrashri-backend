@@ -88,6 +88,15 @@ const harness = `<!doctype html><html><body>
 <table><tbody id="contactTbody"></tbody></table>
 <span id="inboxBadge" style="display:none;"></span>
 
+<div id="inbox-broadcast">
+  <div class="bc-count" id="bcAudience">-</div>
+  <input id="bcSubject" oninput="updateBroadcastReady()">
+  <textarea id="bcMessage" oninput="updateBroadcastReady()"></textarea>
+  <div id="bcStatus"></div>
+  <button id="bcSendBtn" onclick="sendSubscriberBroadcast()" disabled>Send to subscribers</button>
+  <div id="bcResult" hidden></div>
+</div>
+
 <div class="overlay" id="replyModal">
   <div class="modal">
     <h3 id="replyModalTitle"></h3>
@@ -132,6 +141,11 @@ async function api(path, opts){
     const list = wanted ? window.__messages.filter(function(x){ return x.status === wanted; }) : window.__messages;
     return { messages: list, unread: window.__messages.filter(function(x){ return x.status === 'new'; }).length, total: window.__messages.length };
   }
+  // The composer asks the subscribers endpoint for its counts only, so the
+  // number above it and the number in the Subscribers table cannot disagree.
+  if (path.indexOf('/api/admin/subscribers') === 0) {
+    return { subscribers: [], counts: { confirmed: 12, pending: 3, unsubscribed: 1 } };
+  }
   return {};
 }
 
@@ -143,6 +157,21 @@ ${fn('openReplyModal')}
 ${fn('closeReplyModal')}
 ${fn('sendReply')}
 ${fn('setMessageStatus')}
+
+/* ---- the subscription-update composer ----
+   Its own stubs: confirmAction is a modal this harness has no markup for, so it
+   records the prompt and runs the action, which is what the assertions are
+   about — that a send is CONFIRMED and names the number of people it reaches. */
+window.__confirmed = null;
+function confirmAction(title, message, onConfirm){
+  window.__confirmed = { title: title, message: message };
+  return onConfirm();
+}
+${fn('newCampaignId')}
+${admin.match(/let broadcastCampaignId = null;/)[0]}
+${fn('updateBroadcastReady')}
+${fn('loadBroadcastComposer')}
+${fn('sendSubscriberBroadcast')}
 </script></body></html>`;
 
 const results = [];
@@ -285,6 +314,66 @@ function check(name, cond, extra) {
     window.__caps = ['customers:read', 'customers:contact'];
     await loadContactMessages();
   });
+
+  /* ------------------------------------------- the subscription update ----
+     One message to every confirmed subscriber. It sends through a template that
+     has existed since the email system was built and that nothing had ever
+     called, so until now the list collected addresses nobody could write to.
+     This is also the only irreversible one-to-many control in the console. */
+  await page.evaluate(() => loadBroadcastComposer());
+  let bc = await page.evaluate(() => ({
+    audience: document.querySelector('#bcAudience').textContent,
+    disabled: document.querySelector('#bcSendBtn').disabled,
+    status: document.querySelector('#bcStatus').textContent
+  }));
+  check('BROADCAST: it says how many people this reaches before a word is typed',
+    /12 confirmed subscribers/.test(bc.audience), bc.audience);
+  check('and Send is refused until there is something to send',
+    bc.disabled === true && /subject/i.test(bc.status), JSON.stringify(bc));
+
+  await page.evaluate(() => {
+    document.querySelector('#bcSubject').value = 'Nav';
+    updateBroadcastReady();
+  });
+  bc = await page.evaluate(() => ({ disabled: document.querySelector('#bcSendBtn').disabled }));
+  check('a subject alone is still not enough — the server would refuse it too',
+    bc.disabled === true, JSON.stringify(bc));
+
+  await page.evaluate(() => {
+    document.querySelector('#bcSubject').value = 'Navratri opening hours';
+    // Two paragraphs, because the route splits on a blank line and escapes each
+    // one separately — the shape a real update has.
+    document.querySelector('#bcMessage').value = 'We are open every evening this week.\n\nDo come by.';
+    updateBroadcastReady();
+  });
+  bc = await page.evaluate(() => ({ disabled: document.querySelector('#bcSendBtn').disabled }));
+  check('with both, it becomes available', bc.disabled === false);
+
+  await page.evaluate(() => { window.__calls.length = 0; });
+  await page.evaluate(async () => { await sendSubscriberBroadcast(); });
+  const bcSent = await page.evaluate(() => ({
+    confirmed: window.__confirmed,
+    call: window.__calls.filter((c) => /broadcast/.test(c.path))[0],
+    subject: document.querySelector('#bcSubject').value,
+    result: document.querySelector('#bcResult').textContent,
+    hidden: document.querySelector('#bcResult').hidden
+  }));
+  check('THE IRREVERSIBLE ONE: it asks first, and names how many people it reaches',
+    bcSent.confirmed && /12 subscribers/.test(bcSent.confirmed.title), JSON.stringify(bcSent.confirmed));
+  const body = bcSent.call ? JSON.parse(bcSent.call.body) : {};
+  check('it POSTs the subject, the message and a campaign id',
+    bcSent.call && bcSent.call.method === 'POST' && body.subject === 'Navratri opening hours' &&
+    /Do come by/.test(body.message) && String(body.campaignId).length >= 8, JSON.stringify(body).slice(0, 160));
+  check('the composer clears on success, so the same update is not sent twice by habit',
+    bcSent.subject === '', JSON.stringify(bcSent.subject));
+  check('and it reports what actually happened, including what was SKIPPED',
+    !bcSent.hidden && /delivered/.test(bcSent.result), bcSent.result.slice(0, 120));
+
+  /* A DIFFERENT campaign id next time, or the engine would dedupe the next
+     update against this one and nobody would receive it. */
+  const rotated = await page.evaluate(() => broadcastCampaignId);
+  check('a fresh campaign id is issued for the next update',
+    rotated && rotated !== body.campaignId, String(rotated).slice(0, 12) + ' vs ' + String(body.campaignId).slice(0, 12));
 
   check('no page errors while doing any of it', pageErrors.length === 0, pageErrors.join(' | '));
 
