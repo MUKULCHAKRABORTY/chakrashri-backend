@@ -1637,6 +1637,48 @@ measurement artifact, not a defect. Measure layout with transitions disabled.
 npm test
 ```
 
+### Chromium installs first, and that position is asserted
+
+The browser install used to sit two thirds of the way down the workflow, just
+above the suites that needed it. That works only while every browser-driven step
+is below it, and it broke twice: once when the contrast suite was added beside
+the other `npm test` members, and again when the responsive audit was — landing
+two steps ABOVE the install and turning CI red on the first push.
+
+It now runs immediately after the dependencies. Nothing after that line can be
+too early, so no future step has to remember.
+
+Two checks were added, because the ones that existed did not cover this:
+
+- **`a browser-driven SCRIPT is held to the same rules as a browser suite`.** The
+  earlier checks scanned `test/*.test.js` for a playwright import. The responsive
+  audit needs a browser and lives in `scripts/`, so neither ever looked at it.
+  The source of truth is now every npm script **in the gate** whose file needs a
+  browser, wherever it lives — it must run after the install, and it must be
+  unable to skip silently.
+- **`the browser installs before ANY step that could need it`.** Asserts the
+  install is within the first two steps, which removes the ordering question
+  rather than re-checking it per step.
+
+`scripts/responsive-audit.js` now honours `REQUIRE_BROWSER_TESTS` like the test
+suites do. Without it, a missing browser made it print SKIP and exit 0 — a green
+build that measured nothing, which is worse than a red one.
+
+Both checks were verified by moving the install back where it was and watching
+them fail, then pass once restored.
+
+Two smaller traps fixed while writing them, both worth stating because they cost
+a build each:
+
+- A comment that spelled out the import the scanner searches for made
+  `frontend.test.js` classify **itself** as a browser suite. The same shape as
+  the character checker reporting itself; the fix is to not write the literal.
+- A regex assembled from strings lost a backslash, turning `\s` into a literal
+  `s` — a pattern that matches nothing and reports every step as absent. It is a
+  plain `indexOf` now, with the workflow's line endings normalised first, since a
+  CRLF checkout on Windows made a `
+` lookup miss every line.
+
 ### An invisible character that three tools could not see
 
 `npm run check:chars` scans every text file for stray control, zero-width and

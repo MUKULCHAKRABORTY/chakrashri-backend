@@ -30,12 +30,30 @@
  */
 const path = require('path');
 
+/* Skipping is right on a laptop that has never run the browser download, and
+   wrong in CI, where the workflow installs chromium: a skip there means the
+   install failed and the audit reported success having measured nothing. Same
+   convention as the browser test suites - REQUIRE_BROWSER_TESTS turns the skip
+   into a failure. */
+const REQUIRE_BROWSER = process.env.REQUIRE_BROWSER_TESTS === 'true';
+const INSTALL_HINT = 'npx playwright install chromium';
+
+function skip(reason) {
+  if (REQUIRE_BROWSER) {
+    console.error('[responsive-audit] FAILED: ' + reason + '.');
+    console.error('                   REQUIRE_BROWSER_TESTS=true, so this cannot be skipped.');
+    console.error('                   Fix with: ' + INSTALL_HINT);
+    process.exit(1);
+  }
+  console.log('  SKIP  ' + reason + ' - run: ' + INSTALL_HINT);
+  process.exit(0);
+}
+
 let chromium;
 try {
   ({ chromium } = require('playwright'));
 } catch {
-  console.log('\n  SKIP  playwright is not installed — run: npm install\n');
-  process.exit(0);
+  skip('the playwright package is not installed');
 }
 
 /* IT STARTS ITS OWN SERVER, SO IT CAN RUN ANYWHERE.
@@ -241,7 +259,15 @@ function probe(opts) {
   }
   const useServer = true;
   console.log('  source: ' + base + (own ? '  (started for this run)' : ''));
-  const browser = await chromium.launch();
+  let browser;
+  try {
+    browser = await chromium.launch();
+  } catch (err) {
+    /* The package can be present while the binary is not, which is what a
+       half-finished install leaves behind. */
+    if (own) own.kill();
+    skip('chromium could not launch');
+  }
   const findings = [];
   for (const width of WIDTHS) {
     for (const route of ROUTES) {

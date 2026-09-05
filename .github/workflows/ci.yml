@@ -69,6 +69,20 @@ jobs:
         # drifted, which is exactly what you want a build to tell you.
         run: npm ci
 
+      - name: Install Chromium for every browser-driven check
+        # IMMEDIATELY AFTER THE DEPENDENCIES, AND THAT POSITION IS THE POINT.
+        #
+        # This used to sit two thirds of the way down, just above the browser
+        # suites that needed it. That works only while every browser-driven step
+        # is below it, and it has now broken twice: first when the contrast
+        # suite was slotted in beside the other `npm test` members, and again
+        # when the responsive audit was, landing two steps ABOVE the install and
+        # failing the build with "browser not found".
+        #
+        # Installing here removes the ordering question entirely. Nothing after
+        # this line can be too early, so no future step has to remember.
+        run: npx playwright install --with-deps chromium
+
       - name: Syntax check every file
         # Runs FIRST because it is the cheapest check and catches the class of
         # bug that is invisible in a diff: a cron expression inside a block
@@ -190,6 +204,10 @@ jobs:
         # over file:// the catalog cannot be fetched and every grid comes back
         # empty - an audit of the product card with no cards on the page would
         # pass on a site where every one of them was broken.
+        env:
+          # Without this it prints SKIP and exits 0 when chromium is missing —
+          # a green build that measured nothing, which is worse than a red one.
+          REQUIRE_BROWSER_TESTS: 'true'
         run: npm run audit:responsive
 
       - name: SEO audit
@@ -198,9 +216,6 @@ jobs:
         # canonical stuck on the home page tells Google every other page is a
         # duplicate of it, and that is invisible until traffic disappears.
         run: npm run seo:audit
-
-      - name: Install Chromium for the browser regression tests
-        run: npx playwright install --with-deps chromium
 
       - name: Rendered contrast (WCAG AA)
         # Placed AFTER the chromium install, which is the whole reason this

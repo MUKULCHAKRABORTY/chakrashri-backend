@@ -4141,6 +4141,83 @@ section('[fe-44] The gate cannot quietly stop running a suite');
       + 'machine that has no chromium yet: ' + late.join(', '));
   });
 
+  test('a browser-driven SCRIPT is held to the same rules as a browser suite', () => {
+    /* THE HOLE THE PREVIOUS TWO CHECKS LEFT, WHICH SHIPPED.
+
+       Both of them scan test/*.test.js for a playwright import — and this
+       sentence deliberately does not spell that import out, because a file that
+       contains the pattern it searches for reports ITSELF. Writing it once cost
+       a build: frontend.test.js was suddenly classified as a browser suite.
+
+       The responsive audit needs a browser and lives in scripts/, so neither of
+       the earlier checks ever looked at
+       it. It landed two steps ABOVE the chromium install and turned CI red on
+       the first push — the third time this exact ordering fault has occurred,
+       and the second time a check written to prevent it did not cover the new
+       case.
+
+       So the source of truth is now every npm script IN THE GATE whose file
+       requires playwright, wherever that file lives. A browser-driven check
+       cannot be added anywhere without being covered. */
+    /* Line endings normalised FIRST. The workflow is checked out with CRLF on
+       Windows, so a substring ending in "\n" matches nothing there and every
+       step is reported as absent — a check that fails for a reason unrelated to
+       what it is checking, on one operating system only. */
+    const ci = read('.github/workflows/ci.yml').replace(/\r\n/g, '\n');
+    const fs2 = require('fs');
+    const installAt = ci.search(/run:\s*npx playwright install/);
+    assert.ok(installAt > -1, 'CI must install chromium somewhere');
+
+    const gate = pkg.scripts.test.split('&&').map((s) => s.trim().replace(/^npm run /, ''));
+    const needsBrowser = [];
+    for (const name of gate) {
+      const cmd = pkg.scripts[name];
+      if (!cmd) continue;
+      const m = cmd.match(/node\s+(\S+\.js)/);
+      if (!m) continue;
+      const file = path.join(ROOT, m[1]);
+      if (!fs2.existsSync(file)) continue;
+      if (!/require\('playwright'\)/.test(fs2.readFileSync(file, 'utf8'))) continue;
+      needsBrowser.push({ name, file: m[1] });
+    }
+    assert.ok(needsBrowser.length >= 5,
+      'expected several browser-driven gate scripts; found ' + needsBrowser.length);
+
+    const problems = [];
+    for (const { name, file } of needsBrowser) {
+      /* A plain indexOf, not a built regex. Assembling a pattern from strings
+         means every backslash has to survive however the line was written, and
+         one that does not turns "\s" into a literal "s" — a regex that quietly
+         matches nothing and reports every step as absent. CI writes these lines
+         in one fixed shape, so a substring is both simpler and exact. */
+      const at = ci.indexOf('run: npm run ' + name + '\n');
+      if (at === -1) { problems.push(name + ' (' + file + ') is not in CI at all'); continue; }
+      if (at < installAt) problems.push(name + ' (' + file + ') runs BEFORE chromium is installed');
+      const src = fs2.readFileSync(path.join(ROOT, file), 'utf8');
+      if (!/REQUIRE_BROWSER_TESTS/.test(src)) {
+        problems.push(name + ' (' + file + ') can skip silently — no REQUIRE_BROWSER_TESTS');
+      }
+    }
+    assert.deepStrictEqual(problems, [],
+      'browser-driven gate scripts must run after the install and must not be able to '
+      + 'skip in CI:\n    ' + problems.join('\n    '));
+  });
+
+  test('the browser installs before ANY step that could need it', () => {
+    /* Belt and braces, and cheaper to reason about than the rule above: putting
+       the install immediately after the dependencies removes the ordering
+       question entirely, because nothing after it can be too early. Asserting
+       the POSITION means a future reorganisation cannot quietly reintroduce the
+       fault for a step nobody thought of. */
+    const ci = read('.github/workflows/ci.yml');
+    const steps = [...ci.matchAll(/^      - name: (.+)$/gm)].map((m) => m[1]);
+    const installIdx = steps.findIndex((s) => /Install Chromium/i.test(s));
+    assert.ok(installIdx > -1, 'the chromium install step must exist and be named');
+    assert.ok(installIdx <= 1,
+      'chromium installs at step ' + (installIdx + 1) + '; it belongs immediately after the '
+      + 'dependencies so no later step can be too early. Steps: ' + steps.slice(0, 4).join(' | '));
+  });
+
   test('the drawer fuzz is a real file, and it is committed', () => {
     // An npm script pointing at a path nobody committed is a green gate that
     // runs nothing on any machine but this one.
